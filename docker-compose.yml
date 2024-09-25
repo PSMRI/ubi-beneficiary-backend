@@ -1,0 +1,12 @@
+version: "3.6"
+
+services:
+  backend:
+    image: scholarship-backend
+    container_name: "scholarship-backend-onest"
+    restart: always
+    ports:
+      - 9004:3000
+    env_file:
+      - /home/ubuntu/onest/scholarship-backend/.env
+
