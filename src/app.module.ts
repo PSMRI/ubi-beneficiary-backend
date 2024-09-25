@@ -15,12 +15,12 @@ import { ResponseCache } from './entity/response.entity';
 @Module({
   imports: [
     TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: '15.207.22.157',
-      port: 15432,
-      username: 'postgres',
-      password: 'O1t1Ql!8yV#Z',
-      database: 'vistaar_cache_db',
+      type: '',
+      host: '',
+      port: "",
+      username: '',
+      password: '=',
+      database: '',
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       synchronize: false,
       logging: true

@@ -12,6 +12,7 @@ export class HasuraService {
   private seeker_db = process.env.SEEKER_DB;
   private order_db = process.env.ORDER_DB;
   private telemetry_db = process.env.TELEMETRY_DB
+  private url=ProcessingInstruction.env.HASURA_URL
 
   constructor(private httpService: HttpService) { 
     console.log("cache_db", this.cache_db)
@@ -132,7 +133,7 @@ export class HasuraService {
   async queryDb(query: string, variables?: Record<string, any>): Promise<any> {
     try {
       const response = await axios.post(
-        'https://onest-bap.tekdinext.com/hasura/v1/graphql',
+        this.url,
         {
           query,
           variables,
@@ -140,7 +141,7 @@ export class HasuraService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-hasura-admin-secret': '#z4X39Q!g1W7fDvX'
+            'x-hasura-admin-secret': this.adminSecretKey
           },
         }
       );
