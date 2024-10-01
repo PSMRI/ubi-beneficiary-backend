@@ -4,37 +4,32 @@ import axios from 'axios';
 
 @Injectable()
 export class HasuraService {
-
   private hasurastate = process.env.HASURA_state;
   private adminSecretKey = process.env.HASURA_GRAPHQL_ADMIN_SECRET;
   private cache_db = process.env.CACHE_DB;
   private response_cache_db = process.env.RESPONSE_CACHE_DB;
   private seeker_db = process.env.SEEKER_DB;
   private order_db = process.env.ORDER_DB;
-  private telemetry_db = process.env.TELEMETRY_DB
-  private url=ProcessingInstruction.env.HASURA_URL
+  private telemetry_db = process.env.TELEMETRY_DB;
+  private url = process.env.HASURA_URL;
 
-  constructor(private httpService: HttpService) { 
-    console.log("cache_db", this.cache_db)
-    console.log("response_cache_db", this.response_cache_db)
+  constructor(private httpService: HttpService) {
+    console.log('cache_db', this.cache_db);
+    console.log('response_cache_db', this.response_cache_db);
   }
 
   async findJobsCache(getContentdto) {
+    console.log('searching jobs from ' + this.cache_db);
 
-    console.log("searching jobs from " + this.cache_db)
-
-
-    let result = 'where: {'
+    let result = 'where: {';
     Object.entries(getContentdto).forEach(([key, value]) => {
       console.log(`${key}: ${value}`);
 
-      console.log("557", `${key}: ${value}`);
+      console.log('557', `${key}: ${value}`);
       result += `${key}: {_eq: "${value}"}, `;
-
-
     });
-    result += '}'
-    console.log("result", result)
+    result += '}';
+    console.log('result', result);
     //console.log("order", order)
     const query = `query MyQuery {
            ${this.cache_db}(distinct_on: unique_id,${result}) {
@@ -59,25 +54,26 @@ export class HasuraService {
       return response;
     } catch (error) {
       //this.logger.error("Something Went wrong in creating Admin", error);
-      console.log("error", error)
-      throw new HttpException('Unable to Fetch content!', HttpStatus.BAD_REQUEST);
+      console.log('error', error);
+      throw new HttpException(
+        'Unable to Fetch content!',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
   async searchResponse(data) {
+    console.log('searching response from ' + this.response_cache_db);
 
-    console.log("searching response from " + this.response_cache_db)
-
-    let result = 'where: {'
+    let result = 'where: {';
     Object.entries(data).forEach(([key, value]) => {
       console.log(`${key}: ${value}`);
 
-      console.log("557", `${key}: ${value}`);
+      console.log('557', `${key}: ${value}`);
       result += `${key}: {_eq: "${value}"}, `;
-
     });
-    result += '}'
-    console.log("result", result)
+    result += '}';
+    console.log('result', result);
     //console.log("order", order)
     const query = `query MyQuery {
             ${this.response_cache_db}(${result}) {
@@ -92,14 +88,17 @@ export class HasuraService {
       return response;
     } catch (error) {
       //this.logger.error("Something Went wrong in creating Admin", error);
-      console.log("error", error)
-      throw new HttpException('Unable to Fetch content!', HttpStatus.BAD_REQUEST);
+      console.log('error', error);
+      throw new HttpException(
+        'Unable to Fetch content!',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
   async insertCacheData(arrayOfObjects) {
-    console.log("inserting jobs into " + this.cache_db)
-    console.log("arrayOfObjects", arrayOfObjects)
+    console.log('inserting jobs into ' + this.cache_db);
+    console.log('arrayOfObjects', arrayOfObjects);
     // $provider_id: String, provider_name: String, bpp_id: String, bpp_uri: String
     // provider_id: $provider_id, provider_name: $provider_name, bpp_id: $bpp_id, bpp_uri: $bpp_uri
     const query = `mutation MyMutation($title: String, $description: String, $url: String, $provider_name: String, $enrollmentEndDate: timestamptz, $bpp_id: String, $unique_id: String, $bpp_uri: String, $item_id: String, $offeringInstitute: jsonb, $credits: String, $instructors: String,$provider_id: String, $item: json, $descriptor: json, $categories: json, $fulfillments: json) { 
@@ -110,16 +109,16 @@ export class HasuraService {
             }
           }
         }
-        `
+        `;
 
-    let promises = []
+    let promises = [];
     arrayOfObjects.forEach((item) => {
-      promises.push(this.queryDb(query, item))
-    })
+      promises.push(this.queryDb(query, item));
+    });
 
-    let insertApiRes = await Promise.all(promises)
-    console.log("insertApiRes", insertApiRes)
-    return insertApiRes
+    let insertApiRes = await Promise.all(promises);
+    console.log('insertApiRes', insertApiRes);
+    return insertApiRes;
 
     // try {
     //   const response = await this.queryDb(query, filteredArray[0] );
@@ -127,7 +126,6 @@ export class HasuraService {
     // } catch (error) {
     //   throw new HttpException('Failed to create Content', HttpStatus.NOT_FOUND);
     // }
-
   }
 
   async queryDb(query: string, variables?: Record<string, any>): Promise<any> {
@@ -141,16 +139,15 @@ export class HasuraService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-hasura-admin-secret': this.adminSecretKey
+            'x-hasura-admin-secret': this.adminSecretKey,
           },
-        }
+        },
       );
-      console.log("response.data", response.data)
+      console.log('response.data', response.data);
       return response.data;
     } catch (error) {
-      console.log("error", error)
+      console.log('error', error);
       return error;
-
     }
   }
 
@@ -164,10 +161,8 @@ export class HasuraService {
 
     try {
       return await this.queryDb(query);
-
     } catch (error) {
-
-      throw new HttpException("Bad request", HttpStatus.BAD_REQUEST);
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -181,10 +176,8 @@ export class HasuraService {
 
     try {
       return await this.queryDb(query);
-
     } catch (error) {
-
-      throw new HttpException("Bad request", HttpStatus.BAD_REQUEST);
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -197,10 +190,8 @@ export class HasuraService {
         `;
     try {
       return await this.queryDb(query);
-
     } catch (error) {
-
-      throw new HttpException("Bad request", HttpStatus.BAD_REQUEST);
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -213,10 +204,8 @@ export class HasuraService {
         `;
     try {
       return await this.queryDb(query);
-
     } catch (error) {
-
-      throw new HttpException("Bad request", HttpStatus.BAD_REQUEST);
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -229,10 +218,8 @@ export class HasuraService {
         `;
     try {
       return await this.queryDb(query);
-
     } catch (error) {
-
-      throw new HttpException("Bad request", HttpStatus.BAD_REQUEST);
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -252,15 +239,18 @@ export class HasuraService {
     }
     }`;
 
-    console.log(query)
+    console.log(query);
 
     // Rest of your code to execute the query
 
     try {
-      const response = await this.queryDb(query, seeker)
+      const response = await this.queryDb(query, seeker);
       return response.data[`insert_${this.seeker_db}`].returning[0];
     } catch (error) {
-      throw new HttpException('Unabe to creatre Seeker user', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Unabe to creatre Seeker user',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
@@ -275,15 +265,18 @@ export class HasuraService {
     }
     `;
 
-    console.log(query)
+    console.log(query);
 
     // Rest of your code to execute the query
 
     try {
-      const response = await this.queryDb(query)
+      const response = await this.queryDb(query);
       return response.data[`${this.seeker_db}`][0];
     } catch (error) {
-      throw new HttpException('Unabe to create order user', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Unabe to create order user',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
@@ -301,20 +294,23 @@ export class HasuraService {
     }
     `;
 
-   // console.log(query)
+    // console.log(query)
 
     // Rest of your code to execute the query
 
     try {
-      const response = await this.queryDb(query,order)
+      const response = await this.queryDb(query, order);
       return response;
     } catch (error) {
-      throw new HttpException('Unabe to create order user', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Unabe to create order user',
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
   async searchOrderByOrderId(order) {
-    console.log("order", order)
+    console.log('order', order);
     const query = `query MyQuery {
       ${this.order_db}(where: {order_id: {_eq: "${order}"}}) {
         OrderContentRelationship {
@@ -334,15 +330,15 @@ export class HasuraService {
     // Rest of your code to execute the query
 
     try {
-      const response = await this.queryDb(query)
-      return response.data[`${this.order_db}`][0].OrderContentRelationship[0]
+      const response = await this.queryDb(query);
+      return response.data[`${this.order_db}`][0].OrderContentRelationship[0];
     } catch (error) {
       throw new HttpException('Invalid order id', HttpStatus.BAD_REQUEST);
     }
   }
 
   async addTelemetry(data) {
-    console.log("data", data)
+    console.log('data', data);
     const query = `
       mutation ($id: String, $ver: String, $events:jsonb) {
         insert_${this.telemetry_db}(objects: [{id: $id, ver: $ver, events: $events}]) {
@@ -354,14 +350,13 @@ export class HasuraService {
       }
     `;
 
-    console.log(query)
+    console.log(query);
 
     try {
-      const response = await this.queryDb(query, data)
+      const response = await this.queryDb(query, data);
       return response;
     } catch (error) {
       throw new HttpException('Unabe to add telemetry', HttpStatus.BAD_REQUEST);
     }
   }
-
 }
