@@ -26,7 +26,7 @@ export class AuthService {
 
   public async login(req, response) {
     const data = {
-      username: req.body.phone_number,
+      username: req.body.username,
       password: req.body.password,
       type: 'login',
     };
@@ -113,6 +113,12 @@ export class AuthService {
           temporary: false,
         },
       ],
+      attributes: {
+        // Custom user attributes
+        phoneNumber: '+91' + body?.phone_number,
+        firstName: body?.first_name,
+        lastName: body?.last_name,
+      },
     };
   }
 
