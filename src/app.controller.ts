@@ -34,7 +34,6 @@ export class AppController {
   }
 
   @Post('/select')
-  @UseGuards(AuthGuard)
   async selectContent(@Request() request, @Body() body) {
     let endPoint = 'select';
     console.log('select method calling...');

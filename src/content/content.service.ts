@@ -17,6 +17,8 @@ export class ContentService {
   private domain = process.env.DOMAIN;
   private bap_id = process.env.BAP_ID;
   private bap_uri = process.env.BAP_URI;
+  private bpp_id = process.env.BPP_ID;
+  private bpp_uri = process.env.BPP_URI;
   private response_cache_db = process.env.RESPONSE_CACHE_DB;
   private telemetry_db = process.env.TELEMETRY_DB;
 
@@ -83,6 +85,8 @@ export class ContentService {
         version: '1.1.0',
         bap_id: this.bap_id,
         bap_uri: this.bap_uri,
+        bpp_id: this.bpp_id,
+        bpp_uri: this.bpp_uri,
         transaction_id: uuidv4(),
         message_id: uuidv4(),
         timestamp: new Date().toISOString(),
@@ -100,7 +104,7 @@ export class ContentService {
 
     try {
       let response = await this.proxyService.bapCLientApi2('search', data);
-      console.log(JSON.stringify(response));
+      console.log(JSON.stringify(response), '================');
       if (response) {
         let arrayOfObjects = [];
         //  console.log(response.responses.length())

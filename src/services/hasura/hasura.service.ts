@@ -56,7 +56,6 @@ export class HasuraService {
       const response = await this.queryDb(query);
       const jobs = response.data[this.cache_db];
 
-      console.log('jobs', jobs);
       const filteredJobs = this.filterJobs(jobs, filters, search);
 
       // Return the response in the desired format
@@ -78,103 +77,96 @@ export class HasuraService {
 
   filterJobs(jobs, filters, search) {
     if (!filters && !search) return jobs;
-    // Function to check if the income falls within a specified range
-    const isIncomeInRange = (incomeValue, targetRange) => {
-      // Convert the targetRange to min and max
-      const [targetMin, targetMax] = targetRange
-        .split('-')
-        .map((value) => parseInt(value.replace(/[^\d]/g, '').trim()));
 
-      // Handle cases where incomeValue is a single number or a range
+    // Utility function to check if a value falls within a range
+    const isIncomeInRange = (incomeValue, targetRange) => {
+      const [targetMin, targetMax] = targetRange.split('-').map(Number);
+
       if (incomeValue.includes('-')) {
-        // It's a range, split and compare as usual
-        const [incomeMin, incomeMax] = incomeValue
-          .split('-')
-          .map((value) => parseInt(value.replace(/[^\d]/g, '').trim()));
+        const [incomeMin, incomeMax] = incomeValue.split('-').map(Number);
         return incomeMin <= targetMax && incomeMax >= targetMin;
       } else {
-        // It's a single number, directly compare
-        const incomeNumber = parseFloat(
-          incomeValue.replace(/[^\d.]/g, '').trim(),
-        );
+        const incomeNumber = parseFloat(incomeValue);
         return incomeNumber >= targetMin && incomeNumber <= targetMax;
       }
+    };
+
+    const matchFilter = (tags, filterConfig) => {
+      const { parentCode, filterCode, filterValue, isRange } = filterConfig;
+
+      const parentTag = tags.find((tag) => tag.descriptor?.code === parentCode);
+
+      if (!parentTag || !Array.isArray(parentTag.list)) return false;
+
+      return parentTag.list.some((item) => {
+        const value = item.value?.trim(); // Ensure we account for empty values
+        // Allow match if value is empty or matches the filter
+        if (value === '') return true;
+
+        if (isRange) {
+          return isIncomeInRange(value, filterValue);
+        }
+
+        const values = value.split(',').map((v) => v.trim().toLowerCase());
+        return values.includes(filterValue.toLowerCase());
+      });
     };
 
     return jobs.filter((job) => {
       let matches = true;
 
-      // Case-insensitive title search (ILIKE equivalent)
+      // Title search (case-insensitive)
       if (search) {
-        const title = job.title?.toLowerCase() || '';
-        matches = title.includes(search.toLowerCase());
-        console.log('title', title, search);
+        matches = job.title?.toLowerCase().includes(search.toLowerCase());
       }
 
-      // If title search did not match, return false
       if (!matches) return false;
-      if (!filters || Object.keys(filters).length === 0) {
-        return true; // Include job since no filters are specified
-      } // Check if tags exist and are an array
-      if (Array.isArray(job.item?.tags)) {
-        // Initialize match flags for each filter
-        const backgroundEligibility = job.item.tags.find(
-          (tag) => tag.descriptor?.code === 'background-eligibility',
-        );
 
-        // Check if the background eligibility tag exists and has a list
-        if (
-          backgroundEligibility &&
-          Array.isArray(backgroundEligibility.list)
-        ) {
-          // Match 'social-eligibility' filter
-          const socialEligibilityMatch = filters['social-eligibility']
-            ? backgroundEligibility.list.some(
-                (item) =>
-                  item.descriptor?.code === 'social-eligibility' &&
-                  (item.value?.toLowerCase() ===
-                    filters['social-eligibility'].toLowerCase() || // Exact match
-                    item.value?.toLowerCase() === 'all gender'), // Match if the value is "all"
-              )
-            : true;
+      if (!filters || Object.keys(filters).length === 0) return true;
 
-          // Match 'gender-eligibility' filter
-          const genderEligibilityMatch = filters['gender-eligibility']
-            ? backgroundEligibility.list.some(
-                (item) =>
-                  item.descriptor?.code === 'gender-eligibility' &&
-                  (item.value?.toLowerCase() ===
-                    filters['gender-eligibility'].toLowerCase() || // Exact match
-                    item.value?.toLowerCase() === 'all gender'), // Match if the value is "all"
-              )
-            : true;
-
-          // Match 'ann-hh-inc' filter
-          const annHhIncMatch = filters['ann-hh-inc']
-            ? backgroundEligibility.list.some(
-                (item) =>
-                  item.descriptor?.code === 'ann-hh-inc' &&
-                  (isIncomeInRange(item.value, filters['ann-hh-inc']) || // Check if income is in range
-                    item.value?.toLowerCase() === 'all'), // Match if the value is "all"
-              )
-            : true;
-
-          // Combine all matches
-          matches =
-            socialEligibilityMatch && genderEligibilityMatch && annHhIncMatch;
-        } else {
-          console.log(
-            'Background eligibility tag not found or list is not an array:',
-            job,
-          );
-          matches = false; // No background eligibility tag or improper format
-        }
-      } else {
-        console.log('Job does not have tags or tags is not an array:', job);
-        matches = false; // No tags or improper format
+      const tags = job.item?.tags;
+      if (!Array.isArray(tags)) {
+        return false;
       }
 
-      return matches; // Return true if job matches all filters
+      const filterConfigs = [
+        {
+          filterKey: 'academicClass-eligibility',
+          parentCode: 'educational-eligibility',
+          filterCode: 'academicClass-eligibility',
+        },
+        {
+          filterKey: 'caste-eligibility',
+          parentCode: 'personal-eligibility',
+          filterCode: 'caste-eligibility',
+        },
+        {
+          filterKey: 'annualIncome-eligibility',
+          parentCode: 'economical-eligibility',
+          filterCode: 'annualIncome-eligibility',
+          isRange: true,
+        },
+        {
+          filterKey: 'state-eligibility',
+          parentCode: 'geographical-eligibility',
+          filterCode: 'state-eligibility',
+        },
+      ];
+
+      matches = filterConfigs.every(
+        ({ filterKey, parentCode, filterCode, isRange }) => {
+          return filters[filterKey]
+            ? matchFilter(tags, {
+                parentCode,
+                filterCode,
+                filterValue: filters[filterKey],
+                isRange,
+              })
+            : true;
+        },
+      );
+
+      return matches;
     });
   }
 

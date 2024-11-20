@@ -17,7 +17,6 @@ import { AuthGuard } from '@modules/auth/auth.guard';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
-@UseGuards(AuthGuard)
 @ApiTags('Content')
 @Controller('content')
 export class ContentController {
@@ -123,7 +122,6 @@ export class ContentController {
     status: 200,
     description: 'List of documents',
   })
-  @ApiBasicAuth('access-token')
   async getCertificates() {
     const filePath = path.join(
       __dirname,
