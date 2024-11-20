@@ -17,6 +17,7 @@ import { UserRolesModule } from './modules/user_roles/user_roles.module';
 import { Role } from '@entities/role.entity';
 import { UserRole } from '@entities/user_roles.entity';
 import { AuthModule } from '@modules/auth/auth.module';
+import { OtpModule } from '@modules/otp/otp.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { AuthModule } from '@modules/auth/auth.module';
     UserModule,
     UserRolesModule,
     AuthModule,
+    OtpModule,
   ],
   controllers: [AppController],
   providers: [
@@ -57,7 +59,7 @@ import { AuthModule } from '@modules/auth/auth.module';
     ProxyService,
     LoggerService,
     ContentService,
-    EncryptionService
+    EncryptionService,
   ],
 })
 export class AppModule {}
