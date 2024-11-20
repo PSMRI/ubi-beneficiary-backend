@@ -23,7 +23,7 @@ export class OtpService {
 
       // Check if the first digit of the number is between 7 and 9
       const firstDigit = parseInt(numberPart.charAt(0), 10);
-      if (firstDigit >= 7 && firstDigit <= 9) {
+      if (firstDigit >= 6 && firstDigit <= 9) {
         return true; // Valid Indian phone number
       }
     }
@@ -69,12 +69,14 @@ export class OtpService {
       const customerId = this.configService.get<string>('OTP_CUSTOMER_ID');
       const dltTemplateId = this.configService.get<string>('OTP_TEMPLATE_ID');
       const entityId = this.configService.get<string>('OTP_ENTITY_ID');
+      const sourceAddress = this.configService.get<string>('OTP_SOURCE_ATTR');
+      const messageType = this.configService.get<string>('OTP_MESSAGE_TYPE');
       const smsRequestData = JSON.stringify({
         customerId: customerId,
         destinationAddress: phone_number.split('-')[1],
         message: `Dear Citizen, your OTP for login is ${otp}. Use it within 5 minutes. Do not share this code. Regards PSMRIAM.`,
-        sourceAddress: 'PSMRAM',
-        messageType: 'SERVICE_IMPLICIT',
+        sourceAddress: sourceAddress,
+        messageType: messageType,
         dltTemplateId: dltTemplateId,
         entityId: entityId,
         otp: true,
@@ -84,10 +86,11 @@ export class OtpService {
       });
 
       const otpAuthKey = this.configService.get<string>('OTP_AUTH_KEY');
+      const apiURL = this.configService.get<string>('SMS_API_URL');
       const config = {
         method: 'post',
         maxBodyLength: Infinity,
-        url: 'https://openapi.airtel.in/gateway/airtel-iq-sms-utility/sendSingleSms',
+        url: apiURL,
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
