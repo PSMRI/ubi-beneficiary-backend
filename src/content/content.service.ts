@@ -17,8 +17,8 @@ export class ContentService {
   private domain = process.env.DOMAIN;
   private bap_id = process.env.BAP_ID;
   private bap_uri = process.env.BAP_URI;
-  private bpp_id = process.env.BPP_ID;
-  private bpp_uri = process.env.BPP_URI;
+  private readonly bpp_id = process.env.BPP_ID;
+  private readonly bpp_uri = process.env.BPP_URI;
   private response_cache_db = process.env.RESPONSE_CACHE_DB;
   private telemetry_db = process.env.TELEMETRY_DB;
 

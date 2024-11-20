@@ -92,7 +92,7 @@ export class HasuraService {
     };
 
     const matchFilter = (tags, filterConfig) => {
-      const { parentCode, filterCode, filterValue, isRange } = filterConfig;
+      const { parentCode, filterValue, isRange } = filterConfig;
 
       const parentTag = tags.find((tag) => tag.descriptor?.code === parentCode);
 

@@ -6,14 +6,12 @@ import {
   Post,
   Query,
   Request,
-  UseGuards,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LoggerService } from 'src/logger/logger.service';
 import { ContentService } from './content.service';
 import { CreateOrderDto } from './dto/create-user.dto';
-import { ApiBasicAuth, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { AuthGuard } from '@modules/auth/auth.guard';
+import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
