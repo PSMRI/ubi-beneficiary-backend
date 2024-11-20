@@ -80,6 +80,15 @@ export class UserController {
     return this.userService.createUserDoc(createUserDocDto);
   }
 
+  @Post('/wallet/user_docs')
+  @ApiBasicAuth('access-token')
+  @ApiOperation({ summary: 'Save user docs' })
+  @ApiResponse({ status: 200, description: 'User docs saved successfully' })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  async createUserDocs(@Body() createUserDocDto: CreateUserDocDTO[]) {
+    return this.userService.createUserDocs(createUserDocDto);
+  }
+
   @Post('/user_info')
   @ApiBasicAuth('access-token')
   async createUSerInfo(@Body() createUserInfoDto: CreateUserInfoDto) {

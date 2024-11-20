@@ -1,19 +1,20 @@
 [
-  { "name": "Income Certificate", "code": "income_certificate" },
-  { "name": "Caste Certificate", "code": "caste_certificate" },
-  { "name": "Disability Certificate", "code": "disability_certificate" },
-  { "name": "Ration Card/BPL Card", "code": "ration_card_bpl_card" },
-  { "name": "Domicile Certificate", "code": "domicile_certificate" },
+  { "name": "Income Certificate", "documentSubType": "incomeCertificate" },
+  { "name": "Caste Certificate", "documentSubType": "casteCertificate" },
   {
-    "name": "Business Certificate of Tehsildar",
-    "code": "business_certificate_of_tehsildar"
+    "name": "Disability Certificate",
+    "documentSubType": "disabilityCertificate"
   },
-  { "name": "Work Contract Certificate", "code": "work_contract_certificate" },
+  { "name": "Domicile Certificate", "documentSubType": "domicileCertificate" },
   {
-    "name": "Hostel Accommodation Certificate",
-    "code": "hostel_accommodation_certificate"
+    "name": "Enrolment Certificate (with hosteller/day scholar information)",
+    "documentSubType": "enrolmentCertificate"
   },
-  { "name": "Enrolment Certificate", "code": "enrolment_certificate" },
-  { "name": "Marksheet", "code": "marksheet" },
-  { "name": "Birth Certificate", "code": "birth_certificate" }
+  { "name": "Marksheet", "documentSubType": "marksheet" },
+  { "name": "Birth Certificate", "documentSubType": "birthCertificate" },
+  { "name": "Aadhaar Card", "documentSubType": "aadhaar" },
+  {
+    "name": "Sports Competition participation certificate",
+    "documentSubType": "participationCertificate"
+  }
 ]

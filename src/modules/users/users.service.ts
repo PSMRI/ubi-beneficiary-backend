@@ -16,6 +16,9 @@ import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { KeycloakService } from '@services/keycloak/keycloak.service';
 import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
+import * as fs from 'fs';
+import * as path from 'path';
+import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 @Injectable()
 export class UserService {
   constructor(
@@ -95,9 +98,12 @@ export class UserService {
       }
 
       const userInfo = await this.findOneUserInfo(user.user_id, decryptData);
+      const userDoc = await this.findUserDocs(user.user_id, decryptData);
+
       const final = {
         ...user,
         ...userInfo,
+        docs: userDoc || [],
       };
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
@@ -126,6 +132,22 @@ export class UserService {
     }
 
     return userInfo;
+  }
+  async findUserDocs(user_id: string, decryptData: boolean) {
+    const userDocs = await this.userDocsRepository.find({ where: { user_id } });
+
+    // Retrieve the document subtypes set from the DocumentListProvider
+    const documentTypes = DocumentListProvider.getDocumentSubTypesSet();
+
+    if (decryptData) {
+      return userDocs.map((doc) => ({
+        ...doc,
+        doc_data: this.encryptionService.decrypt(doc.doc_data),
+        is_uploaded: documentTypes.has(doc.doc_subtype),
+      }));
+    }
+
+    return userDocs;
   }
 
   /*async remove(user_id: string): Promise<void> {
@@ -181,6 +203,92 @@ export class UserService {
     });
 
     return await this.userDocsRepository.save(newUserDoc);
+  }
+
+  async createUserDocs(
+    createUserDocsDto: CreateUserDocDTO[],
+  ): Promise<UserDoc[]> {
+    const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
+
+    const savedDocs: UserDoc[] = [];
+    const existingDocs: UserDoc[] = [];
+
+    // Ensure the `userData` folder exists
+    if (!fs.existsSync(baseFolder)) {
+      fs.mkdirSync(baseFolder, { recursive: true });
+    }
+
+    for (const createUserDocDto of createUserDocsDto) {
+      const userFilePath = path.join(
+        baseFolder,
+        `${createUserDocDto.user_id}.json`,
+      );
+
+      // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
+      const existingDoc = await this.userDocsRepository.findOne({
+        where: {
+          user_id: createUserDocDto.user_id,
+          doc_type: createUserDocDto.doc_type,
+          doc_subtype: createUserDocDto.doc_subtype,
+        },
+      });
+
+      if (existingDoc) {
+        existingDocs.push(existingDoc);
+        console.log(
+          `Document already exists for user_id: ${createUserDocDto.user_id}, doc_type: ${createUserDocDto.doc_type}, doc_subtype: ${createUserDocDto.doc_subtype}`,
+        );
+      } else {
+        if (
+          createUserDocDto.doc_data &&
+          typeof createUserDocDto.doc_data !== 'string'
+        ) {
+          const jsonDataString = JSON.stringify(createUserDocDto.doc_data);
+
+          // Encrypt the JSON string
+          createUserDocDto.doc_data =
+            this.encryptionService.encrypt(jsonDataString);
+        }
+
+        // Create the new document entity for the database
+        const newUserDoc = this.userDocsRepository.create({
+          ...createUserDocDto,
+          doc_data: createUserDocDto.doc_data as string,
+        });
+
+        // Save to the database
+        const savedDoc = await this.userDocsRepository.save(newUserDoc);
+        savedDocs.push(savedDoc);
+
+        try {
+          // Initialize the file with empty array if it doesn't exist
+          let currentData = [];
+          if (fs.existsSync(userFilePath)) {
+            try {
+              currentData = JSON.parse(fs.readFileSync(userFilePath, 'utf-8'));
+            } catch (err) {
+              console.error('Error reading/parsing file, reinitializing:', err);
+            }
+          }
+
+          currentData.push(savedDoc);
+
+          // Write the updated data to the file
+          fs.writeFileSync(userFilePath, JSON.stringify(currentData, null, 2));
+          console.log(
+            `File written successfully for user_id: ${createUserDocDto.user_id}`,
+          );
+        } catch (err) {
+          console.error('Error writing to file:', err);
+        }
+      }
+    }
+
+    if (existingDocs.length > 0) {
+      return existingDocs;
+    }
+
+    return savedDocs;
   }
   // User info
   async createUserInfo(

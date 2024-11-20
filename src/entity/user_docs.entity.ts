@@ -41,6 +41,9 @@ export class UserDoc {
   @Column({ type: 'varchar', length: 100 })
   doc_datatype: string;
 
+  @Column({ type: 'boolean' })
+  doc_verified: boolean;
+
   @CreateDateColumn({ type: 'timestamptz', default: () => 'NOW()' })
   uploaded_at: Date;
 }
