@@ -176,7 +176,7 @@ export class UserService {
       first_name: body.first_name,
       last_name: body.last_name,
       email: body.email || '',
-      phone_number: body.mobile || '',
+      phone_number: body.phone_number || '',
       sso_provider: 'keycloak',
       sso_id: body.keycloak_id,
       created_at: new Date(),
