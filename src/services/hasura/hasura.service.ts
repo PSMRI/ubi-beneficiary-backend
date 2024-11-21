@@ -117,7 +117,8 @@ export class HasuraService {
 
       // Title search (case-insensitive)
       if (search) {
-        matches = job.title?.toLowerCase().includes(search.toLowerCase());
+        matches =
+          job.title?.toLowerCase()?.includes(search.toLowerCase()) ?? false;
       }
 
       if (!matches) return false;
