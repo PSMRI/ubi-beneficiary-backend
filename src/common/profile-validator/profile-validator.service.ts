@@ -98,15 +98,7 @@ export class UserProfileValidator {
     return vc;
   }
 
-  // matches given profile attribute with values in VCs
-  private async matchAttributeValue(
-    fileName: string,
-    profileAttribute: string,
-    vcs: any,
-    userProfile: any,
-  ): Promise<boolean> {
-    // Import required JSON files
-    // ------------------------------------------------------------------
+  private async getFiles() {
     const fieldValuesPath = path.join(
       __dirname,
       '../../../src/common/profile-validator/fieldValues.json',
@@ -115,6 +107,7 @@ export class UserProfileValidator {
       __dirname,
       '../../../src/common/profile-validator/nameFieldsPosition.json',
     );
+
     const fieldValues: Record<string, Record<string, string[]>> = JSON.parse(
       await readFile(fieldValuesPath, 'utf-8'),
     );
@@ -122,12 +115,11 @@ export class UserProfileValidator {
       string,
       Record<string, number>
     > = JSON.parse(await readFile(nameFieldsPositionPath, 'utf-8'));
-    // -------------------------------------------------------------------
 
-    if (userProfile[profileAttribute] === null) return false;
+    return { fieldValues, nameFieldsPosition };
+  }
 
-    // Import respective JSON file defining paths
-    // --------------------------------------------------------------------
+  private async getVCPathFile(fileName: any) {
     const jsonFilePath = path.join(
       __dirname,
       `../../../src/common/profile-validator/docToFieldMaps/${fileName}.json`,
@@ -137,6 +129,31 @@ export class UserProfileValidator {
       format: string;
       fields: Record<string, string>;
     }> = JSON.parse(await readFile(jsonFilePath, 'utf-8'));
+
+    return fileContent;
+  }
+
+  // matches given profile attribute with values in VCs
+  private async matchAttributeValue(
+    fileName: string,
+    profileAttribute: string,
+    vcs: any,
+    userProfile: any,
+  ): Promise<boolean> {
+    // Import required JSON files
+    // ------------------------------------------------------------------
+    const { fieldValues, nameFieldsPosition } = await this.getFiles();
+    // -------------------------------------------------------------------
+
+    if (userProfile[profileAttribute] === null) return false;
+
+    // Import respective JSON file defining paths
+    // --------------------------------------------------------------------
+    const fileContent: Array<{
+      vcType: string;
+      format: string;
+      fields: Record<string, string>;
+    }> = await this.getVCPathFile(fileName);
     // --------------------------------------------------------------------
 
     // For each VC type for a document, iterate
