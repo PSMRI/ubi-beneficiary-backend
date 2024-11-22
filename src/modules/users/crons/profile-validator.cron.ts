@@ -10,7 +10,7 @@ import { UserProfileValidator } from 'src/common/profile-validator/profile-valid
 
 @Injectable()
 export default class ProfileValidatorCron {
-  private userProfileValidator: UserProfileValidator;
+  private readonly userProfileValidator: UserProfileValidator;
   constructor(
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(UserDoc)

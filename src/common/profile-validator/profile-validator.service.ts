@@ -29,7 +29,16 @@ export class UserProfileValidator {
     return null;
   }
 
-  private getPathValue(vcType: string, obj: any, pathValue: any) {
+  private getPathValue(obj: any, profileAttribute: any, vc: any) {
+    let pathValue: string = obj.fields[profileAttribute];
+    if (['firstName', 'middleName', 'lastName'].includes(profileAttribute)) {
+      pathValue = this.getNewPathValue(vc.vcType, obj, pathValue);
+    }
+
+    return pathValue;
+  }
+
+  private getNewPathValue(vcType: string, obj: any, pathValue: any) {
     // switch (vcType) {
     //   case 'digilocker':
     //     return obj.fields['name'];
@@ -78,6 +87,17 @@ export class UserProfileValidator {
     return attributeValue;
   }
 
+  private getVC(obj: any, vcs: any, fileName) {
+    const vc: any = vcs.find(
+      (vc: any) =>
+        vc.vcType === obj.vcType &&
+        vc.docFormat === obj.format &&
+        vc.docType === fileName,
+    );
+
+    return vc;
+  }
+
   // matches given profile attribute with values in VCs
   private async matchAttributeValue(
     fileName: string,
@@ -122,15 +142,8 @@ export class UserProfileValidator {
     // For each VC type for a document, iterate
     for (const obj of fileContent) {
       // console.log(`PROF ATTR: ${profileAttribute} --- FILE: ${fileName}`);
-      const vcType: string = obj.vcType;
-      const format: string = obj.format;
 
-      const vc: any = vcs.find(
-        (vc) =>
-          vc.vcType === vcType &&
-          vc.docFormat === format &&
-          vc.docType === fileName,
-      );
+      const vc: any = this.getVC(obj, vcs, fileName);
 
       if (!vc) {
         // console.log('VC NOT FOUND...');
@@ -139,10 +152,7 @@ export class UserProfileValidator {
       }
 
       // console.log('VC FOUND...');
-      let pathValue: string = obj.fields[profileAttribute];
-      if (['firstName', 'middleName', 'lastName'].includes(profileAttribute)) {
-        pathValue = this.getPathValue(vc.vcType, obj, pathValue);
-      }
+      const pathValue: string = this.getPathValue(obj, profileAttribute, vc);
       // console.log(`PATH: ${pathValue}`);
 
       let attributeValue: any;
