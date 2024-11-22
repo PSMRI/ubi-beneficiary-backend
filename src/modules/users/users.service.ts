@@ -184,25 +184,43 @@ export class UserService {
     return await this.userRepository.save(user);
   }
   // User docs save
-  async createUserDoc(createUserDocDto: CreateUserDocDTO): Promise<UserDoc> {
-    if (
-      createUserDocDto.doc_data &&
-      typeof createUserDocDto.doc_data !== 'string'
-    ) {
-      const jsonDataString = JSON.stringify(createUserDocDto.doc_data);
+  async createUserDoc(createUserDocDto: CreateUserDocDTO) {
+    try {
+      if (
+        createUserDocDto.doc_data &&
+        typeof createUserDocDto.doc_data !== 'string'
+      ) {
+        const jsonDataString = JSON.stringify(createUserDocDto.doc_data);
 
-      // Encrypt the JSON string
-      createUserDocDto.doc_data =
-        this.encryptionService.encrypt(jsonDataString);
+        // Encrypt the JSON string
+        createUserDocDto.doc_data =
+          this.encryptionService.encrypt(jsonDataString);
+      }
+
+      // Ensure doc_data is always a string when calling create
+      const newUserDoc = this.userDocsRepository.create({
+        ...createUserDocDto,
+        doc_data: createUserDocDto.doc_data as string,
+      });
+
+      const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
+      return new SuccessResponse({
+        statusCode: HttpStatus.OK,
+        message: 'User docs added to DB successfully.',
+        data: savedUserDoc,
+      });
+    } catch (error) {
+      if ((error.code = '23505')) {
+        return new ErrorResponse({
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: error.detail,
+        });
+      }
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error,
+      });
     }
-
-    // Ensure doc_data is always a string when calling create
-    const newUserDoc = this.userDocsRepository.create({
-      ...createUserDocDto,
-      doc_data: createUserDocDto.doc_data as string,
-    });
-
-    return await this.userDocsRepository.save(newUserDoc);
   }
 
   async createUserDocs(
