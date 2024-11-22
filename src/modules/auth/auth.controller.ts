@@ -31,8 +31,8 @@ export class AuthController {
 
   @Post('/login')
   @UsePipes(ValidationPipe)
-  login(@Req() req: Request, @Res() response: Response) {
-    return this.authService.login(req, response);
+  public async login(@Req() req: Request, @Res() response: Response) {
+    return await this.authService.login(req, response);
   }
 
   @Post('/logout')
