@@ -107,11 +107,11 @@ export class AuthService {
       lastName: body?.last_name,
       username: body.phone_number,
       credentials: [
-        {
-          type: 'password',
-          value: body?.password,
-          temporary: false,
-        },
+        // {
+        //   type: 'password',
+        //   value: body?.password,
+        //   temporary: false,
+        // },
       ],
       attributes: {
         // Custom user attributes
