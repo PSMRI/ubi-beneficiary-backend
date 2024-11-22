@@ -24,7 +24,7 @@ export class DocumentVerificationService {
     private readonly encryptionService: EncryptionService,
   ) {}
 
-  @Cron(CronExpression.EVERY_5_SECONDS) // Runs every 5 minutes
+  // @Cron(CronExpression.EVERY_5_SECONDS) // Runs every 5 minutes
   async verifyDocuments() {
     // Fetch 10 unverified documents
     const documents = await this.userDocRepository.find({
