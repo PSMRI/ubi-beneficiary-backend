@@ -210,7 +210,7 @@ export class UserService {
         data: savedUserDoc,
       });
     } catch (error) {
-      if ((error.code = '23505')) {
+      if (error.code == '23505') {
         return new ErrorResponse({
           statusCode: HttpStatus.BAD_REQUEST,
           errorMessage: error.detail,
