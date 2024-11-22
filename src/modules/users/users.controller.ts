@@ -28,7 +28,7 @@ import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { Request } from 'express';
 
-@UseGuards(AuthGuard)
+// @UseGuards(AuthGuard)
 @ApiTags('users')
 @Controller('users')
 export class UserController {
@@ -72,7 +72,7 @@ export class UserController {
   }
 
   @Post('/user_docs')
-  @ApiBasicAuth('access-token')
+  // @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Save user docs' })
   @ApiResponse({ status: 200, description: 'User docs saved successfully' })
   @ApiResponse({ status: 400, description: 'Bad Request' })
