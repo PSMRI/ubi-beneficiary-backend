@@ -112,10 +112,12 @@ export class UserService {
 
   async findOne(user_id: any, decryptData?: boolean) {
     try {
+      const user = await this.findOneUser(user_id, decryptData);
       const userInfo = await this.findOneUserInfo(user_id, decryptData);
       const userDoc = await this.findUserDocs(user_id, decryptData);
 
       const final = {
+        ...user,
         ...userInfo,
         docs: userDoc || [],
       };
@@ -130,6 +132,14 @@ export class UserService {
         errorMessage: error.message,
       });
     }
+  }
+
+  async findOneUser(user_id: string, decryptData: boolean): Promise<User> {
+    let user = await this.userRepository.findOne({
+      where: { user_id },
+    });
+
+    return user;
   }
 
   async findOneUserInfo(
