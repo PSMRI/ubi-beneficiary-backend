@@ -1,0 +1,28 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "@protected": true,
+    "type": "@type",
+    "schema": "https://schema.org/",
+    "Marksheet": {
+      "@id": "https://tekdi.github.io/files/vc-schemas/ubi/Marksheet.json#Marksheet"
+    },
+    "studentId": "schema:Text",
+    "firstName": "schema:Text",
+    "middleName": "schema:Text",
+    "lastName": "schema:Text",
+    "schoolUniqueCode": "schema:Text",
+    "schoolName": "schema:Text",
+    "class": "schema:Text",
+    "examDate": "schema:Text",
+    "cgpa": "schema:Text",
+    "cgpaMax": "schema:Text",
+    "grade": "schema:Text",
+    "marksMax": "schema:Text",
+    "marksTotal": "schema:Text",
+    "percentage": "schema:Text",
+    "result": "schema:Text",
+    "academicYear": "schema:Text",
+    "issuerName": "schema:Text"
+  }
+}
