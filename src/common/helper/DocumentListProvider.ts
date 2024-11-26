@@ -8,8 +8,8 @@ export class DocumentListProvider {
     },
     { name: 'Domicile Certificate', documentSubType: 'domicileCertificate' },
     {
-      name: 'Enrolment Certificate (with hosteller/day scholar information)',
-      documentSubType: 'enrolmentCertificate',
+      name: 'Enrollment Certificate (with hosteller/day scholar information)',
+      documentSubType: 'enrollmentCertificate',
     },
     { name: 'Marksheet', documentSubType: 'marksheet' },
     { name: 'Birth Certificate', documentSubType: 'birthCertificate' },
