@@ -65,10 +65,10 @@ export class UserController {
     type: Boolean,
   })
   async findOne(
-    @Query('userId') userId: any,
+    @Req() req: Request,
     @Query('decryptData') decryptData?: boolean,
   ) {
-    return await this.userService.findOne(userId, decryptData);
+    return await this.userService.findOne(req, decryptData);
   }
 
   @Post('/user_docs')

@@ -110,11 +110,33 @@ export class UserService {
     }
   }
 
-  async findOne(user_id: any, decryptData?: boolean) {
+  async findOne(req: any, decryptData?: boolean) {
     try {
-      const user = await this.findOneUser(user_id, decryptData);
-      const userInfo = await this.findOneUserInfo(user_id, decryptData);
-      const userDoc = await this.findUserDocs(user_id, decryptData);
+      const sso_id = req?.user?.keycloak_id;
+      if (!sso_id) {
+        return new ErrorResponse({
+          statusCode: HttpStatus.UNAUTHORIZED,
+          errorMessage: 'Invalid or missing Keycloak ID',
+        });
+      }
+
+      const userDetails = await this.userRepository.findOne({
+        where: { sso_id },
+      });
+
+      if (!userDetails) {
+        return new ErrorResponse({
+          statusCode: HttpStatus.NOT_FOUND,
+          errorMessage: `User with ID '${sso_id}' not found`,
+        });
+      }
+
+      const user = await this.findOneUser(userDetails.user_id, decryptData);
+      const userInfo = await this.findOneUserInfo(
+        userDetails.user_id,
+        decryptData,
+      );
+      const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
 
       const final = {
         ...user,
