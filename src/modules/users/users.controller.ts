@@ -28,7 +28,6 @@ import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { Request } from 'express';
 
-@UseGuards(AuthGuard)
 @ApiTags('users')
 @Controller('users')
 export class UserController {
@@ -43,6 +42,7 @@ export class UserController {
     return this.userService.create(createUserDto);
   }
 
+  @UseGuards(AuthGuard)
   @Put('/update/:userId')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Update an existing user' })
@@ -54,6 +54,8 @@ export class UserController {
   ) {
     return this.userService.update(userId, updateUserDto);
   }
+
+  @UseGuards(AuthGuard)
   @Get('/get_one')
   @ApiBasicAuth('access-token')
   @ApiResponse({ status: 200, description: 'User data' })
@@ -71,6 +73,7 @@ export class UserController {
     return await this.userService.findOne(req, decryptData);
   }
 
+  @UseGuards(AuthGuard)
   @Post('/user_docs')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Save user docs' })
@@ -80,6 +83,7 @@ export class UserController {
     return this.userService.createUserDoc(createUserDocDto);
   }
 
+  @UseGuards(AuthGuard)
   @Post('/wallet/user_docs')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Save user docs' })
@@ -89,12 +93,14 @@ export class UserController {
     return this.userService.createUserDocsNew(createUserDocDto);
   }
 
+  @UseGuards(AuthGuard)
   @Post('/user_info')
   @ApiBasicAuth('access-token')
   async createUSerInfo(@Body() createUserInfoDto: CreateUserInfoDto) {
     return await this.userService.createUserInfo(createUserInfoDto);
   }
 
+  @UseGuards(AuthGuard)
   @Put('/user_info/:user_id')
   @ApiBasicAuth('access-token')
   async updateUserInfo(
@@ -104,12 +110,14 @@ export class UserController {
     return await this.userService.updateUserInfo(user_id, updateUserInfoDto);
   }
 
+  @UseGuards(AuthGuard)
   @Post('/consent')
   @ApiBasicAuth('access-token')
   async createUserConsent(@Body() createConsentDto: CreateConsentDto) {
     return this.userService.createUserConsent(createConsentDto);
   }
 
+  @UseGuards(AuthGuard)
   @Post('/user_application')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Create a new user application' })
@@ -124,6 +132,7 @@ export class UserController {
     return this.userService.createUserApplication(createUserApplicationDto);
   }
 
+  @UseGuards(AuthGuard)
   @Get('/user_application/:internal_application_id')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Get user application by ID' })
@@ -139,6 +148,7 @@ export class UserController {
     return this.userService.findOneUserApplication(internal_application_id);
   }
 
+  @UseGuards(AuthGuard)
   @Post('/user_applications_list')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Get all applications for a specific user' })

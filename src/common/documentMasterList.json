@@ -16,5 +16,6 @@
   {
     "name": "Sports Competition participation certificate",
     "documentSubType": "participationCertificate"
-  }
+  },
+  { "name": "Jan Aadhaar Card", "documentSubType": "janAadharCertificate" }
 ]

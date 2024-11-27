@@ -171,7 +171,13 @@ export class UserService {
     let userInfo = await this.userInfoRepository.findOne({
       where: { user_id },
     });
-    if (userInfo && decryptData) {
+    if (
+      userInfo &&
+      decryptData &&
+      userInfo?.aadhaar &&
+      typeof userInfo.aadhaar === 'string' &&
+      userInfo.aadhaar.includes(':')
+    ) {
       const decrypted = this.encryptionService.decrypt(userInfo?.aadhaar);
 
       userInfo.aadhaar = decrypted;
