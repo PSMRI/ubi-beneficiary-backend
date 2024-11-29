@@ -8,6 +8,7 @@ import * as path from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EncryptionService } from 'src/common/helper/encryptionService';
+import { parse, format, isValid } from 'date-fns';
 
 @Injectable()
 export default class ProfilePopulatorCron {
@@ -19,6 +20,26 @@ export default class ProfilePopulatorCron {
     private readonly userInfoRepository: Repository<UserInfo>,
     private readonly encryptionService: EncryptionService,
   ) {}
+
+  private formatDateToISO(inputDate: string): string | null {
+    const possibleFormats = [
+      'yyyy-MM-dd',
+      'dd-MM-yyyy',
+      'MM-dd-yyyy',
+      'yyyy/MM/dd',
+      'dd/MM/yyyy',
+      'MM/dd/yyyy',
+    ];
+
+    for (const dateFormat of possibleFormats) {
+      const parsedDate = parse(inputDate, dateFormat, new Date());
+      if (isValid(parsedDate)) {
+        return format(parsedDate, 'yyyy-MM-dd');
+      }
+    }
+
+    return null; // Return null if no format matches
+  }
 
   private romanToInt(roman: string): number {
     const romanMap: { [key: string]: number } = {
@@ -162,6 +183,13 @@ export default class ProfilePopulatorCron {
     return value;
   }
 
+  private handleDobValue(vc: any, pathValue: any) {
+    const value = this.getValue(vc, pathValue);
+    if (!value) return null;
+
+    return this.formatDateToISO(value);
+  }
+
   // For a field, get its value from given vc
   private async getFieldValueFromVC(vc: any, field: any) {
     const filePath = path.join(
@@ -184,6 +212,8 @@ export default class ProfilePopulatorCron {
 
     // If it is class, value will be roman number, so convert value accordingly
     if (field === 'class') return this.handleClassField(vc, vcPaths[field]);
+
+    if (field === 'dob') return this.handleDobValue(vc, vcPaths[field]);
 
     return this.getValue(vc, vcPaths[field]);
   }

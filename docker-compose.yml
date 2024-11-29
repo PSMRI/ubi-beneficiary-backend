@@ -9,4 +9,3 @@ services:
       - 9004:3000
     env_file:
       - /home/ubuntu/onest/scholarship-backend/.env
-
