@@ -69,14 +69,25 @@ export class HasuraService {
     if (!filters && !search) return jobs;
 
     // Utility to check if a value falls within a range
-    const isValueInRange = (value, range) => {
+    const isValueInRange = (value: string, range: string): boolean => {
+      if (!value || !range || !range.includes('-')) {
+        return false;
+      }
       const [rangeMin, rangeMax] = range.split('-').map(Number);
-
+      if (isNaN(rangeMin) || isNaN(rangeMax)) {
+        return false;
+      }
       if (value.includes('-')) {
         const [valueMin, valueMax] = value.split('-').map(Number);
+        if (isNaN(valueMin) || isNaN(valueMax)) {
+          return false;
+        }
         return valueMin <= rangeMax && valueMax >= rangeMin;
       } else {
         const valueNumber = parseFloat(value);
+        if (isNaN(valueNumber)) {
+          return false;
+        }
         return valueNumber >= rangeMin && valueNumber <= rangeMax;
       }
     };
