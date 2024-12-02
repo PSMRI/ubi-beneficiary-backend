@@ -24,16 +24,6 @@ export class HasuraService {
     console.log('searching jobs from ' + this.cache_db);
 
     const { filters, search } = requestBody;
-    // let result = 'where: {';
-    // Object.entries(getContentdto).forEach(([key, value]) => {
-    //   console.log(`${key}: ${value}`);
-
-    //   console.log('557', `${key}: ${value}`);
-    //   result += `${key}: {_eq: "${value}"}, `;
-    // });
-    // result += '}';
-    // console.log('result', result);
-    //console.log("order", order)
     const query = `query MyQuery {
            ${this.cache_db}(distinct_on: unique_id) {
             id
@@ -78,44 +68,64 @@ export class HasuraService {
   filterJobs(jobs, filters, search) {
     if (!filters && !search) return jobs;
 
-    // Utility function to check if a value falls within a range
-    const isIncomeInRange = (incomeValue, targetRange) => {
-      const [targetMin, targetMax] = targetRange.split('-').map(Number);
+    // Utility to check if a value falls within a range
+    const isValueInRange = (value, range) => {
+      const [rangeMin, rangeMax] = range.split('-').map(Number);
 
-      if (incomeValue.includes('-')) {
-        const [incomeMin, incomeMax] = incomeValue.split('-').map(Number);
-        return incomeMin <= targetMax && incomeMax >= targetMin;
+      if (value.includes('-')) {
+        const [valueMin, valueMax] = value.split('-').map(Number);
+        return valueMin <= rangeMax && valueMax >= rangeMin;
       } else {
-        const incomeNumber = parseFloat(incomeValue);
-        return incomeNumber >= targetMin && incomeNumber <= targetMax;
+        const valueNumber = parseFloat(value);
+        return valueNumber >= rangeMin && valueNumber <= rangeMax;
       }
     };
 
-    const matchFilter = (tags, filterConfig) => {
-      const { parentCode, filterValue, isRange } = filterConfig;
+    // Function to match filters dynamically
+    const matchFilters = (tags, filters) => {
+      return Object.keys(filters).every((filterKey) => {
+        const filterValue = filters[filterKey]?.trim().toLowerCase();
 
-      const parentTag = tags.find((tag) => tag.descriptor?.code === parentCode);
-
-      if (!parentTag || !Array.isArray(parentTag.list)) return false;
-
-      return parentTag.list.some((item) => {
-        const value = item.value?.trim(); // Ensure we account for empty values
-        // Allow match if value is empty or matches the filter
-        if (value === '') return true;
-
-        if (isRange) {
-          return isIncomeInRange(value, filterValue);
+        // Skip filtering for empty filter values
+        if (!filterValue) {
+          return true;
         }
 
-        const values = value.split(',').map((v) => v.trim().toLowerCase());
-        return values.includes(filterValue.toLowerCase());
+        // Find all tags matching the filter key
+        const matchingTags = tags.filter((t) =>
+          t.list.some((item) => item.descriptor.code === filterKey),
+        );
+
+        // If no matching tags exist for the filter key, include the scholarship
+        if (!matchingTags.length) {
+          return true;
+        }
+
+        // Check if any of the matching tags meet the filter condition
+        return matchingTags.some((tag) => {
+          return tag.list.some((item) => {
+            const tagValue = item.value?.trim().toLowerCase();
+            if (!tagValue) return false;
+
+            if (filterValue.includes('-')) {
+              // If the filter is a range, validate as range
+              return isValueInRange(tagValue, filterValue);
+            }
+
+            // Otherwise, validate for exact or partial match
+            const tagValues = tagValue
+              .split(',')
+              .map((v) => v.trim().toLowerCase());
+            return tagValues.includes(filterValue);
+          });
+        });
       });
     };
 
     return jobs.filter((job) => {
       let matches = true;
 
-      // Title search (case-insensitive)
+      // Perform search on title (case-insensitive)
       if (search) {
         matches =
           job.title?.toLowerCase()?.includes(search.toLowerCase()) ?? false;
@@ -123,51 +133,12 @@ export class HasuraService {
 
       if (!matches) return false;
 
-      if (!filters || Object.keys(filters).length === 0) return true;
-
       const tags = job.item?.tags;
-      if (!Array.isArray(tags)) {
-        return false;
-      }
+      if (!Array.isArray(tags)) return false;
 
-      const filterConfigs = [
-        {
-          filterKey: 'academicClass-eligibility',
-          parentCode: 'educational-eligibility',
-          filterCode: 'academicClass-eligibility',
-        },
-        {
-          filterKey: 'caste-eligibility',
-          parentCode: 'personal-eligibility',
-          filterCode: 'caste-eligibility',
-        },
-        {
-          filterKey: 'annualIncome-eligibility',
-          parentCode: 'economical-eligibility',
-          filterCode: 'annualIncome-eligibility',
-          isRange: true,
-        },
-        {
-          filterKey: 'state-eligibility',
-          parentCode: 'geographical-eligibility',
-          filterCode: 'state-eligibility',
-        },
-      ];
-
-      matches = filterConfigs.every(
-        ({ filterKey, parentCode, filterCode, isRange }) => {
-          return filters[filterKey]
-            ? matchFilter(tags, {
-                parentCode,
-                filterCode,
-                filterValue: filters[filterKey],
-                isRange,
-              })
-            : true;
-        },
-      );
-
-      return matches;
+      // Match all filters dynamically
+      const filterResult = matchFilters(tags, filters);
+      return filterResult;
     });
   }
 
