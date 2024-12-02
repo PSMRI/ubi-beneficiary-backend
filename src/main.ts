@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ResponseInterceptor } from './common/Interceptors/response.interceptor';
+import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -20,7 +21,10 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
-      transform: true, // Automatically transforms payloads to be objects typed according to their DTO classes
+
+      // Automatically transforms payloads to be objects typed according to their DTO classes
+      transform: true,
+
       transformOptions: {
         enableImplicitConversion: true,
       },
@@ -60,7 +64,17 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('/docs', app, document); // Route for Swagger UI
+  // Route for Swagger UI
+  SwaggerModule.setup('/docs', app, document);
+
+  // Increase the request body size limit
+  app.use(bodyParser.json({ limit: '50mb' }));
+  app.use(
+    bodyParser.urlencoded({
+      limit: '50mb',
+      extended: true,
+    }),
+  );
 
   await app.listen(process.env.PORT);
 }

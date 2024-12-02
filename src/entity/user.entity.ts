@@ -40,6 +40,15 @@ export class User {
   @Column({ length: 255, nullable: true })
   image: string;
 
+  @Column({ type: 'boolean' })
+  fieldsVerified: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  fieldsVerifiedAt: Date;
+
+  @Column({ type: 'json' })
+  fieldsVerificationData: any;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

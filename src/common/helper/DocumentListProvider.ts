@@ -6,7 +6,7 @@ export class DocumentListProvider {
       name: 'Disability Certificate',
       documentSubType: 'disabilityCertificate',
     },
-    { name: 'Domicile Certificate', documentSubType: 'domicileCertificate' },
+    // { name: 'Domicile Certificate', documentSubType: 'domicileCertificate' },
     {
       name: 'Enrollment Certificate (with hosteller/day scholar information)',
       documentSubType: 'enrollmentCertificate',
@@ -18,6 +18,7 @@ export class DocumentListProvider {
       name: 'Sports Competition participation certificate',
       documentSubType: 'participationCertificate',
     },
+    { name: 'Jan Aadhaar Card', documentSubType: 'janAadharCertificate' },
   ];
 
   // Method to retrieve the list

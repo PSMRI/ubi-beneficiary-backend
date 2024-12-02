@@ -74,6 +74,21 @@ export class UserController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('/get_my_consents')
+  @ApiBasicAuth('access-token')
+  @ApiResponse({ status: 200, description: 'Consent data' })
+  @ApiResponse({ status: 404, description: 'Consent not found' })
+  @ApiQuery({
+    name: 'decryptData',
+    required: false,
+    description: 'Whether to decrypt user data (optional)',
+    type: Boolean,
+  })
+  async findConsentByUser(@Req() req: Request) {
+    return await this.userService.findConsentByUser(req);
+  }
+
+  @UseGuards(AuthGuard)
   @Post('/user_docs')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Save user docs' })
@@ -89,8 +104,11 @@ export class UserController {
   @ApiOperation({ summary: 'Save user docs' })
   @ApiResponse({ status: 200, description: 'User docs saved successfully' })
   @ApiResponse({ status: 400, description: 'Bad Request' })
-  async createUserDocs(@Body() createUserDocDto: CreateUserDocDTO[]) {
-    return this.userService.createUserDocsNew(createUserDocDto);
+  async createUserDocs(
+    @Req() req: Request,
+    @Body() createUserDocDto: CreateUserDocDTO[],
+  ) {
+    return this.userService.createUserDocsNew(req, createUserDocDto);
   }
 
   @UseGuards(AuthGuard)

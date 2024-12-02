@@ -1,0 +1,14 @@
+{
+  "aadhaar": ["aadhaar"],
+  "firstName": ["aadhaar"],
+  "lastName": ["aadhaar"],
+  "middleName": ["aadhaar"],
+  "fatherName": ["aadhaar"],
+  "gender": ["aadhaar"],
+  "dob": ["aadhaar"],
+  "caste": ["casteCertificate"],
+  "annualIncome": ["incomeCertificate"],
+  "class": ["enrollmentCertificate"],
+  "studentType": ["enrollmentCertificate"],
+  "previousYearMarks": ["marksheet"]
+}

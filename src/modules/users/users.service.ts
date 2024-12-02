@@ -1,4 +1,9 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import { User } from '../../entity/user.entity';
@@ -156,6 +161,45 @@ export class UserService {
     }
   }
 
+  async findConsentByUser(req: any) {
+    try {
+      const sso_id = req?.user?.keycloak_id;
+      if (!sso_id) {
+        return new ErrorResponse({
+          statusCode: HttpStatus.UNAUTHORIZED,
+          errorMessage: 'Invalid or missing Keycloak ID',
+        });
+      }
+
+      const userDetails = await this.userRepository.findOne({
+        where: { sso_id },
+      });
+
+      if (!userDetails) {
+        return new ErrorResponse({
+          statusCode: HttpStatus.NOT_FOUND,
+          errorMessage: `User with ID '${sso_id}' not found`,
+        });
+      }
+
+      const consent = await this.findUserConsent(userDetails.user_id);
+
+      const final = {
+        ...consent,
+      };
+      return new SuccessResponse({
+        statusCode: HttpStatus.OK,
+        message: 'User consent retrieved successfully.',
+        data: final,
+      });
+    } catch (error) {
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error.message,
+      });
+    }
+  }
+
   async findOneUser(user_id: string, decryptData: boolean): Promise<User> {
     let user = await this.userRepository.findOne({
       where: { user_id },
@@ -201,6 +245,26 @@ export class UserService {
     }
 
     return userDocs;
+  }
+
+  async findUserConsent(user_id: string): Promise<any> {
+    const consents = await this.consentRepository.find({
+      where: { user_id },
+    });
+
+    // Format the response
+    return {
+      statusCode: 200,
+      message: 'User consent retrieved successfully.',
+      data: consents.map((consent) => ({
+        id: consent.id,
+        user_id: consent.user_id,
+        purpose: consent.purpose,
+        purpose_text: consent.purpose_text,
+        accepted: consent.accepted,
+        consent_date: consent.consent_date,
+      })),
+    };
   }
 
   /*async remove(user_id: string): Promise<void> {
@@ -363,8 +427,21 @@ export class UserService {
   }
 
   async createUserDocsNew(
+    req,
     createUserDocsDto: CreateUserDocDTO[],
   ): Promise<UserDoc[]> {
+    const sso_id = req?.user?.keycloak_id;
+    if (!sso_id) {
+      throw new UnauthorizedException('Invalid or missing Keycloak ID');
+    }
+
+    const userDetails = await this.userRepository.findOne({
+      where: { sso_id },
+    });
+
+    if (!userDetails) {
+      throw new NotFoundException(`User with ID '${sso_id}' not found`);
+    }
     const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
 
     const savedDocs: UserDoc[] = [];
@@ -384,7 +461,7 @@ export class UserService {
       // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
       const existingDoc = await this.userDocsRepository.findOne({
         where: {
-          user_id: createUserDocDto.user_id,
+          user_id: userDetails.user_id,
           doc_type: createUserDocDto.doc_type,
           doc_subtype: createUserDocDto.doc_subtype,
         },
@@ -405,6 +482,9 @@ export class UserService {
           // Encrypt the JSON string
           createUserDocDto.doc_data =
             this.encryptionService.encrypt(jsonDataString);
+        }
+        if (!createUserDocDto?.user_id) {
+          createUserDocDto.user_id = userDetails?.user_id;
         }
 
         // Create the new document entity for the database
@@ -444,7 +524,6 @@ export class UserService {
     if (existingDocs.length > 0) {
       return existingDocs;
     }
-
     return savedDocs;
   }
   // User info
@@ -655,7 +734,6 @@ export class UserService {
 
     // Step 3: Get Keycloak admin token
     const token = await this.keycloakService.getAdminKeycloakToken();
-    console.log('token-->');
 
     try {
       // Step 4: Register user in Keycloak

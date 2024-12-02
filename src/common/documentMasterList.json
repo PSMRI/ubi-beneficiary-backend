@@ -5,7 +5,6 @@
     "name": "Disability Certificate",
     "documentSubType": "disabilityCertificate"
   },
-  { "name": "Domicile Certificate", "documentSubType": "domicileCertificate" },
   {
     "name": "Enrollment Certificate (with hosteller/day scholar information)",
     "documentSubType": "enrollmentCertificate"

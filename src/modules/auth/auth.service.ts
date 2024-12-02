@@ -49,6 +49,7 @@ export class AuthService {
 
   public async register(body) {
     try {
+      let wallet_api_url = process.env.WALLET_API_URL;
       // Step 1: Check if mobile number exists in the database
       await this.checkMobileExistence(body?.phoneNumber);
 
@@ -72,6 +73,19 @@ export class AuthService {
         username: dataToCreateUser.username,
       };
       const user = await this.userService.createKeycloakData(userData);
+
+      if (user) {
+        //create user payload
+        let wallet_user_payload = {
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          sso_provider: user?.sso_provider,
+          sso_id: user?.sso_id,
+          phoneNumber: user?.phoneNumber,
+        };
+
+        await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
+      }
 
       // Step 6: Return success response
       return new SuccessResponse({

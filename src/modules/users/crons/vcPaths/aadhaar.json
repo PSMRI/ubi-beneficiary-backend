@@ -1,0 +1,6 @@
+{
+  "aadhaar": "KycRes.UidData.@uid",
+  "name": "KycRes.UidData.Poi.@name",
+  "dob": "KycRes.UidData.Poi.@dob",
+  "gender": "KycRes.UidData.Poi.@gender"
+}
