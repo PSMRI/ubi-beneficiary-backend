@@ -35,12 +35,9 @@ async function bootstrap() {
       exceptionFactory: (errors) => {
         // Customize the error response format
         const messages = errors.map(
-          (error) =>
-            `${error.property} - ${Object.values(error.constraints).join(
-              ', ',
-            )}`,
+          (error) => `${Object.values(error.constraints).join(', ')}`,
         );
-        return new BadRequestException(messages);
+        return new BadRequestException({ statusCode: 400, error: messages });
       },
     }),
   );

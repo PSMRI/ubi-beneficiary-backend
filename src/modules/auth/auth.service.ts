@@ -98,6 +98,57 @@ export class AuthService {
     }
   }
 
+  public async registerWithUsernamePassword(body) {
+    try {
+      let wallet_api_url = process.env.WALLET_API_URL;
+
+      // Step 2: Prepare user data for Keycloak registration
+      const dataToCreateUser = this.prepareUserDataV2(body);
+      let { password, ...rest } = dataToCreateUser;
+      let userName = dataToCreateUser.username;
+
+      // Step 3: Get Keycloak admin token
+      const token = await this.keycloakService.getAdminKeycloakToken();
+      this.validateToken(token);
+
+      // Step 4: Register user in Keycloak
+      const keycloakId = await this.registerUserInKeycloak(
+        rest,
+        token.access_token,
+      );
+
+      // Step 5: Register user in PostgreSQL
+      const userData = {
+        ...body,
+        keycloak_id: keycloakId,
+        username: dataToCreateUser.username,
+      };
+      const user = await this.userService.createKeycloakData(userData);
+
+      if (user) {
+        //create user payload
+        let wallet_user_payload = {
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          sso_provider: user?.sso_provider,
+          sso_id: user?.sso_id,
+          phoneNumber: user?.phoneNumber,
+        };
+
+        await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
+      }
+
+      // Step 6: Return success response
+      return new SuccessResponse({
+        statusCode: HttpStatus.OK,
+        message: 'User created successfully',
+        data: { user, userName, password },
+      });
+    } catch (error) {
+      return this.handleRegistrationError(error, body?.keycloak_id);
+    }
+  }
+
   private async checkMobileExistence(phoneNumber: string) {
     if (!phoneNumber || !/^\d{10}$/.test(phoneNumber)) {
       throw new ErrorResponse({
@@ -132,6 +183,40 @@ export class AuthService {
         phoneNumber: '+91' + body?.phoneNumber,
         firstName: body?.firstName,
         lastName: body?.lastName,
+      },
+    };
+  }
+
+  private prepareUserDataV2(body) {
+    const trimmedFirstName = body?.firstName?.trim();
+    const trimmedLastName = body?.lastName?.trim();
+    const trimmedPhoneNumber = body?.phoneNumber?.trim();
+    const password =
+      body?.password?.trim() || process.env.SIGNUP_DEFAULT_PASSWORD;
+
+    return {
+      enabled: 'true',
+      firstName: trimmedFirstName,
+      lastName: trimmedLastName,
+      username:
+        trimmedFirstName +
+        '_' +
+        trimmedLastName?.charAt(0) +
+        '_' +
+        trimmedPhoneNumber?.slice(-4),
+      credentials: [
+        {
+          type: 'password',
+          value: password,
+          temporary: false,
+        },
+      ],
+      password, // Return the password directly
+      attributes: {
+        // Custom user attributes
+        phoneNumber: '+91' + trimmedPhoneNumber,
+        firstName: trimmedFirstName,
+        lastName: trimmedLastName,
       },
     };
   }

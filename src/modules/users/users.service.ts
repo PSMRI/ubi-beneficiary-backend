@@ -3,6 +3,8 @@ import {
   Injectable,
   NotFoundException,
   UnauthorizedException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
@@ -24,6 +26,8 @@ import { ErrorResponse } from 'src/common/responses/error-response';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
+import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
+
 @Injectable()
 export class UserService {
   constructor(
@@ -39,6 +43,7 @@ export class UserService {
     @InjectRepository(UserApplication)
     private readonly userApplicationRepository: Repository<UserApplication>,
     private readonly keycloakService: KeycloakService,
+    private readonly profilePopulator: ProfilePopulator,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -519,6 +524,31 @@ export class UserService {
           console.error('Error writing to file:', err);
         }
       }
+    }
+
+    // Update profile based on documents
+    try {
+      // Combine old & new docs
+      const docsArray = [...existingDocs, ...savedDocs];
+
+      // Build VCs
+      const VCs = await this.profilePopulator.buildVCs(docsArray);
+
+      // // build profile data
+      const { userProfile, validationData } =
+        await this.profilePopulator.buildProfile(VCs);
+
+      // Update database entries
+      await this.profilePopulator.updateDatabase(
+        userProfile,
+        validationData,
+        userDetails,
+      );
+    } catch (error) {
+      Logger.error('Error in createUserDocsNew: ', error);
+      throw new InternalServerErrorException(
+        'An unexpected error occurred while processing your request.',
+      );
     }
 
     if (existingDocs.length > 0) {

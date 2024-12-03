@@ -10,6 +10,7 @@ import { Consent } from '@entities/consent.entity';
 import { UserApplication } from '@entities/user_applications.entity';
 import { KeycloakService } from '@services/keycloak/keycloak.service';
 import ProfilePopulatorCron from './crons/profile-populator.cron';
+import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import ProfilePopulatorCron from './crons/profile-populator.cron';
     EncryptionService,
     KeycloakService,
     ProfilePopulatorCron,
+    ProfilePopulator,
   ],
 })
 export class UserModule {}

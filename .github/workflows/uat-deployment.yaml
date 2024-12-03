@@ -1,4 +1,4 @@
-name: UAT Deployment to Tekdi-PIRAMAL-OU
+name: Deploy to UAT
 on:
   workflow_dispatch:
 jobs:

@@ -1,4 +1,4 @@
-name: Deploy to Tekdi-PIRAMAL-OU
+name: Deploy to DEV
 on:
   push:
     branches:

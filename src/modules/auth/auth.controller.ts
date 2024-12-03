@@ -29,6 +29,16 @@ export class AuthController {
     return await this.authService.register(body);
   }
 
+  @Post('/register_with_password')
+  @UsePipes(new ValidationPipe())
+  @ApiBody({ type: RegisterDTO })
+  @ApiResponse({ status: 200, description: 'User registered successfully.' })
+  @ApiResponse({ status: 409, description: 'Mobile number already exists.' })
+  @ApiResponse({ status: 400, description: 'Bad Request.' })
+  public async registerWithUsernamePassword(@Body() body: RegisterDTO) {
+    return await this.authService.registerWithUsernamePassword(body);
+  }
+
   @Post('/login')
   @UsePipes(ValidationPipe)
   public async login(@Req() req: Request, @Res() response: Response) {

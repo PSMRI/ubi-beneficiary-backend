@@ -6,6 +6,7 @@
   "fatherName": ["aadhaar"],
   "gender": ["aadhaar"],
   "dob": ["aadhaar"],
+  "state": ["janAadharCertificate"],
   "caste": ["casteCertificate"],
   "annualIncome": ["incomeCertificate"],
   "class": ["enrollmentCertificate"],
