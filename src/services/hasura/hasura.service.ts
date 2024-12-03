@@ -68,27 +68,48 @@ export class HasuraService {
   filterJobs(jobs, filters, search) {
     if (!filters && !search) return jobs;
 
-    // Utility to check if a value falls within a range
-    const isValueInRange = (value: string, range: string): boolean => {
-      if (!value || !range || !range.includes('-')) {
-        return false;
-      }
-      const [rangeMin, rangeMax] = range.split('-').map(Number);
-      if (isNaN(rangeMin) || isNaN(rangeMax)) {
-        return false;
-      }
-      if (value.includes('-')) {
-        const [valueMin, valueMax] = value.split('-').map(Number);
-        if (isNaN(valueMin) || isNaN(valueMax)) {
-          return false;
+    // Utility to parse and evaluate a tag's value against a filter
+    const evaluateCondition = (tagValueJson, filterKey, filterValue) => {
+      try {
+        const tagValue = JSON.parse(tagValueJson);
+        const condition = tagValue.condition;
+        const conditionValues = tagValue.conditionValues;
+
+        if (filterKey === 'annualIncome' && filterValue.includes('-')) {
+          // Special case: Handle range for annualIncome
+          const [filterMin, filterMax] = filterValue.split('-').map(Number);
+          if (isNaN(filterMin) || isNaN(filterMax)) {
+            return false; // Invalid range
+          }
+          const incomeValue = parseFloat(conditionValues);
+          return incomeValue >= filterMin && incomeValue <= filterMax;
         }
-        return valueMin <= rangeMax && valueMax >= rangeMin;
-      } else {
-        const valueNumber = parseFloat(value);
-        if (isNaN(valueNumber)) {
-          return false;
+
+        switch (condition) {
+          case 'in':
+            // Check if the filter value exists in the conditionValues array
+            return (
+              Array.isArray(conditionValues) &&
+              conditionValues.includes(filterValue)
+            );
+
+          case 'equals':
+            // Check if the filter value matches the single condition value
+            return conditionValues === filterValue;
+
+          case 'less than equals':
+            // Check if the filter value is less than or equal to the condition value (numeric comparison)
+            return parseFloat(filterValue) <= parseFloat(conditionValues);
+
+          case 'greater than equals':
+            // Check if the filter value is greater than or equal to the condition value (numeric comparison)
+            return parseFloat(filterValue) >= parseFloat(conditionValues);
+
+          default:
+            return false;
         }
-        return valueNumber >= rangeMin && valueNumber <= rangeMax;
+      } catch (error) {
+        return false;
       }
     };
 
@@ -107,29 +128,20 @@ export class HasuraService {
           t.list.some((item) => item.descriptor.code === filterKey),
         );
 
-        // If no matching tags exist for the filter key, include the scholarship
+        // If no matching tags exist for the filter key, include the job
         if (!matchingTags.length) {
           return true;
         }
 
         // Check if any of the matching tags meet the filter condition
-        return matchingTags.some((tag) => {
-          return tag.list.some((item) => {
-            const tagValue = item.value?.trim().toLowerCase();
-            if (!tagValue) return false;
-
-            if (filterValue.includes('-')) {
-              // If the filter is a range, validate as range
-              return isValueInRange(tagValue, filterValue);
-            }
-
-            // Otherwise, validate for exact or partial match
-            const tagValues = tagValue
-              .split(',')
-              .map((v) => v.trim().toLowerCase());
-            return tagValues.includes(filterValue);
-          });
-        });
+        return matchingTags.some((tag) =>
+          tag.list.some((item) => {
+            const tagValue = item.value;
+            return (
+              tagValue && evaluateCondition(tagValue, filterKey, filterValue)
+            );
+          }),
+        );
       });
     };
 
