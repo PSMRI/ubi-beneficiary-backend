@@ -81,8 +81,11 @@ export class HasuraService {
           if (isNaN(filterMin) || isNaN(filterMax)) {
             return false; // Invalid range
           }
-          const incomeValue = parseFloat(conditionValues);
-          return incomeValue >= filterMin && incomeValue <= filterMax;
+
+          const maxConditionValue = parseFloat(conditionValues);
+
+          // Check if the filter range is within the condition's maximum range
+          return filterMax <= maxConditionValue;
         }
 
         switch (condition) {
@@ -160,8 +163,7 @@ export class HasuraService {
       if (!Array.isArray(tags)) return false;
 
       // Match all filters dynamically
-      const filterResult = matchFilters(tags, filters);
-      return filterResult;
+      return matchFilters(tags, filters);
     });
   }
 
