@@ -11,7 +11,6 @@ export class SmsService {
     dltTemplateId: string,
     message: string,
   ): Promise<void> {
-    console.log('inside send SMS');
     try {
       const customerId = this.configService.get<string>('OTP_CUSTOMER_ID');
       const entityId = this.configService.get<string>('SMS_ENTITY_ID');
@@ -46,7 +45,6 @@ export class SmsService {
         data: smsRequestData,
       };
 
-      console.log(config, 'config===================================');
       await axios.request(config);
     } catch (error) {
       throw {
