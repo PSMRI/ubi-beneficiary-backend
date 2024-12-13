@@ -706,7 +706,7 @@ export class UserService {
         },
         data: smsRequestData,
       };
-      const smsResponse = await axios.request(config);
+      await axios.request(config);
     } catch (error) {
       return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
