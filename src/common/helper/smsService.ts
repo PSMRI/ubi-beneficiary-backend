@@ -1,16 +1,13 @@
 import { Injectable, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { ErrorResponse } from '../responses/error-response';
 
 @Injectable()
 export class SmsService {
   constructor(private readonly configService: ConfigService) {}
 
-  async sendSms(
-    number: string,
-    dltTemplateId: string,
-    message: string,
-  ): Promise<void> {
+  async sendSms(number: string, dltTemplateId: string, message: string) {
     try {
       const customerId = this.configService.get<string>('OTP_CUSTOMER_ID');
       const entityId = this.configService.get<string>('SMS_ENTITY_ID');
@@ -47,10 +44,10 @@ export class SmsService {
 
       await axios.request(config);
     } catch (error) {
-      throw {
+      return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         errorMessage: error.message,
-      };
+      });
     }
   }
 }

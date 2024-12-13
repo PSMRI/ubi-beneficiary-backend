@@ -27,7 +27,6 @@ import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
 import { SmsService } from 'src/common/helper/smsService';
 
 @Injectable()
