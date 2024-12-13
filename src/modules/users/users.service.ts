@@ -27,6 +27,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 
 @Injectable()
 export class UserService {
@@ -44,6 +46,7 @@ export class UserService {
     private readonly userApplicationRepository: Repository<UserApplication>,
     private readonly keycloakService: KeycloakService,
     private readonly profilePopulator: ProfilePopulator,
+    private readonly configService: ConfigService,
   ) {}
 
   async create(createUserDto: CreateUserDto) {
@@ -632,6 +635,18 @@ export class UserService {
       const response = await this.userApplicationRepository.save(
         userApplication,
       );
+      if (response) {
+        const user = await this.userRepository.findOne({
+          where: { user_id: response.user_id },
+        });
+
+        const number = user.phoneNumber;
+
+        await this.sendSmsOnApplicationSubmission(
+          number,
+          response.external_application_id,
+        );
+      }
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User application created successfully.',
@@ -641,6 +656,49 @@ export class UserService {
       return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         errorMessage: 'Failed to create user application',
+      });
+    }
+  }
+
+  public async sendSmsOnApplicationSubmission(number: any, applicationId) {
+    try {
+      const customerId = this.configService.get<string>('OTP_CUSTOMER_ID');
+      const dltTemplateId = this.configService.get<string>('SMS_TEMPLATE_ID');
+      const entityId = this.configService.get<string>('SMS_ENTITY_ID');
+      const sourceAddress = this.configService.get<string>('OTP_SOURCE_ATTR');
+      const messageType = this.configService.get<string>('OTP_MESSAGE_TYPE');
+      const smsRequestData = JSON.stringify({
+        customerId: customerId,
+        destinationAddress: `${number}`,
+        message: `Dear Citizen, Your application ID: ${applicationId} has been submitted successfully. You will receive further updates soon. Regards PSMRIAM.`,
+        sourceAddress: sourceAddress,
+        messageType: messageType,
+        dltTemplateId: dltTemplateId,
+        entityId: entityId,
+        otp: false,
+        metaData: {
+          var: 'ABC-1234',
+        },
+      });
+
+      const otpAuthKey = this.configService.get<string>('OTP_AUTH_KEY');
+      const apiURL = this.configService.get<string>('SMS_API_URL');
+      const config = {
+        method: 'post',
+        maxBodyLength: Infinity,
+        url: apiURL,
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Basic ${otpAuthKey}`,
+        },
+        data: smsRequestData,
+      };
+      const smsResponse = await axios.request(config);
+    } catch (error) {
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error.message,
       });
     }
   }
