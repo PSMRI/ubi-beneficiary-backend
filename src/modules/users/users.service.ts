@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { ILike, Repository, QueryRunner } from 'typeorm';
 import { User } from '../../entity/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
@@ -842,6 +842,53 @@ export class UserService {
     }
   }
 
+  async resetInUsers(
+    field: string,
+    existingDoc: UserDoc,
+    queryRunner: QueryRunner,
+  ) {
+    await queryRunner.manager
+      .getRepository(User)
+      .createQueryBuilder()
+      .update(User)
+      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
+      .where('user_id = :id', { id: existingDoc.user_id })
+      .execute();
+  }
+
+  async resetInUserInfo(
+    field: string,
+    existingDoc: UserDoc,
+    queryRunner: QueryRunner,
+  ) {
+    await queryRunner.manager
+      .getRepository(UserInfo)
+      .createQueryBuilder()
+      .update(UserInfo)
+      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
+      .where('user_id = :id', { id: existingDoc.user_id })
+      .execute();
+  }
+
+  async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
+    const fieldsArray = {
+      aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
+      casteCertificate: ['caste'],
+      enrollmentCertificate: ['class', 'studentType'],
+      incomeCertificate: ['annualIncome'],
+      janAadharCertificate: ['state'],
+      marksheet: ['previousYearMarks'],
+    };
+
+    const fields = fieldsArray[existingDoc.doc_subtype] || [];
+
+    for (const field of fields) {
+      if (field === 'middleName')
+        await this.resetInUsers(field, existingDoc, queryRunner);
+      else await this.resetInUserInfo(field, existingDoc, queryRunner);
+    }
+  }
+
   async delete(req: any, doc_id: string) {
     const IsValidUser = req?.user;
     if (!IsValidUser) {
@@ -892,6 +939,8 @@ export class UserService {
     try {
       await queryRunner.startTransaction();
       await queryRunner.manager.remove(existingDoc);
+      // Reset the field along with deleting the document
+      await this.resetField(existingDoc, queryRunner);
       await queryRunner.commitTransaction();
     } catch (error) {
       Logger.error('Error while deleting the document: ', error);
