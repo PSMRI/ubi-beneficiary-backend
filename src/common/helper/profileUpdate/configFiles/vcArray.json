@@ -1,8 +1,8 @@
 {
   "aadhaar": ["aadhaar"],
-  "firstName": ["aadhaar"],
-  "lastName": ["aadhaar"],
-  "middleName": ["aadhaar"],
+  "firstName": ["aadhaar", "marksheet"],
+  "lastName": ["aadhaar", "marksheet"],
+  "middleName": ["aadhaar", "marksheet"],
   "fatherName": ["aadhaar"],
   "gender": ["aadhaar"],
   "dob": ["aadhaar"],

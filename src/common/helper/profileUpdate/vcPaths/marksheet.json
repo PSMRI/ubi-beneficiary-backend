@@ -1,3 +1,6 @@
 {
-  "previousYearMarks": "credentialSubject.percentage"
+  "previousYearMarks": "credentialSubject.percentage",
+  "firstName": "credentialSubject.firstName",
+  "lastName": "credentialSubject.lastName",
+  "middleName": "credentialSubject.middleName"
 }
