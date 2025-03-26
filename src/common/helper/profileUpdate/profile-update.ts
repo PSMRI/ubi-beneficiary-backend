@@ -20,7 +20,7 @@ export default class ProfilePopulator {
     private readonly userInfoRepository: Repository<UserInfo>,
     private readonly encryptionService: EncryptionService,
     private readonly keycloakService: KeycloakService,
-  ) {}
+  ) { }
 
   private formatDateToISO(inputDate: string): string | null {
     const possibleFormats = [
@@ -115,6 +115,8 @@ export default class ProfilePopulator {
 
   // Handle name fields which are not directcly present in aadhaar vc
   private handleNameFields(vc: any, vcPaths: any, field: any) {
+    if (vc.docType !== 'aadhaar') return this.getValue(vc, vcPaths[field]);
+
     const fullname = this.getValue(vc, vcPaths['name']);
     if (!fullname) return null;
     const nameParts = fullname.split(' ');
