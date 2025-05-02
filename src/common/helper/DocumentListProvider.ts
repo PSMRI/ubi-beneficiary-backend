@@ -3,7 +3,7 @@ export class DocumentListProvider {
     { name: 'Income Certificate', documentSubType: 'incomeCertificate' },
     { name: 'Caste Certificate', documentSubType: 'casteCertificate' },
     {
-      name: 'Disability Certificate',
+      name: 'UDID certificate',
       documentSubType: 'disabilityCertificate',
     },
     // { name: 'Domicile Certificate', documentSubType: 'domicileCertificate' },
@@ -19,9 +19,12 @@ export class DocumentListProvider {
       documentSubType: 'participationCertificate',
     },
     { name: 'Jan Aadhaar Card', documentSubType: 'janAadharCertificate' },
+    { name: 'Self Declaration Form', documentSubType: 'selfDeclarationForm' },
+    { name: 'Fee Receipt', documentSubType: 'feeReceipt' },
+    { name: 'Bank Account Details', documentSubType: 'bankAccountDetails' },
   ];
 
-  // Method to retrieve the list
+  // Method to retrieve the list Bank Account Details
   public static getDocumentList() {
     return this.documentList;
   }

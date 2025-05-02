@@ -2,7 +2,7 @@
   { "name": "Income Certificate", "documentSubType": "incomeCertificate" },
   { "name": "Caste Certificate", "documentSubType": "casteCertificate" },
   {
-    "name": "Disability Certificate",
+    "name": "UDID certificate",
     "documentSubType": "disabilityCertificate"
   },
   {
@@ -16,5 +16,8 @@
     "name": "Sports Competition participation certificate",
     "documentSubType": "participationCertificate"
   },
-  { "name": "Jan Aadhaar Card", "documentSubType": "janAadharCertificate" }
+  { "name": "Jan Aadhaar Card", "documentSubType": "janAadharCertificate" },
+  { "name": "Self Declaration Form", "documentSubType": "selfDeclarationForm" },
+  { "name": "Fee Receipt", "documentSubType": "feeReceipt "},
+  { "name": "Bank Account Details", "documentSubType": "bankAccountDetails" }
 ]
