@@ -3,7 +3,7 @@ export class DocumentListProvider {
     { name: 'Income Certificate', documentSubType: 'incomeCertificate' },
     { name: 'Caste Certificate', documentSubType: 'casteCertificate' },
     {
-      name: 'UDID certificate',
+      name: 'UDID Certificate',
       documentSubType: 'disabilityCertificate',
     },
     // { name: 'Domicile Certificate', documentSubType: 'domicileCertificate' },
