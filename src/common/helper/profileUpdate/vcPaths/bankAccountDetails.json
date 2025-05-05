@@ -1,9 +1,8 @@
 {
- "bankAccountHolderName": "credentialSubject.accountholdername",
-  "bankAccountNumber":"credentialSubject.accountnumber",
-  "bankIfscCode": "credentialSubject.ifsccode",
-  "bankName": "credentialSubject.bankname",
-  "bankAddress":"credentialSubject.bankaddress",
-  "branchCode": "credentialSubject.branchcode"
-  }
-  
+    "bankAccountHolderName": "credentialSubject.accountholdername",
+    "bankAccountNumber": "credentialSubject.accountnumber",
+    "bankIfscCode": "credentialSubject.ifsccode",
+    "bankName": "credentialSubject.bankname",
+    "bankAddress": "credentialSubject.bankaddress",
+    "branchCode": "credentialSubject.branchcode"
+}
