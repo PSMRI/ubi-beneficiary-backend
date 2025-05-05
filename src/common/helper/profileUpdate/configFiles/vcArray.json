@@ -1,15 +1,22 @@
 {
-  "aadhaar": ["aadhaar"],
+  "aadhaar": ["disabilityCertificate"],
   "firstName": ["aadhaar"],
   "lastName": ["aadhaar"],
   "middleName": ["aadhaar"],
   "fatherName": ["aadhaar"],
   "gender": ["aadhaar"],
   "dob": ["aadhaar"],
-  "state": ["janAadharCertificate"],
-  "caste": ["casteCertificate"],
+  "state": ["enrollmentCertificate"],
   "annualIncome": ["incomeCertificate"],
   "class": ["enrollmentCertificate"],
-  "studentType": ["enrollmentCertificate"],
-  "previousYearMarks": ["marksheet"]
+  "previousYearMarks": ["marksheet"],
+  "udid": ["disabilityCertificate"],
+  "disabilityType": ["disabilityCertificate"],
+  "disabilityRange": ["disabilityCertificate"],
+  "bankAccountHolderName": ["bankAccountDetails"],
+  "bankAccountNumber": ["bankAccountDetails"],
+  "bankIfscCode": ["bankAccountDetails"],
+  "bankName": ["bankAccountDetails"],
+  "bankAddress": ["bankAccountDetails"],
+  "branchCode": ["bankAccountDetails"]
 }
