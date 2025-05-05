@@ -77,6 +77,21 @@ export class UserInfo {
   @Column({ type: 'varchar', length: 50, nullable: true })
   bankIfscCode: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  bankAddress: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  branchCode: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  udid: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  disabilityType: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  disabilityRange: string;
+
   @CreateDateColumn({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;
 
@@ -86,4 +101,5 @@ export class UserInfo {
     onUpdate: 'CURRENT_TIMESTAMP',
   })
   updated_at: Date;
+  ifscCode: any;
 }

@@ -164,7 +164,11 @@ export default class ProfilePopulator {
   private handleAadhaarValue(vc: any, pathValue: any) {
     let value = this.getValue(vc, pathValue);
     if (!value) return null;
+    // console.log('beforevalue', value);
+
     value = this.encryptionService.encrypt(value);
+    // console.log('                                      AfterVlaue', value);
+
     return value;
   }
 
@@ -276,7 +280,7 @@ export default class ProfilePopulator {
       middleName: profile.middleName,
       dob: profile.dob,
     };
-
+    ///update added fields
     const userInfo = {
       fatherName: profile.fatherName,
       gender: profile.gender,
@@ -288,6 +292,15 @@ export default class ProfilePopulator {
       previousYearMarks: profile.previousYearMarks,
       dob: profile.dob,
       state: profile.state,
+      udid: profile.udid,
+      disabilityType: profile.disabilityType,
+      disabilityRange: profile.disabilityRange,
+      bankAccountHolderName: profile.bankAccountHolderName,
+      bankAccountNumber: profile.bankAccountNumber,
+      bankIfscCode: profile.bankIfscCode,
+      bankName: profile.bankName,
+      bankAddress: profile.bankAddress,
+      branchCode: profile.branchCode,
     };
 
     return { userData, userInfo };
@@ -307,7 +320,7 @@ export default class ProfilePopulator {
       });
 
       let row: UserInfo;
-
+      ///update added filleds
       if (userRows.length === 0) {
         row = this.userInfoRepository.create({
           user_id: user.user_id,
@@ -321,6 +334,15 @@ export default class ProfilePopulator {
           previousYearMarks: userInfo.previousYearMarks,
           dob: userInfo.dob,
           state: userInfo.state,
+          udid: userInfo.udid,
+          disabilityType: userInfo.disabilityType,
+          disabilityRange: userInfo.disabilityRange,
+          bankAccountHolderName: userInfo.bankAccountHolderName,
+          bankAccountNumber: userInfo.bankAccountNumber,
+          bankIfscCode: userInfo.bankIfscCode,
+          bankName: userInfo.bankName,
+          bankAddress: userInfo.bankAddress,
+          branchCode: userInfo.branchCode,
         });
       } else {
         row = userRows[0];
@@ -334,6 +356,15 @@ export default class ProfilePopulator {
         row.previousYearMarks = userInfo.previousYearMarks;
         row.dob = userInfo.dob;
         row.state = userInfo.state;
+        row.udid = userInfo.udid;
+        row.disabilityType = userInfo.disabilityType;
+        row.disabilityRange = userInfo.disabilityRange;
+        row.bankAccountHolderName = userInfo.bankAccountHolderName;
+        row.bankAccountNumber = userInfo.bankAccountNumber;
+        row.bankIfscCode = userInfo.bankIfscCode;
+        row.bankName = userInfo.bankName;
+        row.bankAddress = userInfo.bankAddress;
+        row.branchCode = userInfo.branchCode;
       }
 
       await queryRunner.manager.save(row);
