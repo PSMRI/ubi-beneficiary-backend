@@ -3,5 +3,4 @@
     "disabilityType":"credentialSubject.disability_type",
     "disabilityRange":"credentialSubject.percentage_of_disability",
     "aadhaar":"credentialSubject.aadhaar_number"
-
 }
