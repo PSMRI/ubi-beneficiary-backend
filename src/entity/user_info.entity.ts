@@ -71,7 +71,7 @@ export class UserInfo {
   @Column({ type: 'varchar', length: 50, nullable: true })
   bankName: string;
 
-  @Column({ type: 'varchar', length: 50, nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   bankAccountNumber: string;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
