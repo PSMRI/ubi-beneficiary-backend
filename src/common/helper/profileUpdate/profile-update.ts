@@ -108,6 +108,7 @@ export default class ProfilePopulator {
   // Get value from VC following a path (pathValue)
   private getValue(vc: any, pathValue: any) {
     if (!pathValue) return null;
+
     return pathValue.split('.').reduce((acc, part) => {
       return acc && acc[part] !== undefined ? acc[part] : null;
     }, vc.content);
@@ -161,13 +162,11 @@ export default class ProfilePopulator {
     return intValue;
   }
 
-  private handleAadhaarValue(vc: any, pathValue: any) {
+  private extractAndEncryptField(vc: any, pathValue: any) {
     let value = this.getValue(vc, pathValue);
     if (!value) return null;
-    // console.log('beforevalue', value);
 
     value = this.encryptionService.encrypt(value);
-    // console.log('                                      AfterVlaue', value);
 
     return value;
   }
@@ -213,7 +212,12 @@ export default class ProfilePopulator {
     if (!vcPaths) return null;
 
     // If field is aadhaar, it will need to be encrypted
-    if (field === 'aadhaar') return this.handleAadhaarValue(vc, vcPaths[field]);
+    if (
+      field === 'aadhaar' ||
+      field === 'udid' ||
+      field === 'bankAccountNumber'
+    )
+      return this.extractAndEncryptField(vc, vcPaths[field]);
 
     // If it is one of the name fields, then get values accordingly
     if (['firstName', 'lastName', 'middleName', 'fatherName'].includes(field))
