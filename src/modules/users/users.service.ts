@@ -230,6 +230,17 @@ export class UserService {
 
       userInfo.aadhaar = decrypted;
     }
+    if (
+      userInfo &&
+      decryptData &&
+      userInfo?.udid &&
+      typeof userInfo.udid === 'string' &&
+      userInfo.udid.includes(':')
+    ) {
+      const decrypted = this.encryptionService.decrypt(userInfo?.udid);
+
+      userInfo.udid = decrypted;
+    }
 
     return userInfo;
   }
