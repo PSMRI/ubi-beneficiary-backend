@@ -219,27 +219,23 @@ export class UserService {
     const userInfo = await this.userInfoRepository.findOne({
       where: { user_id },
     });
-    if (
-      userInfo &&
-      decryptData &&
-      userInfo?.aadhaar &&
-      typeof userInfo.aadhaar === 'string' &&
-      userInfo.aadhaar.includes(':')
-    ) {
-      const decrypted = this.encryptionService.decrypt(userInfo?.aadhaar);
 
-      userInfo.aadhaar = decrypted;
-    }
-    if (
-      userInfo &&
-      decryptData &&
-      userInfo?.udid &&
-      typeof userInfo.udid === 'string' &&
-      userInfo.udid.includes(':')
-    ) {
-      const decrypted = this.encryptionService.decrypt(userInfo?.udid);
+    type EncryptedStringFields = 'aadhaar' | 'udid' | 'bankAccountNumber';
 
-      userInfo.udid = decrypted;
+    if (userInfo && decryptData) {
+      const encryptedFields: EncryptedStringFields[] = [
+        'aadhaar',
+        'udid',
+        'bankAccountNumber',
+      ];
+
+      encryptedFields.forEach((field) => {
+        const value = userInfo[field];
+        if (typeof value === 'string' && value.includes(':')) {
+          const decrypted = this.encryptionService.decrypt(value);
+          userInfo[field] = decrypted as string;
+        }
+      });
     }
 
     return userInfo;
