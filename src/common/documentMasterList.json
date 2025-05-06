@@ -1,23 +1,74 @@
 [
-  { "name": "Income Certificate", "documentSubType": "incomeCertificate" },
-  { "name": "Caste Certificate", "documentSubType": "casteCertificate" },
+  {
+    "name": "Income Certificate",
+    "label": "Income Certificate",
+    "documentSubType": "incomeCertificate",
+    "docType": "incomeProof"
+  },
+  {
+    "name": "Caste Certificate",
+    "label": "Caste Certificate",
+    "documentSubType": "casteCertificate",
+    "docType": "casteProof"
+  },
   {
     "name": "UDID Certificate",
-    "documentSubType": "disabilityCertificate"
+    "label": "UDID Certificate",
+    "documentSubType": "disabilityCertificate",
+    "docType": "disabilityProof"
   },
   {
-    "name": "Enrollment Certificate (with hosteller/day scholar information)",
-    "documentSubType": "enrollmentCertificate"
+    "name": "Enrollment Certificate",
+    "label": "Enrollment Certificate (with hosteller/day scholar information)",
+    "documentSubType": "enrollmentCertificate",
+    "docType": "associationProof"
   },
-  { "name": "Marksheet", "documentSubType": "marksheet" },
-  { "name": "Birth Certificate", "documentSubType": "birthCertificate" },
-  { "name": "Aadhaar Card", "documentSubType": "aadhaar" },
+  {
+    "name": "Marksheet",
+    "label": "Marksheet",
+    "documentSubType": "marksheet",
+    "docType": "marksProof"
+  },
+  {
+    "name": "Birth Certificate",
+    "label": "Birth Certificate",
+    "documentSubType": "birthCertificate",
+    "docType": "birthProof"
+  },
+  {
+    "name": "Aadhaar Card",
+    "label": "Aadhaar Card",
+    "documentSubType": "aadhaar",
+    "docType": "idProof"
+  },
   {
     "name": "Sports Competition participation certificate",
-    "documentSubType": "participationCertificate"
+    "label": "Sports Competition participation certificate",
+    "documentSubType": "participationCertificate",
+    "docType": "participationProof"
   },
-  { "name": "Jan Aadhaar Card", "documentSubType": "janAadharCertificate" },
-  { "name": "Self Declaration Form", "documentSubType": "selfDeclarationForm" },
-  { "name": "Fee Receipt", "documentSubType": "feeReceipt"},
-  { "name": "Bank Account Details", "documentSubType": "bankAccountDetails" }
+  {
+    "name": "Jan Aadhaar Card",
+    "label": "Jan Aadhaar Card",
+    "documentSubType": "janAadharCertificate",
+    "docType": "janAadhar"
+  },
+  {
+    "name": "Declaration Certificate",
+    "label": "Self Declaration Form",
+    "documentSubType": "selfDeclarationForm",
+    "docType": "selfDeclarationProof"
+  },
+  {
+    "name": "Fee Receipt",
+    "label": "Fee Receipt",
+    "documentSubType": "feeReceipt",
+    "docType": "feeProof"
+  },
+  {
+    "name": "Bank Account",
+    "label": "Bank Account Details",
+    "documentSubType": "bankAccountDetails",
+    "docType": "bankAccountProof"
+  }
 ]
