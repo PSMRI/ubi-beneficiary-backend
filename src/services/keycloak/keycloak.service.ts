@@ -28,7 +28,7 @@ export class KeycloakService {
   ) {}
 
   public async getAdminKeycloakToken() {
-    const url = `${this.keycloak_url}/realms/master/protocol/openid-connect/token`;
+    const url = `${this.keycloak_url}/realms/${this.realm_name_app}/protocol/openid-connect/token`;
 
     let payload = {
       username: 'admin',
