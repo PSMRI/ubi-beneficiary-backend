@@ -74,18 +74,19 @@ export class AuthService {
       };
       const user = await this.userService.createKeycloakData(userData);
 
-      // if (user) {
-      //   //create user payload
-      //   let wallet_user_payload = {
-      //     firstName: user?.firstName,
-      //     lastName: user?.lastName,
-      //     sso_provider: user?.sso_provider,
-      //     sso_id: user?.sso_id,
-      //     phoneNumber: user?.phoneNumber,
-      //   };
+      /*
+      if (user) {
+        //create user payload
+        let wallet_user_payload = {
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          sso_provider: user?.sso_provider,
+          sso_id: user?.sso_id,
+          phoneNumber: user?.phoneNumber,
+        };
 
-      //   await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
-      // }
+        await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
+      }*/
 
       // Step 6: Return success response
       return new SuccessResponse({
@@ -125,18 +126,19 @@ export class AuthService {
       };
       const user = await this.userService.createKeycloakData(userData);
 
-      // if (user) {
-      //   //create user payload
-      //   let wallet_user_payload = {
-      //     firstName: user?.firstName,
-      //     lastName: user?.lastName,
-      //     sso_provider: user?.sso_provider,
-      //     sso_id: user?.sso_id,
-      //     phoneNumber: user?.phoneNumber,
-      //   };
+      /*
+      if (user) {
+        //create user payload
+        let wallet_user_payload = {
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          sso_provider: user?.sso_provider,
+          sso_id: user?.sso_id,
+          phoneNumber: user?.phoneNumber,
+        };
 
-      //   await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
-      // }
+        await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
+      }*/
 
       // Step 6: Return success response
       return new SuccessResponse({
