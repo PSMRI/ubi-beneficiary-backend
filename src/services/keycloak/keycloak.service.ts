@@ -51,7 +51,7 @@ export class KeycloakService {
 
       return response.data;
     } catch (e) {
-      console.log('getAdminKeycloakToken', e.message);
+      console.log('getAdminKeycloakToken ==>', e.message);
     }
   }
 
