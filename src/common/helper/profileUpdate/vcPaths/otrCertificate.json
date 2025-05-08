@@ -1,0 +1,8 @@
+{
+    "firstName": "credentialSubject.firstname",
+    "middleName": "credentialSubject.middlename",
+    "fatherName": "credentialSubject.father_name",
+    "lastName": "credentialSubject.lastname",
+    "dob": "credentialSubject.date_of_birth",
+    "gender": "credentialSubject.gender"
+}
