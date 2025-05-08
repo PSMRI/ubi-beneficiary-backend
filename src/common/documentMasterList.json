@@ -70,5 +70,12 @@
     "label": "Bank Account Details",
     "documentSubType": "bankAccountDetails",
     "docType": "bankAccountProof"
+  },
+  {
+    "name": "OTR Credential",
+    "label": "OTR Certificate",
+    "documentSubType": "otrCertificate",
+    "docType": "idProof"
   }
+
 ]

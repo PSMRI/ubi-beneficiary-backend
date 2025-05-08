@@ -23,6 +23,13 @@ export default class ProfilePopulator {
   ) {}
 
   private formatDateToISO(inputDate: string): string | null {
+    // Try native Date parsing (handles formats like "Thu, 08 May 2003 00:00:00 GMT")
+    const nativeParsedDate = new Date(inputDate);
+    if (isValid(nativeParsedDate)) {
+      return format(nativeParsedDate, 'yyyy-MM-dd');
+    }
+
+    // Fallback to manual format parsing
     const possibleFormats = [
       'yyyy-MM-dd',
       'dd-MM-yyyy',
@@ -41,7 +48,6 @@ export default class ProfilePopulator {
 
     return null;
   }
-
   private romanToInt(roman: string): number {
     const romanMap: { [key: string]: number } = {
       I: 1,
@@ -220,11 +226,11 @@ export default class ProfilePopulator {
       return this.extractAndEncryptField(vc, vcPaths[field]);
 
     // If it is one of the name fields, then get values accordingly
-    if (['firstName', 'lastName', 'middleName', 'fatherName'].includes(field))
-      return this.handleNameFields(vc, vcPaths, field);
+    // if (['firstName', 'lastName', 'middleName', 'fatherName'].includes(field))
+    //   return this.handleNameFields(vc, vcPaths, field);
 
     // If it is gender, value will be 'M' or 'F' from aadhaar, so adjust the value accordingly
-    if (field === 'gender') return this.handleGenderField(vc, vcPaths[field]);
+    // if (field === 'gender') return this.handleGenderField(vc, vcPaths[field]);
 
     // If it is class, value will be roman number, so convert value accordingly
     if (field === 'class') return this.handleClassField(vc, vcPaths[field]);

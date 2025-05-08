@@ -22,6 +22,7 @@ export class DocumentListProvider {
     { name: 'Self Declaration Form', documentSubType: 'selfDeclarationForm' },
     { name: 'Fee Receipt', documentSubType: 'feeReceipt' },
     { name: 'Bank Account Details', documentSubType: 'bankAccountDetails' },
+    { name: 'OTR Certificate', documentSubType: 'otrCertificate' },
   ];
 
   // Method to retrieve the list Bank Account Details
