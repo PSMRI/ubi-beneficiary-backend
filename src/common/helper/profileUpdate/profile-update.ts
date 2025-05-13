@@ -314,7 +314,7 @@ export default class ProfilePopulator {
       nspOtr: profile.nspOtr,
       tuitionAndAdminFeePaid: profile.tuitionAndAdminFeePaid,
       miscFeePaid: profile.miscFeePaid,
-      currentSchoolName:profile.currentSchoolName,
+      currentSchoolName: profile.currentSchoolName,
     };
 
     return { userData, userInfo };
@@ -360,7 +360,7 @@ export default class ProfilePopulator {
           nspOtr: userInfo.nspOtr,
           tuitionAndAdminFeePaid: userInfo.tuitionAndAdminFeePaid,
           miscFeePaid: userInfo.miscFeePaid,
-          currentSchoolName:userInfo.currentSchoolName,
+          currentSchoolName: userInfo.currentSchoolName,
         });
       } else {
         row = userRows[0];
@@ -383,12 +383,11 @@ export default class ProfilePopulator {
         row.bankName = userInfo.bankName;
         row.bankAddress = userInfo.bankAddress;
         row.branchCode = userInfo.branchCode;
-        row.nspOtr= userInfo.nspOtr,
-        row.tuitionAndAdminFeePaid= userInfo.tuitionAndAdminFeePaid,
-        row.miscFeePaid= userInfo.miscFeePaid,
-        row.currentSchoolName=userInfo.currentSchoolName,
+        (row.nspOtr = userInfo.nspOtr),
+          (row.tuitionAndAdminFeePaid = userInfo.tuitionAndAdminFeePaid),
+          (row.miscFeePaid = userInfo.miscFeePaid),
+          (row.currentSchoolName = userInfo.currentSchoolName);
       }
-
       await queryRunner.manager.save(row);
       await queryRunner.commitTransaction();
       return row;
