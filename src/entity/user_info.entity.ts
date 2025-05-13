@@ -95,6 +95,15 @@ export class UserInfo {
   @CreateDateColumn({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  nspOtr: string;
+
+  @Column({ type: 'int', nullable: true })
+  tuitionAndAdminFeePaid: number;
+
+  @Column({ type: 'int', nullable: true })
+  miscFeePaid: number;
+
   @UpdateDateColumn({
     type: 'timestamptz',
     default: () => 'CURRENT_TIMESTAMP',

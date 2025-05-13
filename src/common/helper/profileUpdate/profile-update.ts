@@ -311,6 +311,10 @@ export default class ProfilePopulator {
       bankName: profile.bankName,
       bankAddress: profile.bankAddress,
       branchCode: profile.branchCode,
+      nspOtr: profile.nspOtr,
+      tuitionAndAdminFeePaid: profile.tuitionAndAdminFeePaid,
+      miscFeePaid: profile.miscFeePaid,
+      currentSchoolName:profile.currentSchoolName,
     };
 
     return { userData, userInfo };
@@ -353,6 +357,10 @@ export default class ProfilePopulator {
           bankName: userInfo.bankName,
           bankAddress: userInfo.bankAddress,
           branchCode: userInfo.branchCode,
+          nspOtr: userInfo.nspOtr,
+          tuitionAndAdminFeePaid: userInfo.tuitionAndAdminFeePaid,
+          miscFeePaid: userInfo.miscFeePaid,
+          currentSchoolName:userInfo.currentSchoolName,
         });
       } else {
         row = userRows[0];
@@ -375,6 +383,10 @@ export default class ProfilePopulator {
         row.bankName = userInfo.bankName;
         row.bankAddress = userInfo.bankAddress;
         row.branchCode = userInfo.branchCode;
+        row.nspOtr= userInfo.nspOtr,
+        row.tuitionAndAdminFeePaid= userInfo.tuitionAndAdminFeePaid,
+        row.miscFeePaid= userInfo.miscFeePaid,
+        row.currentSchoolName=userInfo.currentSchoolName,
       }
 
       await queryRunner.manager.save(row);
