@@ -167,7 +167,7 @@ export default class ProfilePopulator {
     if (!intValue) return value;
     return intValue;
   }
-  private handleDisabitilyTypeField(vc: any, pathValue: any) {
+  private handleDisabilityTypeField(vc: any, pathValue: any) {
     const value = this.getValue(vc, pathValue);
     if (!value) return null;
     return value.trim().toLowerCase().replace(/\s+/g, '_');
@@ -237,7 +237,7 @@ export default class ProfilePopulator {
     // If it is gender, value will be 'M' or 'F' from aadhaar, so adjust the value accordingly
     // if (field === 'gender') return this.handleGenderField(vc, vcPaths[field]);
     if (field === 'disabilityType')
-      return this.handleDisabitilyTypeField(vc, vcPaths[field]);
+      return this.handleDisabilityTypeField(vc, vcPaths[field]);
     // If it is class, value will be roman number, so convert value accordingly
     if (field === 'class') return this.handleClassField(vc, vcPaths[field]);
 
