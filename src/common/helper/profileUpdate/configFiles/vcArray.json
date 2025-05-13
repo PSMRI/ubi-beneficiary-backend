@@ -8,6 +8,7 @@
   "bankName": ["bankAccountDetails"],
   "branchCode": ["bankAccountDetails"],
   "class": ["marksheet", "enrollmentCertificate"],
+  "currentSchoolName": ["marksheet"],
   "disabilityRange": ["disabilityCertificate"],
   "disabilityType": ["disabilityCertificate"],
   "dob": ["otrCertificate"],
@@ -16,7 +17,10 @@
   "gender": ["otrCertificate"],
   "lastName": ["otrCertificate"],
   "middleName": ["otrCertificate"],
+  "miscFeePaid": ["feeReceipt"],
+  "nspOtr": ["otrCertificate"],
   "previousYearMarks": ["marksheet"],
   "state": ["enrollmentCertificate"],
+  "tutionAdminFeePaid": ["feeReceipt"],
   "udid": ["disabilityCertificate"]
 }
