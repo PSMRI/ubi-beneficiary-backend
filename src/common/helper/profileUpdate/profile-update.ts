@@ -197,6 +197,7 @@ export default class ProfilePopulator {
         Logger.warn('Invalid income value');
         return null;
       }
+      return value;
     }
 
     // Remove commas and spaces, then validate the format
@@ -349,12 +350,12 @@ export default class ProfilePopulator {
           caste: userInfo.caste,
           annualIncome: userInfo.annualIncome,
           class: userInfo.class,
-          aadhaar: userInfo.aadhaar,
+          aadhaar: userInfo.aadhaar.toString(),
           studentType: userInfo.studentType,
-          previousYearMarks: userInfo.previousYearMarks,
-          dob: userInfo.dob,
+          previousYearMarks: userInfo.previousYearMarks.toString(),
+          dob: userInfo.dob.toString(),
           state: userInfo.state,
-          udid: userInfo.udid,
+          udid: userInfo.udid.toString(),
           disabilityType: userInfo.disabilityType,
           disabilityRange: userInfo.disabilityRange,
           bankAccountHolderName: userInfo.bankAccountHolderName,
