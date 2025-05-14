@@ -376,12 +376,12 @@ export default class ProfilePopulator {
         row.caste = userInfo.caste;
         row.annualIncome = userInfo.annualIncome;
         row.class = userInfo.class;
-        row.aadhaar = userInfo.aadhaar.toString();
-        row.studentType = userInfo.studentType;
-        row.previousYearMarks = userInfo.previousYearMarks.toString();
-        row.dob = userInfo.dob.toString();
+        row.aadhaar = userInfo?.aadhaar?.toString();
+        row.studentType = userInfo?.studentType;
+        row.previousYearMarks = userInfo?.previousYearMarks?.toString();
+        row.dob = userInfo?.dob?.toString();
         row.state = userInfo.state;
-        row.udid = userInfo.udid.toString();
+        row.udid = userInfo?.udid?.toString();
         row.disabilityType = userInfo.disabilityType;
         row.disabilityRange = userInfo.disabilityRange;
         row.bankAccountHolderName = userInfo.bankAccountHolderName;
