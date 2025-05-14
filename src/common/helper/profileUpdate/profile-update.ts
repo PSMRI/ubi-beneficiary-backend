@@ -350,12 +350,12 @@ export default class ProfilePopulator {
           caste: userInfo.caste,
           annualIncome: userInfo.annualIncome,
           class: userInfo.class,
-          aadhaar: userInfo.aadhaar.toString(),
+          aadhaar: userInfo?.aadhaar?.toString(),
           studentType: userInfo.studentType,
-          previousYearMarks: userInfo.previousYearMarks.toString(),
-          dob: userInfo.dob.toString(),
+          previousYearMarks: userInfo?.previousYearMarks?.toString(),
+          dob: userInfo?.dob?.toString(),
           state: userInfo.state,
-          udid: userInfo.udid.toString(),
+          udid: userInfo?.udid?.toString(),
           disabilityType: userInfo.disabilityType,
           disabilityRange: userInfo.disabilityRange,
           bankAccountHolderName: userInfo.bankAccountHolderName,
@@ -376,12 +376,12 @@ export default class ProfilePopulator {
         row.caste = userInfo.caste;
         row.annualIncome = userInfo.annualIncome;
         row.class = userInfo.class;
-        row.aadhaar = userInfo.aadhaar;
-        row.studentType = userInfo.studentType;
-        row.previousYearMarks = userInfo.previousYearMarks;
-        row.dob = userInfo.dob;
+        row.aadhaar = userInfo?.aadhaar?.toString();
+        row.studentType = userInfo?.studentType;
+        row.previousYearMarks = userInfo?.previousYearMarks?.toString();
+        row.dob = userInfo?.dob?.toString();
         row.state = userInfo.state;
-        row.udid = userInfo.udid;
+        row.udid = userInfo?.udid?.toString();
         row.disabilityType = userInfo.disabilityType;
         row.disabilityRange = userInfo.disabilityRange;
         row.bankAccountHolderName = userInfo.bankAccountHolderName;
