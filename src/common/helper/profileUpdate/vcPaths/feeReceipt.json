@@ -1,5 +1,5 @@
 {
-    "tutionAdminFeePaid": "credentialSubject.tuition_and_admin_fee_paid",
+    "tuitionAndAdminFeePaid": "credentialSubject.tuition_and_admin_fee_paid",
     "miscFeePaid": "credentialSubject.misc_fee_paid"
 }
 

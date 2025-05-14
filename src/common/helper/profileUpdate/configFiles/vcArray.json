@@ -21,6 +21,6 @@
   "nspOtr": ["otrCertificate"],
   "previousYearMarks": ["marksheet"],
   "state": ["enrollmentCertificate"],
-  "tutionAdminFeePaid": ["feeReceipt"],
+  "tuitionAndAdminFeePaid": ["feeReceipt"],
   "udid": ["disabilityCertificate"]
 }
