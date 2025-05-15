@@ -78,7 +78,7 @@ export class ApplicationStatusUpdate {
 
     try {
       const status =
-        response?.responses[0]?.message?.order?.items[0]?.fulfillments[0]?.state
+        response?.responses[0]?.message?.order?.fulfillments[0]?.state
           ?.descriptor?.name;
 
       return status;
@@ -102,7 +102,7 @@ export class ApplicationStatusUpdate {
     }
   }
 
-  @Cron('*/30 * * * *')
+  @Cron('*/15 * * * *')
   async updateApplicationStatusCron() {
     try {
       // Get user application records from databse
