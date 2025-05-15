@@ -26,6 +26,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
+import axios from 'axios';
 
 @Injectable()
 export class UserService {
@@ -964,5 +965,47 @@ export class UserService {
       statusCode: HttpStatus.OK,
       message: 'Document deleted successfully',
     });
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a given URL.
+   * Handles both dway.io and haqdarshak.com style URLs.
+   * Follows redirects and appends .vc if needed.
+   * @param url The URL from the QR code
+   */
+  async fetchVcJsonFromUrl(url: string): Promise<any> {
+    try {
+      // 1. Follow redirects to get the final URL
+      const response = await axios.get(url, {
+        maxRedirects: 5,
+        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
+      });
+      let finalUrl = response.request?.res?.responseUrl || url;
+      
+      // 2. If not already ending with .vc, append .vc
+      if (!finalUrl.endsWith('.vc')) {
+        finalUrl = `${finalUrl}.vc`;
+      }
+      
+      // 3. Fetch the VC JSON
+      const vcResponse = await axios.get(finalUrl, { headers: { Accept: 'application/json' } });
+    
+      return vcResponse.data;
+    } 
+    catch (error) {
+      // Handle errors and return a meaningful message
+      if (axios.isAxiosError(error)) {
+        return {
+          error: true,
+          message: error.response?.data || error.message,
+          status: error.response?.status || 500,
+        };
+      }
+      return {
+        error: true,
+        message: 'Unknown error occurred',
+        status: 500,
+      };
+    }
   }
 }
