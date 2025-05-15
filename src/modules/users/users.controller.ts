@@ -30,6 +30,7 @@ import { UserApplication } from '@entities/user_applications.entity';
 import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { Request } from 'express';
+import { FetchVcUrlDto } from './dto/fetch-vc-url.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -204,5 +205,14 @@ export class UserController {
         'An error occurred while processing your request',
       );
     }
+  }
+
+  @Post('/fetch-vc-json')
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Fetch Verifiable Credential JSON from a QR code URL' })
+  @ApiResponse({ status: 200, description: 'VC JSON fetched successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid URL or unable to fetch VC JSON' })
+  async fetchVcJson(@Body() fetchVcUrlDto: FetchVcUrlDto) {
+    return await this.userService.fetchVcJsonFromUrl(fetchVcUrlDto.url);
   }
 }
