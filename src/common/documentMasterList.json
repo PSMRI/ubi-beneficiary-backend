@@ -25,12 +25,6 @@
     "docType": "marksProof"
   },
   {
-    "name": "Aadhaar Card",
-    "label": "Aadhaar Card",
-    "documentSubType": "aadhaar",
-    "docType": "idProof"
-  },
-  {
     "name": "Declaration Certificate",
     "label": "Self Declaration Form",
     "documentSubType": "selfDeclarationForm",
@@ -55,8 +49,8 @@
     "docType": "idProof"
   },
   {
-    "name": "BPL Card ",
-    "label": "BPL Card ",
+    "name": "BPL Card",
+    "label": "BPL Card",
     "documentSubType": "bplCard",
     "docType": "idProof"
   }
