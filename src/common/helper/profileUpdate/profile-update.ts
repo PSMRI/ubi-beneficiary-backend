@@ -23,6 +23,13 @@ export default class ProfilePopulator {
   ) {}
 
   private formatDateToISO(inputDate: string): string | null {
+    // Try native Date parsing (handles formats like "Thu, 08 May 2003 00:00:00 GMT")
+    const nativeParsedDate = new Date(inputDate);
+    if (isValid(nativeParsedDate)) {
+      return format(nativeParsedDate, 'yyyy-MM-dd');
+    }
+
+    // Fallback to manual format parsing
     const possibleFormats = [
       'yyyy-MM-dd',
       'dd-MM-yyyy',
@@ -41,7 +48,6 @@ export default class ProfilePopulator {
 
     return null;
   }
-
   private romanToInt(roman: string): number {
     const romanMap: { [key: string]: number } = {
       I: 1,
@@ -161,6 +167,11 @@ export default class ProfilePopulator {
     if (!intValue) return value;
     return intValue;
   }
+  private handleDisabilityTypeField(vc: any, pathValue: any) {
+    const value = this.getValue(vc, pathValue);
+    if (!value) return null;
+    return value.trim().toLowerCase().replace(/\s+/g, '_');
+  }
 
   private extractAndEncryptField(vc: any, pathValue: any) {
     let value = this.getValue(vc, pathValue);
@@ -186,6 +197,7 @@ export default class ProfilePopulator {
         Logger.warn('Invalid income value');
         return null;
       }
+      return value;
     }
 
     // Remove commas and spaces, then validate the format
@@ -220,12 +232,13 @@ export default class ProfilePopulator {
       return this.extractAndEncryptField(vc, vcPaths[field]);
 
     // If it is one of the name fields, then get values accordingly
-    if (['firstName', 'lastName', 'middleName', 'fatherName'].includes(field))
-      return this.handleNameFields(vc, vcPaths, field);
+    // if (['firstName', 'lastName', 'middleName', 'fatherName'].includes(field))
+    //   return this.handleNameFields(vc, vcPaths, field);
 
     // If it is gender, value will be 'M' or 'F' from aadhaar, so adjust the value accordingly
-    if (field === 'gender') return this.handleGenderField(vc, vcPaths[field]);
-
+    // if (field === 'gender') return this.handleGenderField(vc, vcPaths[field]);
+    if (field === 'disabilityType')
+      return this.handleDisabilityTypeField(vc, vcPaths[field]);
     // If it is class, value will be roman number, so convert value accordingly
     if (field === 'class') return this.handleClassField(vc, vcPaths[field]);
 
@@ -305,6 +318,10 @@ export default class ProfilePopulator {
       bankName: profile.bankName,
       bankAddress: profile.bankAddress,
       branchCode: profile.branchCode,
+      nspOtr: profile.nspOtr,
+      tuitionAndAdminFeePaid: profile.tuitionAndAdminFeePaid,
+      miscFeePaid: profile.miscFeePaid,
+      currentSchoolName: profile.currentSchoolName,
     };
 
     return { userData, userInfo };
@@ -333,12 +350,12 @@ export default class ProfilePopulator {
           caste: userInfo.caste,
           annualIncome: userInfo.annualIncome,
           class: userInfo.class,
-          aadhaar: userInfo.aadhaar,
+          aadhaar: userInfo?.aadhaar?.toString(),
           studentType: userInfo.studentType,
-          previousYearMarks: userInfo.previousYearMarks,
-          dob: userInfo.dob,
+          previousYearMarks: userInfo?.previousYearMarks?.toString(),
+          dob: userInfo?.dob?.toString(),
           state: userInfo.state,
-          udid: userInfo.udid,
+          udid: userInfo?.udid?.toString(),
           disabilityType: userInfo.disabilityType,
           disabilityRange: userInfo.disabilityRange,
           bankAccountHolderName: userInfo.bankAccountHolderName,
@@ -347,6 +364,10 @@ export default class ProfilePopulator {
           bankName: userInfo.bankName,
           bankAddress: userInfo.bankAddress,
           branchCode: userInfo.branchCode,
+          nspOtr: userInfo.nspOtr,
+          tuitionAndAdminFeePaid: userInfo.tuitionAndAdminFeePaid,
+          miscFeePaid: userInfo.miscFeePaid,
+          currentSchoolName: userInfo.currentSchoolName,
         });
       } else {
         row = userRows[0];
@@ -355,12 +376,12 @@ export default class ProfilePopulator {
         row.caste = userInfo.caste;
         row.annualIncome = userInfo.annualIncome;
         row.class = userInfo.class;
-        row.aadhaar = userInfo.aadhaar;
-        row.studentType = userInfo.studentType;
-        row.previousYearMarks = userInfo.previousYearMarks;
-        row.dob = userInfo.dob;
+        row.aadhaar = userInfo?.aadhaar?.toString();
+        row.studentType = userInfo?.studentType;
+        row.previousYearMarks = userInfo?.previousYearMarks?.toString();
+        row.dob = userInfo?.dob?.toString();
         row.state = userInfo.state;
-        row.udid = userInfo.udid;
+        row.udid = userInfo?.udid?.toString();
         row.disabilityType = userInfo.disabilityType;
         row.disabilityRange = userInfo.disabilityRange;
         row.bankAccountHolderName = userInfo.bankAccountHolderName;
@@ -369,8 +390,11 @@ export default class ProfilePopulator {
         row.bankName = userInfo.bankName;
         row.bankAddress = userInfo.bankAddress;
         row.branchCode = userInfo.branchCode;
+        row.nspOtr = userInfo.nspOtr;
+        row.tuitionAndAdminFeePaid = userInfo.tuitionAndAdminFeePaid;
+        row.miscFeePaid = userInfo.miscFeePaid;
+        row.currentSchoolName = userInfo.currentSchoolName;
       }
-
       await queryRunner.manager.save(row);
       await queryRunner.commitTransaction();
       return row;

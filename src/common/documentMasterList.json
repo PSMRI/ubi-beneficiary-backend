@@ -5,12 +5,7 @@
     "documentSubType": "incomeCertificate",
     "docType": "incomeProof"
   },
-  {
-    "name": "Caste Certificate",
-    "label": "Caste Certificate",
-    "documentSubType": "casteCertificate",
-    "docType": "casteProof"
-  },
+ 
   {
     "name": "UDID Certificate",
     "label": "UDID Certificate",
@@ -30,28 +25,10 @@
     "docType": "marksProof"
   },
   {
-    "name": "Birth Certificate",
-    "label": "Birth Certificate",
-    "documentSubType": "birthCertificate",
-    "docType": "birthProof"
-  },
-  {
     "name": "Aadhaar Card",
     "label": "Aadhaar Card",
     "documentSubType": "aadhaar",
     "docType": "idProof"
-  },
-  {
-    "name": "Sports Competition participation certificate",
-    "label": "Sports Competition participation certificate",
-    "documentSubType": "participationCertificate",
-    "docType": "participationProof"
-  },
-  {
-    "name": "Jan Aadhaar Card",
-    "label": "Jan Aadhaar Card",
-    "documentSubType": "janAadharCertificate",
-    "docType": "janAadhar"
   },
   {
     "name": "Declaration Certificate",
@@ -70,5 +47,18 @@
     "label": "Bank Account Details",
     "documentSubType": "bankAccountDetails",
     "docType": "bankAccountProof"
+  },
+  {
+    "name": "OTR Credential",
+    "label": "OTR Certificate",
+    "documentSubType": "otrCertificate",
+    "docType": "idProof"
+  },
+  {
+    "name": "BPL Card ",
+    "label": "BPL Card ",
+    "documentSubType": "bplCard",
+    "docType": "idProof"
   }
+
 ]
