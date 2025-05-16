@@ -173,7 +173,7 @@ export default class ProfilePopulator {
     return value
       .trim()
       .toLowerCase()
-      .replace(/'/g, '') // Remove apostrophes
+
       .replace(/[^a-z0-9]+/g, '_'); // Replace all other non-alphanumerics (including '-') with '_'
   }
 
