@@ -170,7 +170,10 @@ export default class ProfilePopulator {
   private handleDisabilityTypeField(vc: any, pathValue: any) {
     const value = this.getValue(vc, pathValue);
     if (!value) return null;
-    return value.trim().toLowerCase().replace(/\s+/g, '_');
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_'); // Replace all other non-alphanumerics (including '-') with '_'
   }
 
   private extractAndEncryptField(vc: any, pathValue: any) {
