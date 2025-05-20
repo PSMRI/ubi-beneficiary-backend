@@ -13,6 +13,8 @@ import ProfilePopulatorCron from './crons/profile-populator.cron';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { ApplicationStatusUpdate } from './crons/application-status-update.cron';
 import { ProxyService } from '@services/proxy/proxy.service';
+import { AuditLogsService } from '@services/audit-logs/audit-logs.service';
+import { AuditLog } from '@entities/audit-logs.entity';
 
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { ProxyService } from '@services/proxy/proxy.service';
       UserInfo,
       Consent,
       UserApplication,
+      AuditLog,
     ]),
   ],
   controllers: [UserController],
@@ -33,6 +36,7 @@ import { ProxyService } from '@services/proxy/proxy.service';
     ProfilePopulator,
     ApplicationStatusUpdate,
     ProxyService,
+    AuditLogsService,
   ],
 })
 export class UserModule {}

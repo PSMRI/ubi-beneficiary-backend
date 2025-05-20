@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository, QueryRunner } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import { User } from '../../entity/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
@@ -26,6 +26,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
+import { AuditLogsService } from '@services/audit-logs/audit-logs.service';
 
 @Injectable()
 export class UserService {
@@ -43,7 +44,60 @@ export class UserService {
     private readonly userApplicationRepository: Repository<UserApplication>,
     private readonly keycloakService: KeycloakService,
     private readonly profilePopulator: ProfilePopulator,
+    private readonly auditLogService: AuditLogsService,
   ) {}
+
+  async saveAuditLogDataForDocument(doc: UserDoc, action: string) {
+    const action_data = {
+      doc_id: doc.doc_id,
+      doc_name: doc.doc_name,
+      doc_type: doc.doc_type,
+      doc_subtype: doc.doc_subtype,
+    };
+    const old_data =
+      action === 'Document Deleted' ? { data: doc.doc_data } : null;
+    const new_data =
+      action === 'Document Saved' ? { data: doc.doc_data } : null;
+
+    let log_transaction_text: string;
+    if (action === 'Document Saved') {
+      log_transaction_text = `User imported a document`;
+    } else if (action === 'Document Deleted') {
+      log_transaction_text = `User deleted a document`;
+    }
+
+    await this.auditLogService.saveLog(
+      doc.user_id,
+      action,
+      action_data,
+      old_data,
+      new_data,
+      log_transaction_text,
+    );
+  }
+
+  async saveAuditLogDataForApplication(
+    application: UserApplication,
+    action: string,
+  ) {
+    const action_data = {
+      benefit_id: application.benefit_id,
+      benefit_provider_id: application.benefit_provider_id,
+      benefit_provider_uri: application.benefit_provider_uri,
+      external_application_id: application.external_application_id,
+    };
+
+    const log_transaction_text = 'User applied for the benefit';
+
+    await this.auditLogService.saveLog(
+      application.user_id,
+      action,
+      action_data,
+      null,
+      application.application_data,
+      log_transaction_text,
+    );
+  }
 
   async create(createUserDto: CreateUserDto) {
     const user = this.userRepository.create(createUserDto);
@@ -364,6 +418,7 @@ export class UserService {
 
     // Save to the database
     const savedDoc = await this.userDocsRepository.save(newUserDoc);
+    await this.saveAuditLogDataForDocument(savedDoc, 'Document Saved');
     return savedDoc;
   }
 
@@ -512,6 +567,7 @@ export class UserService {
       await queryRunner.startTransaction();
       await queryRunner.manager.remove(doc);
       await queryRunner.commitTransaction();
+      await this.saveAuditLogDataForDocument(doc, 'Document Deleted');
     } catch (error) {
       Logger.error('Error while deleting the document: ', error);
       await queryRunner.rollbackTransaction();
@@ -658,6 +714,11 @@ export class UserService {
       );
       const response = await this.userApplicationRepository.save(
         userApplication,
+      );
+
+      await this.saveAuditLogDataForApplication(
+        response,
+        'Application Created',
       );
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
@@ -842,53 +903,6 @@ export class UserService {
     }
   }
 
-  async resetInUsers(
-    field: string,
-    existingDoc: UserDoc,
-    queryRunner: QueryRunner,
-  ) {
-    await queryRunner.manager
-      .getRepository(User)
-      .createQueryBuilder()
-      .update(User)
-      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
-      .where('user_id = :id', { id: existingDoc.user_id })
-      .execute();
-  }
-
-  async resetInUserInfo(
-    field: string,
-    existingDoc: UserDoc,
-    queryRunner: QueryRunner,
-  ) {
-    await queryRunner.manager
-      .getRepository(UserInfo)
-      .createQueryBuilder()
-      .update(UserInfo)
-      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
-      .where('user_id = :id', { id: existingDoc.user_id })
-      .execute();
-  }
-
-  async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
-    const fieldsArray = {
-      aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
-      casteCertificate: ['caste'],
-      enrollmentCertificate: ['class', 'studentType'],
-      incomeCertificate: ['annualIncome'],
-      janAadharCertificate: ['state'],
-      marksheet: ['previousYearMarks'],
-    };
-
-    const fields = fieldsArray[existingDoc.doc_subtype] || [];
-
-    for (const field of fields) {
-      if (field === 'middleName')
-        await this.resetInUsers(field, existingDoc, queryRunner);
-      else await this.resetInUserInfo(field, existingDoc, queryRunner);
-    }
-  }
-
   async delete(req: any, doc_id: string) {
     const IsValidUser = req?.user;
     if (!IsValidUser) {
@@ -939,9 +953,8 @@ export class UserService {
     try {
       await queryRunner.startTransaction();
       await queryRunner.manager.remove(existingDoc);
-      // Reset the field along with deleting the document
-      await this.resetField(existingDoc, queryRunner);
       await queryRunner.commitTransaction();
+      await this.saveAuditLogDataForDocument(existingDoc, 'Document Deleted');
     } catch (error) {
       Logger.error('Error while deleting the document: ', error);
       await queryRunner.release();

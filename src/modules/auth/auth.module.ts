@@ -14,6 +14,8 @@ import { Consent } from '@entities/consent.entity';
 import { UserApplication } from '@entities/user_applications.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
+import { AuditLogsService } from '@services/audit-logs/audit-logs.service';
+import { AuditLog } from '@entities/audit-logs.entity';
 
 @Module({
   imports: [
@@ -24,6 +26,7 @@ import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
       UserInfo,
       Consent,
       UserApplication,
+      AuditLog,
     ]),
   ],
   controllers: [AuthController],
@@ -35,6 +38,7 @@ import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
     EncryptionService,
     LoggerService,
     ProfilePopulator,
+    AuditLogsService,
   ],
   exports: [AuthService, UserService, EncryptionService],
 })
