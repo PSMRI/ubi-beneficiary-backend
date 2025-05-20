@@ -4,7 +4,7 @@ import { UserInfo } from '@entities/user_info.entity';
 import { Injectable, Logger } from '@nestjs/common';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectRepository } from '@nestjs/typeorm'; 
 import { Repository } from 'typeorm';
 import { EncryptionService } from 'src/common/helper/encryptionService';
 import { parse, format, isValid } from 'date-fns';
@@ -125,7 +125,7 @@ export default class ProfilePopulator {
     const fullname = this.getValue(vc, vcPaths['name']);
     if (!fullname) return null;
     const nameParts = fullname.split(' ');
-    const firstName = nameParts[0] || null;
+    const firstName = nameParts[0] ?? null;
     const middleName = nameParts.length === 3 ? nameParts[1] : null;
     const lastName =
       nameParts.length >= 2 ? nameParts[nameParts.length - 1] : null;
@@ -439,8 +439,8 @@ export default class ProfilePopulator {
     }
     const profFilled = cnt === 0;
 
-    user.firstName = userData.firstName ? userData.firstName : user.firstName;
-    user.lastName = userData.lastName ? userData.lastName : user.lastName;
+    user.firstName = userData.firstName ?? user.firstName;
+    user.lastName = userData.lastName ?? user.lastName;
     user.middleName = userData.middleName;
     user.dob = userData.dob;
     user.fieldsVerified = profFilled;
