@@ -264,7 +264,11 @@ export class HasuraService {
           }
         `;
 
-    return await this.queryDb(query);
+    try {
+      return await this.queryDb(query);
+    } catch (error) {
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+    }
   }
 
   async getCity(state: string) {
@@ -275,7 +279,11 @@ export class HasuraService {
           }
         `;
 
-    return await this.queryDb(query);
+    try {
+      return await this.queryDb(query);
+    } catch (error) {
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+    }
   }
 
   async getTitle() {
@@ -286,7 +294,11 @@ export class HasuraService {
           }
         `;
 
-    return await this.queryDb(query);
+    try {
+      return await this.queryDb(query);
+    } catch (error) {
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+    }
   }
 
   async deleteResponse() {
@@ -297,7 +309,11 @@ export class HasuraService {
           }
         `;
 
-    return await this.queryDb(query);
+    try {
+      return await this.queryDb(query);
+    } catch (error) {
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+    }
   }
 
   async deleteJobs() {
@@ -307,7 +323,11 @@ export class HasuraService {
             }
           }
         `;
-    return await this.queryDb(query);
+    try {
+      return await this.queryDb(query);
+    } catch (error) {
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+    }
   }
 
   async createSeekerUser(seeker) {
@@ -328,8 +348,15 @@ export class HasuraService {
     console.log(query);
 
     // Rest of your code to execute the query
-    const response = await this.queryDb(query, seeker);
-    return response.data[`insert_${this.seeker_db}`].returning[0];
+    try {
+      const response = await this.queryDb(query, seeker);
+      return response.data[`insert_${this.seeker_db}`].returning[0];
+    } catch (error) {
+      throw new HttpException(
+        'Unable to create Seeker user',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
 
   }
 
@@ -344,9 +371,15 @@ export class HasuraService {
     }
     `;
     // Rest of your code to execute the query
-    const response = await this.queryDb(query);
-    return response.data[`${this.seeker_db}`][0];
-
+    try {
+      const response = await this.queryDb(query);
+      return response.data[`${this.seeker_db}`][0];
+    } catch (error) {
+      throw new HttpException(
+        'Unabe to create order user',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 
   async createOrder(order) {
@@ -362,7 +395,15 @@ export class HasuraService {
       }
     }
     `;
-    return await this.queryDb(query, order);
+    try {
+      const response = await this.queryDb(query, order);
+      return response;
+    } catch (error) {
+      throw new HttpException(
+        'Unable to create order user',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 
   async searchOrderByOrderId(order) {
@@ -380,8 +421,12 @@ export class HasuraService {
       }
     }
     `;
-    const response = await this.queryDb(query);
-    return response.data[`${this.order_db}`][0].OrderContentRelationship[0];
+    try {
+      const response = await this.queryDb(query);
+      return response.data[`${this.order_db}`][0].OrderContentRelationship[0];
+    } catch (error) {
+      throw new HttpException('Invalid order id', HttpStatus.BAD_REQUEST);
+    }
 
   }
 
@@ -397,6 +442,11 @@ export class HasuraService {
         }
       }
     `;
-    return await this.queryDb(query, data);
+    try {
+      const response = await this.queryDb(query, data);
+      return response;
+    } catch (error) {
+      throw new HttpException('Unable to add telemetry', HttpStatus.BAD_REQUEST);
+    }
   }
 }
