@@ -410,7 +410,7 @@ export default class ProfilePopulator {
   }
 
   // Update values in database based on built profile
-  async updateDatabase(profile: any, validationData: any, user: any) {
+  async updateDatabase(profile: any, validationData: any, user: any , adminResultData: any) {
     // ===Reset user verification status===
     user.fieldsVerified = false;
     user.fieldsVerifiedAt = new Date();
@@ -462,9 +462,9 @@ export default class ProfilePopulator {
         await this.keycloakService.updateUser(user.sso_id, {
           firstName: profile.firstName,
           lastName: profile.lastName,
-        });
+        } , adminResultData);
       } catch (keycloakError) {
-        Logger.error('Failed to update user in Keycloak: ', keycloakError);
+        Logger.error('Failed to update user in Keycloak: ', keycloakError?.response);
       }
       return user;
     } catch (error) {
@@ -477,6 +477,8 @@ export default class ProfilePopulator {
 
   async populateProfile(users: any) {
     try {
+      const adminResultData = await this.keycloakService.getAdminKeycloakToken();
+    
       for (const user of users) {
         try {
           // Get documents from database
@@ -489,7 +491,7 @@ export default class ProfilePopulator {
           const { userProfile, validationData } = await this.buildProfile(vcs);
 
           // update entries in database
-          await this.updateDatabase(userProfile, validationData, user);
+          await this.updateDatabase(userProfile, validationData, user ,adminResultData);
         } catch (error) {
           Logger.error(`Failed to process user ${user.user_id}:`, error);
           continue;

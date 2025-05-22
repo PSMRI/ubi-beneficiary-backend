@@ -498,11 +498,14 @@ export class UserService {
       const { userProfile, validationData } =
         await this.profilePopulator.buildProfile(VCs);
 
+      const adminResultData = await this.keycloakService.getAdminKeycloakToken();
+
       // Update database entries
       await this.profilePopulator.updateDatabase(
         userProfile,
         validationData,
         userDetails,
+        adminResultData
       );
     } catch (error) {
       Logger.error('Error in updating fields: ', error);
