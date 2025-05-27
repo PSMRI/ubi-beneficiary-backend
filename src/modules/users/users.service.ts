@@ -26,6 +26,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
+import axios from 'axios';
 
 @Injectable()
 export class UserService {
@@ -43,7 +44,7 @@ export class UserService {
     private readonly userApplicationRepository: Repository<UserApplication>,
     private readonly keycloakService: KeycloakService,
     private readonly profilePopulator: ProfilePopulator,
-  ) {}
+  ) { }
 
   async create(createUserDto: CreateUserDto) {
     const user = this.userRepository.create(createUserDto);
@@ -108,13 +109,13 @@ export class UserService {
         message: 'User and associated info updated successfully',
         data: {
           ...updatedUser,
-          userInfo: userInfo || existingUserInfo, // Combine updated user with userInfo
+          userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
         },
       });
     } catch (error) {
       return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message || 'An error occurred while updating user',
+        errorMessage: error.message ?? 'An error occurred while updating user',
       });
     }
   }
@@ -219,16 +220,23 @@ export class UserService {
     const userInfo = await this.userInfoRepository.findOne({
       where: { user_id },
     });
-    if (
-      userInfo &&
-      decryptData &&
-      userInfo?.aadhaar &&
-      typeof userInfo.aadhaar === 'string' &&
-      userInfo.aadhaar.includes(':')
-    ) {
-      const decrypted = this.encryptionService.decrypt(userInfo?.aadhaar);
 
-      userInfo.aadhaar = decrypted;
+    type EncryptedStringFields = 'aadhaar' | 'udid' | 'bankAccountNumber';
+
+    if (userInfo && decryptData) {
+      const encryptedFields: EncryptedStringFields[] = [
+        'aadhaar',
+        'udid',
+        'bankAccountNumber',
+      ];
+
+      encryptedFields.forEach((field) => {
+        const value = userInfo[field];
+        if (typeof value === 'string' && value.includes(':')) {
+          const decrypted = this.encryptionService.decrypt(value);
+          userInfo[field] = decrypted as string;
+        }
+      });
     }
 
     return userInfo;
@@ -296,8 +304,8 @@ export class UserService {
     const user = this.userRepository.create({
       firstName: body.firstName,
       lastName: body.lastName,
-      email: body.email || '',
-      phoneNumber: body.phoneNumber || '',
+      email: body.email ?? '',
+      phoneNumber: body.phoneNumber ?? '',
       sso_provider: 'keycloak',
       sso_id: body.keycloak_id,
       created_at: new Date(),
@@ -490,11 +498,14 @@ export class UserService {
       const { userProfile, validationData } =
         await this.profilePopulator.buildProfile(VCs);
 
+      const adminResultData = await this.keycloakService.getAdminKeycloakToken();
+
       // Update database entries
       await this.profilePopulator.updateDatabase(
         userProfile,
         validationData,
         userDetails,
+        adminResultData
       );
     } catch (error) {
       Logger.error('Error in updating fields: ', error);
@@ -665,10 +676,8 @@ export class UserService {
         data: response,
       });
     } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: 'Failed to create user application',
-      });
+      console.error('Error while creating user application:', error);
+      throw new InternalServerErrorException('Failed to create user application');
     }
   }
 
@@ -754,10 +763,8 @@ export class UserService {
         data: { applications: userApplication, total },
       });
     } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: 'Failed to fetch user applications',
-      });
+      console.error('Error while fetching user applications:', error);
+      throw new InternalServerErrorException('Failed to fetch user applications');
     }
   }
 
@@ -880,7 +887,7 @@ export class UserService {
       marksheet: ['previousYearMarks'],
     };
 
-    const fields = fieldsArray[existingDoc.doc_subtype] || [];
+    const fields = fieldsArray[existingDoc.doc_subtype] ?? [];
 
     for (const field of fields) {
       if (field === 'middleName')
@@ -957,5 +964,47 @@ export class UserService {
       statusCode: HttpStatus.OK,
       message: 'Document deleted successfully',
     });
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a given URL.
+   * Handles both dway.io and haqdarshak.com style URLs.
+   * Follows redirects and appends .vc if needed.
+   * @param url The URL from the QR code
+   */
+  async fetchVcJsonFromUrl(url: string): Promise<any> {
+    try {
+      // 1. Follow redirects to get the final URL
+      const response = await axios.get(url, {
+        maxRedirects: 5,
+        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
+      });
+      let finalUrl = response.request?.res?.responseUrl ?? url;
+
+      // 2. If not already ending with .vc, append .vc
+      if (!finalUrl.endsWith('.vc')) {
+        finalUrl = `${finalUrl}.vc`;
+      }
+
+      // 3. Fetch the VC JSON
+      const vcResponse = await axios.get(finalUrl, { headers: { Accept: 'application/json' } });
+
+      return vcResponse.data;
+    }
+    catch (error) {
+      // Handle errors and return a meaningful message
+      if (axios.isAxiosError(error)) {
+        return {
+          error: true,
+          message: error.response?.data ?? error.message,
+          status: error.response?.status ?? 500,
+        };
+      }
+      return {
+        error: true,
+        message: 'Unknown error occurred',
+        status: 500,
+      };
+    }
   }
 }

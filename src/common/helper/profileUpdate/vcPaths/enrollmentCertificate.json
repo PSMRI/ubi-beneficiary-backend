@@ -1,4 +1,4 @@
 {
-  "class": "credentialSubject.gradeLevel",
-  "studentType": "credentialSubject.studentStatus"
+  "class": "credentialSubject.class",
+  "state":"credentialSubject.state"
 }

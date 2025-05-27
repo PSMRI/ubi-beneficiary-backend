@@ -1,9 +1,9 @@
 export class DocumentListProvider {
   private static readonly documentList = [
     { name: 'Income Certificate', documentSubType: 'incomeCertificate' },
-    { name: 'Caste Certificate', documentSubType: 'casteCertificate' },
+    // { name: 'Caste Certificate', documentSubType: 'casteCertificate' },
     {
-      name: 'Disability Certificate',
+      name: 'UDID Certificate',
       documentSubType: 'disabilityCertificate',
     },
     // { name: 'Domicile Certificate', documentSubType: 'domicileCertificate' },
@@ -12,16 +12,21 @@ export class DocumentListProvider {
       documentSubType: 'enrollmentCertificate',
     },
     { name: 'Marksheet', documentSubType: 'marksheet' },
-    { name: 'Birth Certificate', documentSubType: 'birthCertificate' },
+    // { name: 'Birth Certificate', documentSubType: 'birthCertificate' },
     { name: 'Aadhaar Card', documentSubType: 'aadhaar' },
-    {
-      name: 'Sports Competition participation certificate',
-      documentSubType: 'participationCertificate',
-    },
-    { name: 'Jan Aadhaar Card', documentSubType: 'janAadharCertificate' },
+    // {
+    //   name: 'Sports Competition participation certificate',
+    //   documentSubType: 'participationCertificate',
+    // },
+    // { name: 'Jan Aadhaar Card', documentSubType: 'janAadharCertificate' },
+    { name: 'Self Declaration Form', documentSubType: 'selfDeclarationForm' },
+    { name: 'Fee Receipt', documentSubType: 'feeReceipt' },
+    { name: 'Bank Account Details', documentSubType: 'bankAccountDetails' },
+    { name: 'OTR Certificate', documentSubType: 'otrCertificate' },
+    { name: 'BPL Card', documentSubType: 'bplCard' },
   ];
 
-  // Method to retrieve the list
+  // Method to retrieve the list Bank Account Details
   public static getDocumentList() {
     return this.documentList;
   }

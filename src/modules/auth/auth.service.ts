@@ -6,6 +6,7 @@ import { SuccessResponse } from 'src/common/responses/success-response';
 import { LoggerService } from 'src/logger/logger.service';
 
 import { KeycloakService } from 'src/services/keycloak/keycloak.service';
+import { LoginDTO } from './dto/login.dto';
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -22,16 +23,11 @@ export class AuthService {
     private readonly keycloakService: KeycloakService,
     private readonly userService: UserService,
     private readonly loggerService: LoggerService,
-  ) {}
+  ) { }
 
-  public async login(req, response) {
-    const data = {
-      username: req.body.username,
-      password: req.body.password,
-      type: 'login',
-    };
+  public async login(body: LoginDTO) {
 
-    const token = await this.keycloakService.getUserKeycloakToken(data);
+    const token = await this.keycloakService.getUserKeycloakToken(body);
 
     if (token) {
       return new SuccessResponse({
@@ -49,7 +45,7 @@ export class AuthService {
 
   public async register(body) {
     try {
-      let wallet_api_url = process.env.WALLET_API_URL;
+      // let wallet_api_url = process.env.WALLET_API_URL;
       // Step 1: Check if mobile number exists in the database
       await this.checkMobileExistence(body?.phoneNumber);
 
@@ -74,6 +70,7 @@ export class AuthService {
       };
       const user = await this.userService.createKeycloakData(userData);
 
+      /*
       if (user) {
         //create user payload
         let wallet_user_payload = {
@@ -85,7 +82,7 @@ export class AuthService {
         };
 
         await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
-      }
+      }*/
 
       // Step 6: Return success response
       return new SuccessResponse({
@@ -100,7 +97,7 @@ export class AuthService {
 
   public async registerWithUsernamePassword(body) {
     try {
-      let wallet_api_url = process.env.WALLET_API_URL;
+      // let wallet_api_url = process.env.WALLET_API_URL;
 
       // Step 2: Prepare user data for Keycloak registration
       const dataToCreateUser = this.prepareUserDataV2(body);
@@ -125,6 +122,7 @@ export class AuthService {
       };
       const user = await this.userService.createKeycloakData(userData);
 
+      /*
       if (user) {
         //create user payload
         let wallet_user_payload = {
@@ -136,7 +134,7 @@ export class AuthService {
         };
 
         await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
-      }
+      }*/
 
       // Step 6: Return success response
       return new SuccessResponse({
@@ -192,7 +190,7 @@ export class AuthService {
     const trimmedLastName = body?.lastName?.trim();
     const trimmedPhoneNumber = body?.phoneNumber?.trim();
     const password =
-      body?.password?.trim() || process.env.SIGNUP_DEFAULT_PASSWORD;
+      body?.password?.trim() ?? process.env.SIGNUP_DEFAULT_PASSWORD;
 
     return {
       enabled: 'true',

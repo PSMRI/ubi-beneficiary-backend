@@ -4,7 +4,7 @@ import { UserInfo } from '@entities/user_info.entity';
 import { Injectable, Logger } from '@nestjs/common';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectRepository } from '@nestjs/typeorm'; 
 import { Repository } from 'typeorm';
 import { EncryptionService } from 'src/common/helper/encryptionService';
 import { parse, format, isValid } from 'date-fns';
@@ -23,6 +23,13 @@ export default class ProfilePopulator {
   ) {}
 
   private formatDateToISO(inputDate: string): string | null {
+    // Try native Date parsing (handles formats like "Thu, 08 May 2003 00:00:00 GMT")
+    const nativeParsedDate = new Date(inputDate);
+    if (isValid(nativeParsedDate)) {
+      return format(nativeParsedDate, 'yyyy-MM-dd');
+    }
+
+    // Fallback to manual format parsing
     const possibleFormats = [
       'yyyy-MM-dd',
       'dd-MM-yyyy',
@@ -41,7 +48,6 @@ export default class ProfilePopulator {
 
     return null;
   }
-
   private romanToInt(roman: string): number {
     const romanMap: { [key: string]: number } = {
       I: 1,
@@ -108,6 +114,7 @@ export default class ProfilePopulator {
   // Get value from VC following a path (pathValue)
   private getValue(vc: any, pathValue: any) {
     if (!pathValue) return null;
+
     return pathValue.split('.').reduce((acc, part) => {
       return acc && acc[part] !== undefined ? acc[part] : null;
     }, vc.content);
@@ -118,7 +125,7 @@ export default class ProfilePopulator {
     const fullname = this.getValue(vc, vcPaths['name']);
     if (!fullname) return null;
     const nameParts = fullname.split(' ');
-    const firstName = nameParts[0] || null;
+    const firstName = nameParts[0] ?? null;
     const middleName = nameParts.length === 3 ? nameParts[1] : null;
     const lastName =
       nameParts.length >= 2 ? nameParts[nameParts.length - 1] : null;
@@ -160,11 +167,21 @@ export default class ProfilePopulator {
     if (!intValue) return value;
     return intValue;
   }
+  private handleDisabilityTypeField(vc: any, pathValue: any) {
+    const value = this.getValue(vc, pathValue);
+    if (!value) return null;
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_'); // Replace all other non-alphanumerics (including '-') with '_'
+  }
 
-  private handleAadhaarValue(vc: any, pathValue: any) {
+  private extractAndEncryptField(vc: any, pathValue: any) {
     let value = this.getValue(vc, pathValue);
     if (!value) return null;
+
     value = this.encryptionService.encrypt(value);
+
     return value;
   }
 
@@ -183,6 +200,7 @@ export default class ProfilePopulator {
         Logger.warn('Invalid income value');
         return null;
       }
+      return value;
     }
 
     // Remove commas and spaces, then validate the format
@@ -209,15 +227,21 @@ export default class ProfilePopulator {
     if (!vcPaths) return null;
 
     // If field is aadhaar, it will need to be encrypted
-    if (field === 'aadhaar') return this.handleAadhaarValue(vc, vcPaths[field]);
+    if (
+      field === 'aadhaar' ||
+      field === 'udid' ||
+      field === 'bankAccountNumber'
+    )
+      return this.extractAndEncryptField(vc, vcPaths[field]);
 
     // If it is one of the name fields, then get values accordingly
-    if (['firstName', 'lastName', 'middleName', 'fatherName'].includes(field))
-      return this.handleNameFields(vc, vcPaths, field);
+    // if (['firstName', 'lastName', 'middleName', 'fatherName'].includes(field))
+    //   return this.handleNameFields(vc, vcPaths, field);
 
     // If it is gender, value will be 'M' or 'F' from aadhaar, so adjust the value accordingly
-    if (field === 'gender') return this.handleGenderField(vc, vcPaths[field]);
-
+    // if (field === 'gender') return this.handleGenderField(vc, vcPaths[field]);
+    if (field === 'disabilityType')
+      return this.handleDisabilityTypeField(vc, vcPaths[field]);
     // If it is class, value will be roman number, so convert value accordingly
     if (field === 'class') return this.handleClassField(vc, vcPaths[field]);
 
@@ -276,7 +300,7 @@ export default class ProfilePopulator {
       middleName: profile.middleName,
       dob: profile.dob,
     };
-
+    ///update added fields
     const userInfo = {
       fatherName: profile.fatherName,
       gender: profile.gender,
@@ -288,6 +312,19 @@ export default class ProfilePopulator {
       previousYearMarks: profile.previousYearMarks,
       dob: profile.dob,
       state: profile.state,
+      udid: profile.udid,
+      disabilityType: profile.disabilityType,
+      disabilityRange: profile.disabilityRange,
+      bankAccountHolderName: profile.bankAccountHolderName,
+      bankAccountNumber: profile.bankAccountNumber,
+      bankIfscCode: profile.bankIfscCode,
+      bankName: profile.bankName,
+      bankAddress: profile.bankAddress,
+      branchCode: profile.branchCode,
+      nspOtr: profile.nspOtr,
+      tuitionAndAdminFeePaid: profile.tuitionAndAdminFeePaid,
+      miscFeePaid: profile.miscFeePaid,
+      currentSchoolName: profile.currentSchoolName,
     };
 
     return { userData, userInfo };
@@ -307,7 +344,7 @@ export default class ProfilePopulator {
       });
 
       let row: UserInfo;
-
+      ///update added filleds
       if (userRows.length === 0) {
         row = this.userInfoRepository.create({
           user_id: user.user_id,
@@ -316,11 +353,24 @@ export default class ProfilePopulator {
           caste: userInfo.caste,
           annualIncome: userInfo.annualIncome,
           class: userInfo.class,
-          aadhaar: userInfo.aadhaar,
+          aadhaar: userInfo?.aadhaar?.toString(),
           studentType: userInfo.studentType,
-          previousYearMarks: userInfo.previousYearMarks,
-          dob: userInfo.dob,
+          previousYearMarks: userInfo?.previousYearMarks?.toString(),
+          dob: userInfo?.dob?.toString(),
           state: userInfo.state,
+          udid: userInfo?.udid?.toString(),
+          disabilityType: userInfo.disabilityType,
+          disabilityRange: userInfo.disabilityRange,
+          bankAccountHolderName: userInfo.bankAccountHolderName,
+          bankAccountNumber: userInfo.bankAccountNumber,
+          bankIfscCode: userInfo.bankIfscCode,
+          bankName: userInfo.bankName,
+          bankAddress: userInfo.bankAddress,
+          branchCode: userInfo.branchCode,
+          nspOtr: userInfo.nspOtr,
+          tuitionAndAdminFeePaid: userInfo.tuitionAndAdminFeePaid,
+          miscFeePaid: userInfo.miscFeePaid,
+          currentSchoolName: userInfo.currentSchoolName,
         });
       } else {
         row = userRows[0];
@@ -329,13 +379,25 @@ export default class ProfilePopulator {
         row.caste = userInfo.caste;
         row.annualIncome = userInfo.annualIncome;
         row.class = userInfo.class;
-        row.aadhaar = userInfo.aadhaar;
-        row.studentType = userInfo.studentType;
-        row.previousYearMarks = userInfo.previousYearMarks;
-        row.dob = userInfo.dob;
+        row.aadhaar = userInfo?.aadhaar?.toString();
+        row.studentType = userInfo?.studentType;
+        row.previousYearMarks = userInfo?.previousYearMarks?.toString();
+        row.dob = userInfo?.dob?.toString();
         row.state = userInfo.state;
+        row.udid = userInfo?.udid?.toString();
+        row.disabilityType = userInfo.disabilityType;
+        row.disabilityRange = userInfo.disabilityRange;
+        row.bankAccountHolderName = userInfo.bankAccountHolderName;
+        row.bankAccountNumber = userInfo.bankAccountNumber;
+        row.bankIfscCode = userInfo.bankIfscCode;
+        row.bankName = userInfo.bankName;
+        row.bankAddress = userInfo.bankAddress;
+        row.branchCode = userInfo.branchCode;
+        row.nspOtr = userInfo.nspOtr;
+        row.tuitionAndAdminFeePaid = userInfo.tuitionAndAdminFeePaid;
+        row.miscFeePaid = userInfo.miscFeePaid;
+        row.currentSchoolName = userInfo.currentSchoolName;
       }
-
       await queryRunner.manager.save(row);
       await queryRunner.commitTransaction();
       return row;
@@ -348,7 +410,7 @@ export default class ProfilePopulator {
   }
 
   // Update values in database based on built profile
-  async updateDatabase(profile: any, validationData: any, user: any) {
+  async updateDatabase(profile: any, validationData: any, user: any , adminResultData: any) {
     // ===Reset user verification status===
     user.fieldsVerified = false;
     user.fieldsVerifiedAt = new Date();
@@ -377,8 +439,8 @@ export default class ProfilePopulator {
     }
     const profFilled = cnt === 0;
 
-    user.firstName = userData.firstName ? userData.firstName : user.firstName;
-    user.lastName = userData.lastName ? userData.lastName : user.lastName;
+    user.firstName = userData.firstName ?? user.firstName;
+    user.lastName = userData.lastName ?? user.lastName;
     user.middleName = userData.middleName;
     user.dob = userData.dob;
     user.fieldsVerified = profFilled;
@@ -400,9 +462,9 @@ export default class ProfilePopulator {
         await this.keycloakService.updateUser(user.sso_id, {
           firstName: profile.firstName,
           lastName: profile.lastName,
-        });
+        } , adminResultData);
       } catch (keycloakError) {
-        Logger.error('Failed to update user in Keycloak: ', keycloakError);
+        Logger.error('Failed to update user in Keycloak: ', keycloakError?.response);
       }
       return user;
     } catch (error) {
@@ -415,6 +477,8 @@ export default class ProfilePopulator {
 
   async populateProfile(users: any) {
     try {
+      const adminResultData = await this.keycloakService.getAdminKeycloakToken();
+    
       for (const user of users) {
         try {
           // Get documents from database
@@ -427,7 +491,7 @@ export default class ProfilePopulator {
           const { userProfile, validationData } = await this.buildProfile(vcs);
 
           // update entries in database
-          await this.updateDatabase(userProfile, validationData, user);
+          await this.updateDatabase(userProfile, validationData, user ,adminResultData);
         } catch (error) {
           Logger.error(`Failed to process user ${user.user_id}:`, error);
           continue;

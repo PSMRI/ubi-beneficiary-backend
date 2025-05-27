@@ -1,3 +1,5 @@
 {
-  "previousYearMarks": "credentialSubject.percentage"
+  "class": "credentialSubject.currentclass",
+  "previousYearMarks": "credentialSubject.percentage",
+  "currentSchoolName": "credentialSubject.schoolname"
 }

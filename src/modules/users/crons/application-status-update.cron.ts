@@ -14,7 +14,7 @@ export class ApplicationStatusUpdate {
     private readonly userApplicationRepository: Repository<UserApplication>,
     private readonly configService: ConfigService,
     private readonly proxyService: ProxyService,
-  ) {}
+  ) { }
 
   async getApplications() {
     try {
@@ -78,12 +78,13 @@ export class ApplicationStatusUpdate {
 
     try {
       const status =
-        response?.responses[0]?.message?.order?.items[0]?.fulfillments[0]?.state
+        response?.responses[0]?.message?.order?.fulfillments[0]?.state
           ?.descriptor?.name;
 
       return status;
     } catch (error) {
-      return null;
+      console.error(`Error while getting status from response: ${error}`);
+      throw new Error('Error while getting status from response');
     }
   }
 
@@ -102,7 +103,7 @@ export class ApplicationStatusUpdate {
     }
   }
 
-  @Cron('*/30 * * * *')
+  @Cron('*/15 * * * *')
   async updateApplicationStatusCron() {
     try {
       // Get user application records from databse

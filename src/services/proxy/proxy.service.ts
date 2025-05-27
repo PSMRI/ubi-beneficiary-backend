@@ -3,11 +3,12 @@ const axios = require('axios');
 
 @Injectable()
 export class ProxyService {
-  private bap_client_url = process.env.BAP_CLIENT_URL;
+  private readonly bap_client_url = process.env.BAP_CLIENT_URL;
 
   async bapCLientApi2(endPoint, body) {
     let data = JSON.stringify(body);
-    console.log('bap_client_url', this.bap_client_url);
+    console.log('bap_client_url', `${this.bap_client_url}/${endPoint}`);
+    console.log('req_body', data);
 
     let config = {
       method: 'post',
@@ -26,9 +27,9 @@ export class ProxyService {
         return response.data;
       }
     } catch (error) {
-      console.log('error', error);
+      console.log('error', error?.response?.data);
       throw new HttpException(
-        'Unabe to process request',
+        'Unable to process request',
         HttpStatus.BAD_REQUEST,
       );
     }
