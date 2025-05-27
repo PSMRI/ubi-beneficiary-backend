@@ -2,7 +2,7 @@ name: Deploy to DEV
 on:
   push:
     branches:
-      - depwd-pilot
+      - main
 jobs:
    Deploy_on_UBA:
     runs-on: ubuntu-latest
