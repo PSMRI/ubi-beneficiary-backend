@@ -48,11 +48,14 @@ export class HasuraService {
 
       const filteredJobs = this.filterJobs(jobs, filters, search);
 
-      // Return the response in the desired format
+const benefitsList = this.formatBenefitsListFromJobs(jobs);
+      const eligibilityData = await this.callEligibilityApi(benefitsList);
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'Ok.',
+        
         data: {
+          eligibilityData,
           ubi_network_cache: filteredJobs,
         },
       });
@@ -465,4 +468,81 @@ export class HasuraService {
       throw new HttpException('Unabe to add telemetry', HttpStatus.BAD_REQUEST);
     }
   }
+// Place this in your service or a utility file
+
+formatBenefitsListFromJobs(jobs: any[]): any[] {
+  return jobs.map(job => {
+    // Find the eligibility tag in item.tags
+    const eligibilityTag = job.item?.tags?.find(
+      (tag) => tag.descriptor?.code === 'eligibility'
+    );
+    // If not found, skip this job
+    if (!eligibilityTag) return null;
+
+    // Parse each eligibility item in the tag's list
+    const eligibility = eligibilityTag.list.map(item => {
+      let valueObj;
+      try {
+        valueObj = JSON.parse(item.value);
+      } catch {
+        valueObj = {};
+      }
+      // If criteria exists and is an array, take the first element
+      let criteria = valueObj.criteria;
+      if (Array.isArray(criteria)) {
+        criteria = criteria[0];
+      }
+      return {
+        id: valueObj.id,
+        type: 'userProfile',
+        description: valueObj.description,
+        criteria: criteria ? {
+          name: criteria.name,
+          documentKey: criteria.documentKey,
+          condition: criteria.condition,
+          conditionValues: criteria.conditionValues,
+        } : undefined,
+      };
+    });
+
+    return {
+      id: job.id,
+      eligibility,
+      eligibilityEvaluationLogic: '', // Add logic if available in your data
+    };
+  }).filter(Boolean); // Remove nulls if any job didn't have eligibility
+}
+
+async callEligibilityApi(eligibilityData: Array<any>): Promise<any> {
+  try {
+    const eligibilityApiUrl = `http://localhost:3011/check-eligibility`; // Replace with your actual API URL
+    const sdkResponse = await this.httpService.axiosRef.post(
+      eligibilityApiUrl,
+      {
+        userProfile: {
+          name: 'John Doe',
+          gender: 'male',
+          age: 16,
+          dateOfBirth: '2008-01-01',
+          caste: 'sc',
+          income: 400,
+          class: '9',
+          previousYearMarks: 75,
+          state: 'maharashtra',
+        },
+        benefitsList: eligibilityData,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    return sdkResponse.data;
+  } catch (error) {
+    console.error('Error in eligibleBenefits:', error);
+    throw new HttpException('message', HttpStatus.INTERNAL_SERVER_ERROR)
+  }
+}
+  
 }
