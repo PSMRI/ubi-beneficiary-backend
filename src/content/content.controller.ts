@@ -26,7 +26,7 @@ export class ContentController {
   @Post('/search')
   async getContent(@Request() request, @Body() body) {
     this.logger.log('POST /search');
-    return this.contentService.getJobs(body);
+    return this.contentService.getJobs(body, request);
   }
 
   @Post('/responseSearch')

@@ -31,8 +31,8 @@ export class ContentService {
     private readonly responseCacheRepository: Repository<ResponseCache>,
   ) {}
 
-  async getJobs(body) {
-    return this.hasuraService.findJobsCache(body);
+  async getJobs(body, req) {
+    return this.hasuraService.findJobsCache(body, req);
   }
 
   async encryption(data) {
