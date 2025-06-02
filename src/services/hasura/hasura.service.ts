@@ -14,16 +14,14 @@ export class HasuraService {
   private order_db = process.env.ORDER_DB;
   private telemetry_db = process.env.TELEMETRY_DB;
   private url = process.env.HASURA_URL;
-  private eligibility_base_uri = process.env.ELIGIBILITY_API_URL;
   constructor(private httpService: HttpService) {
     console.log('cache_db', this.cache_db);
     console.log('response_cache_db', this.response_cache_db);
   }
 
-  async findJobsCache(requestBody, req) {
+  async findJobsCache(requestBody) {
 		const { filters, search } = requestBody;
-		const page = requestBody.page ?? 1;
-		const limit = requestBody.limit ?? 10000;
+		
 		const query = `query MyQuery {
            ${this.cache_db}(distinct_on: unique_id) {
             id
@@ -48,39 +46,12 @@ export class HasuraService {
 
 			let filteredJobs = this.filterJobs(jobs, filters, search);
 
-			const userId = req?.mw_userid;
-			if (userId) {
-				const strictCheck = requestBody?.strictCheck || false;
-				const benefitsList = this.formatBenefitsListFromJobs(filteredJobs);
-				const userInfo = await this.getUserInfo(userId);
-				if (userInfo) {
-					const eligibilityData = await this.callEligibilityApi(
-						userInfo,
-						benefitsList,
-						strictCheck,
-					);
-					const eligibleList = eligibilityData?.eligible || [];
-					const eligibleJobIds = eligibleList.map((e) => e?.schemaId);
-					filteredJobs = filteredJobs.filter((scheme) =>
-						eligibleJobIds.includes(scheme?.id),
-					);
-				}
-			}
-
-			const total = filteredJobs.length;
-			const start = (page - 1) * limit;
-			const end = start + limit;
-			const paginatedJobs = filteredJobs.slice(start, end);
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
 				message: 'Ok.',
 
 				data: {
-					ubi_network_cache: paginatedJobs,
-					total,
-					page,
-					limit,
-					totalPages: Math.ceil(total / limit),
+					ubi_network_cache: filteredJobs,
 				},
 			});
 		} catch (error) {
@@ -494,117 +465,5 @@ export class HasuraService {
   }
 // Place this in your service or a utility file
 
-formatBenefitsListFromJobs(jobs: any[]): any[] {
-  return jobs.map(job => {
-    // Find the eligibility tag in item.tags
-    const eligibilityTag = job.item?.tags?.find(
-      (tag) => tag.descriptor?.code === 'eligibility'
-    );
-    // If not found, skip this job
-    if (!eligibilityTag) return null;
 
-    // Parse each eligibility item in the tag's list
-    const eligibility = eligibilityTag.list.map(item => {
-      let valueObj;
-      try {
-        valueObj = JSON.parse(item.value);
-      } catch {
-        valueObj = {};
-      }
-      // If criteria exists and is an array, take the first element
-      let criteria = valueObj.criteria;
-      if (Array.isArray(criteria)) {
-        criteria = criteria[0];
-      }
-      return {
-        id: valueObj.id,
-        type: 'userProfile',
-        description: valueObj.description,
-        criteria: criteria ? {
-          name: criteria.name,
-          documentKey: criteria.documentKey,
-          condition: criteria.condition,
-          conditionValues: criteria.conditionValues,
-        } : undefined,
-      };
-    });
-
-    return {
-      id: job.id,
-      eligibility,
-      eligibilityEvaluationLogic: '', // Add logic if available in your data
-    };
-  }).filter(Boolean); // Remove nulls if any job didn't have eligibility
-}
-
-async callEligibilityApi(userInfo: Object, eligibilityData: Array<any>, strictCheck: boolean): Promise<any> {
-  try {
-    let eligibilityApiEnd = 'check-eligibility';
-    if(strictCheck){
-      eligibilityApiEnd = 'check-eligibility?strictChecking=true';
-    }
-    const eligibilityApiUrl = `${this.eligibility_base_uri}/${eligibilityApiEnd}`;
-    const sdkResponse = await this.httpService.axiosRef.post(
-      eligibilityApiUrl,
-      {
-        userProfile: userInfo,
-        benefitsList: eligibilityData,
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    return sdkResponse.data;
-  } catch (error) {
-    console.error('Error in eligibleBenefits:', error);
-    throw new HttpException('message', HttpStatus.INTERNAL_SERVER_ERROR)
-  }
-}
-
-async getUserInfo(userId: string) {
-  const query = `query GetUserInfo {
-    users(where: {user_id: {_eq: "${userId}"}}) {
-    firstName
-    lastName
-    dob
-    user_id
-      user_infos {
-      disabilityRange
-      disabilityType
-        class
-        caste
-        gender
-        age
-        annualIncome
-        state
-        studentType
-      }
-      
-    }
-  }`;
-
-  try {
-    
-    const response = await this.queryDb(query);
-     const user = response.data?.users?.[0];
-    if (!user) return null;
-       const flatUser = {
-      ...user.user_infos?.[0],
-      name: `${user.firstName} ${user.lastName}`,
-      userId: user.user_id,  
-      dob: user.dob,
-    };
-			const stringUserInfo = Object.fromEntries(
-  Object.entries(flatUser).map(([key, value]) => [key, value !== null && value !== undefined ? String(value) : ''])
-);
-    return stringUserInfo;
-  } catch (error) {
-    throw new HttpException(
-      'Unable to fetch user info',
-      HttpStatus.BAD_REQUEST,
-    );
-  }
-	}
 }

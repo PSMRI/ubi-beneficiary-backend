@@ -48,12 +48,10 @@ export class AuthMiddleware implements NestMiddleware {
 
         const roles = decoded?.resource_access?.hasura?.roles || [];
         req.mw_userid = keycloak_id;
-        // // }
         if (userId) {
           req.mw_roles = roles;
         }
       } catch (error) {
-        console.log('Error decoding token:', error);
         req.mw_userid = null;
       }
     }

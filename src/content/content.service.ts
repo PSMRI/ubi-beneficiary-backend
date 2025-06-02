@@ -10,6 +10,8 @@ import { ResponseCache } from 'src/entity/response.entity';
 import { EncryptionService } from 'src/common/helper/encryptionService';
 import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
+import { HttpService } from '@nestjs/axios';
+import { UserService } from '../modules/users/users.service';
 const crypto = require('crypto');
 
 @Injectable()
@@ -21,19 +23,95 @@ export class ContentService {
   private readonly bpp_uri = process.env.BPP_URI;
   private response_cache_db = process.env.RESPONSE_CACHE_DB;
   private telemetry_db = process.env.TELEMETRY_DB;
+  private eligibility_base_uri = process.env.ELIGIBILITY_API_URL;
 
   constructor(
     private readonly hasuraService: HasuraService,
     private readonly proxyService: ProxyService,
     private readonly logger: LoggerService,
     private readonly encrypt: EncryptionService,
+    private readonly httpService: HttpService,
     @InjectRepository(ResponseCache)
     private readonly responseCacheRepository: Repository<ResponseCache>,
+    private readonly userService: UserService,
   ) {}
 
-  async getJobs(body, req) {
-    return this.hasuraService.findJobsCache(body, req);
+async getJobs(body, req) {
+  try {
+    const page = body.page ?? 1;
+    const limit = body.limit ?? 10000;
+    const userId = req?.mw_userid;
+
+    // Fetch jobs from Hasura
+    const filteredData = await this.hasuraService.findJobsCache(body);
+
+  let filteredJobs: any[] = [];
+if (
+  !(filteredData instanceof ErrorResponse) &&
+  typeof filteredData.data === 'object' &&
+  filteredData.data !== null &&
+  'ubi_network_cache' in filteredData.data
+) {
+  filteredJobs = (filteredData.data as any).ubi_network_cache || [];
+}
+
+    // Get user info if userId is present
+    let userInfo = null;
+    if (userId) {
+      const request = { user: { keycloak_id: userId } };
+      const response = await this.userService.findOne(request, true);
+      let user = null;
+      if (!(response instanceof ErrorResponse) && response?.data) {
+        user = response.data;
+      }
+      if (user) {
+        userInfo = Object.fromEntries(
+          Object.entries(user).map(([key, value]) => [key, value !== null && value !== undefined ? String(value) : ''])
+        );
+      }
+    }
+
+    // Eligibility filtering if userInfo is present
+    if (userInfo) {
+      const strictCheck = body?.strictCheck || false;
+      const benefitsList = this.formatBenefitsListFromJobs(filteredJobs);
+      const eligibilityData = await this.callEligibilityApi(
+        userInfo,
+        benefitsList,
+        strictCheck,
+      );
+      const eligibleList = eligibilityData?.eligible || [];
+      const eligibleJobIds = eligibleList.map((e) => e?.schemaId);
+      filteredJobs = filteredJobs.filter((scheme) =>
+        eligibleJobIds.includes(scheme?.id),
+      );
+    }
+
+    // Pagination
+    const total = filteredJobs.length;
+    const start = (page - 1) * limit;
+    const end = start + limit;
+    const paginatedJobs = filteredJobs.slice(start, end);
+
+    return {
+      statusCode: 200,
+      message: 'Ok.',
+      data: {
+        eligibilityData:eligibilityData,
+        ubi_network_cache: paginatedJobs,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  } catch (err) {
+    return new ErrorResponse({
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      errorMessage: err.message,
+    });
   }
+}
 
   async encryption(data) {
     return this.encrypt.encrypt(data);
@@ -742,4 +820,74 @@ export class ContentService {
   hasListKeyword(queryString) {
     return queryString.toLowerCase().includes('tags');
   }
+
+  formatBenefitsListFromJobs(jobs: any[]): any[] {
+    return jobs.map(job => {
+      const eligibilityTag = job.item?.tags?.find(
+        (tag) => tag.descriptor?.code === 'eligibility'
+      );
+      if (!eligibilityTag) return null;
+  
+      const eligibility = eligibilityTag.list.map(item => {
+        let valueObj;
+        try {
+          valueObj = JSON.parse(item.value);
+        } catch {
+          valueObj = {};
+        }
+        let criteria = valueObj.criteria;
+        if (Array.isArray(criteria)) {
+          criteria = criteria[0];
+        }
+        return {
+          id: valueObj.id,
+          type: 'userProfile',
+          description: valueObj.description,
+          criteria: criteria ? {
+            name: criteria.name,
+            documentKey: criteria.documentKey,
+            condition: criteria.condition,
+            conditionValues: criteria.conditionValues,
+          } : undefined,
+        };
+      });
+  
+      return {
+        id: job.id,
+        eligibility,
+        eligibilityEvaluationLogic: '', 
+      };
+    }).filter(Boolean);
+  }
+
+
+  async callEligibilityApi(userInfo: Object, eligibilityData: Array<any>, strictCheck: boolean): Promise<any> {
+  try {
+    let eligibilityApiEnd = 'check-eligibility';
+    if(strictCheck){
+      eligibilityApiEnd = 'check-eligibility?strictChecking=true';
+    }
+    const eligibilityApiUrl = `${this.eligibility_base_uri}/${eligibilityApiEnd}`;
+    const sdkResponse = await this.httpService.axiosRef.post(
+      eligibilityApiUrl,
+      {
+        userProfile: userInfo,
+        benefitsList: eligibilityData,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    return sdkResponse.data;
+  } catch (error) {
+   return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error.message,
+        // Attach the data in the "data" field
+      });
+  }
+}
+  
 }
