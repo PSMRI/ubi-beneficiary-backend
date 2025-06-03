@@ -30,15 +30,15 @@ import { AuthMiddleware } from './common/middlewares/auth.middleware';
       ): Promise<TypeOrmModuleOptions> => ({
         type: configService.get<'postgres' | 'mysql' | 'sqlite' | 'mariadb'>(
           'DB_TYPE',
-        ) as 'postgres' | 'mysql' | 'sqlite' | 'mariadb',
-        host: configService.get<string>('DB_HOST') as string,
+        ),
+        host: configService.get<string>('DB_HOST'),
         port: parseInt(configService.get<string>('DB_PORT'), 10),
-        username: configService.get<string>('DB_USERNAME') as string,
-        password: configService.get<string>('DB_PASSWORD') as string,
-        database: configService.get<string>('DB_NAME') as string,
+        username: configService.get<string>('DB_USERNAME'),
+        password: configService.get<string>('DB_PASSWORD'),
+        database: configService.get<string>('DB_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: false,
-        logging: true,
+        // logging: true,
       }),
     }),
     TypeOrmModule.forFeature([ResponseCache, User, UserRole, Role]),
@@ -66,6 +66,6 @@ export class AppModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(AuthMiddleware)
-      .forRoutes({ path: '/*', method: RequestMethod.ALL });
+      .forRoutes({ path: '/*', method: RequestMethod.ALL }); // this will not affect the existing UI and apis
   }
 }
