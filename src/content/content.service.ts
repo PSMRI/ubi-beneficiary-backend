@@ -97,7 +97,6 @@ if (
       statusCode: 200,
       message: 'Ok.',
       data: {
-        eligibilityData:eligibilityData,
         ubi_network_cache: paginatedJobs,
         total,
         page,
