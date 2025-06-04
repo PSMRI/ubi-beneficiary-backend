@@ -16,14 +16,14 @@ const crypto = require('crypto');
 
 @Injectable()
 export class ContentService {
-	private domain = process.env.DOMAIN;
-	private bap_id = process.env.BAP_ID;
-	private bap_uri = process.env.BAP_URI;
+	private readonly domain = process.env.DOMAIN;
+	private readonly bap_id = process.env.BAP_ID;
+	private readonly bap_uri = process.env.BAP_URI;
 	private readonly bpp_id = process.env.BPP_ID;
 	private readonly bpp_uri = process.env.BPP_URI;
-	private response_cache_db = process.env.RESPONSE_CACHE_DB;
-	private telemetry_db = process.env.TELEMETRY_DB;
-	private eligibility_base_uri = process.env.ELIGIBILITY_API_URL;
+	private readonly response_cache_db = process.env.RESPONSE_CACHE_DB;
+	private readonly telemetry_db = process.env.TELEMETRY_DB;
+	private readonly eligibility_base_uri = process.env.ELIGIBILITY_API_URL;
 
 	constructor(
 		private readonly hasuraService: HasuraService,
@@ -52,7 +52,7 @@ export class ContentService {
 				filteredData.data !== null &&
 				'ubi_network_cache' in filteredData.data
 			) {
-				filteredJobs = (filteredData.data as any).ubi_network_cache || [];
+				filteredJobs = (filteredData.data as any).ubi_network_cache ?? [];
 			}
 
 			// Get user info if userId is present
@@ -77,7 +77,7 @@ export class ContentService {
 			// Eligibility filtering if userInfo is present
 			if (userInfo) {
 				try {
-					const strictCheck = body?.strictCheck || false; // check if strictCheck is provided in the request body
+					const strictCheck = body?.strictCheck ?? false; // check if strictCheck is provided in the request body
 					const benefitsList =
 						this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs); // format the benefits list from the filteredJobs data as per eligibility API requirements
 					const eligibilityData = await this.checkBenefitsEligibility(
@@ -85,7 +85,7 @@ export class ContentService {
 						benefitsList,
 						strictCheck,
 					);
-					const eligibleList = eligibilityData?.eligible || []; // get the eligible list from the eligibility API response
+					const eligibleList = eligibilityData?.eligible ?? []; // get the eligible list from the eligibility API response
 					const eligibleJobIds = eligibleList.map((e) => e?.schemaId); // extract job IDs from the eligible list
 					filteredJobs = filteredJobs.filter((scheme) =>
 						eligibleJobIds.includes(scheme?.id),
