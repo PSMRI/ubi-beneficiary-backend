@@ -76,23 +76,23 @@ export class ContentService {
 
 			// Eligibility filtering if userInfo is present
 			if (userInfo) {
-        try{
-        const strictCheck = body?.strictCheck || false; // check if strictCheck is provided in the request body
-				const benefitsList = this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs); // format the benefits list from the filteredJobs data as per eligibility API requirements
-				const eligibilityData = await this.checkBenefitsEligibility(
-					userInfo,
-					benefitsList,
-					strictCheck,
-				);
-				const eligibleList = eligibilityData?.eligible || []; // get the eligible list from the eligibility API response
-				const eligibleJobIds = eligibleList.map((e) => e?.schemaId); // extract job IDs from the eligible list
-				filteredJobs = filteredJobs.filter((scheme) =>
-					eligibleJobIds.includes(scheme?.id),
-				); // filter the jobs based on eligibility
-        }catch(err){
-          console.error('Error in eligibility filtering:', err);
-        }
-				
+				try {
+					const strictCheck = body?.strictCheck || false; // check if strictCheck is provided in the request body
+					const benefitsList =
+						this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs); // format the benefits list from the filteredJobs data as per eligibility API requirements
+					const eligibilityData = await this.checkBenefitsEligibility(
+						userInfo,
+						benefitsList,
+						strictCheck,
+					);
+					const eligibleList = eligibilityData?.eligible || []; // get the eligible list from the eligibility API response
+					const eligibleJobIds = eligibleList.map((e) => e?.schemaId); // extract job IDs from the eligible list
+					filteredJobs = filteredJobs.filter((scheme) =>
+						eligibleJobIds.includes(scheme?.id),
+					); // filter the jobs based on eligibility
+				} catch (err) {
+					console.error('Error in eligibility filtering:', err);
+				}
 			}
 
 			// Pagination
@@ -436,9 +436,9 @@ export class ContentService {
        unique_pageurl;`;
 		}
 
-    if (body.date) {
-      const fromDate = Date.parse(body.date.from);
-      const toDate = Date.parse(body.date.to);
+		if (body.date) {
+			const fromDate = Date.parse(body.date.from);
+			const toDate = Date.parse(body.date.to);
 
 			query = `SELECT
        events->'edata'->>'pageurl' AS unique_pageurl,
@@ -500,9 +500,9 @@ export class ContentService {
        ;`;
 		}
 
-    if (body.date) {
-      const fromDate = Date.parse(body.date.from);
-      const toDate = Date.parse(body.date.to);
+		if (body.date) {
+			const fromDate = Date.parse(body.date.from);
+			const toDate = Date.parse(body.date.to);
 
 			query = `SELECT *
        FROM
@@ -897,11 +897,7 @@ export class ContentService {
 			);
 			return sdkResponse.data;
 		} catch (error) {
-			return new ErrorResponse({
-				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message,
-				// Attach the data in the "data" field
-			});
+			throw new Error(`Error checking benefits eligibility: ${error.message}`);
 		}
 	}
 }
