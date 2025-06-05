@@ -16,7 +16,7 @@ import { AuthGuard } from '@modules/auth/auth.guard';
 export class AdminController {
 	constructor(private readonly adminService: AdminService) {}
 
-	@Post('settings')
+	@Post('config')
 	@UseGuards(AuthGuard)
 	async createOrUpdatesettings(@Body() body: any, @Request() req) {
 		const mapping: FieldMappingDto = {
@@ -34,7 +34,7 @@ export class AdminController {
 		};
 	}
 
-	@Get('settings/:key')
+	@Get('config/:key')
 	@UseGuards(AuthGuard)
 	async getSettings(@Param('key') key: string) {
 		const result = await this.adminService.getSettings(key);
