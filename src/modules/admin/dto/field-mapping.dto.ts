@@ -1,9 +1,8 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, Matches } from 'class-validator';
 
-export class FieldMappingDto {
-	@IsString()
-	@IsNotEmpty()
+export class ConfigKeyDto {
+	@IsString({ message: 'key must be a string' })
+	@IsNotEmpty({ message: 'key is required' })
+	@Matches(/^[a-zA-Z0-9_]+$/, { message: 'key must contain only letters, numbers, and underscores' })
 	key: string;
-
-	value: any;
 }

@@ -1,8 +1,14 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { FieldMappingDto } from './dto';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Setting } from './entities/setting.entity';
+import { SuccessResponse } from 'src/common/responses/success-response';
+import { ErrorResponse } from 'src/common/responses/error-response';
+
+interface ConfigMapping {
+	key: string;
+	value: any;
+}
 
 @Injectable()
 export class AdminService {
@@ -11,13 +17,11 @@ export class AdminService {
 		private settingRepository: Repository<Setting>,
 	) {}
 
-	async createOrUpdatesettings(
-		mapping: FieldMappingDto,
+	async createOrUpdateConfig(
+		mapping: ConfigMapping,
 		userId: string,
-	): Promise<any> {
+	): Promise<SuccessResponse | ErrorResponse> {
 		try {
-			Logger.debug('Received mapping:', mapping);
-
 			// Check if setting with this key exists
 			const existingSetting = await this.settingRepository.findOne({
 				where: { key: mapping.key },
@@ -39,26 +43,47 @@ export class AdminService {
 					updatedBy: userId,
 				});
 				savedMapping = await this.settingRepository.save(newMapping);
-				Logger.debug('Created new mapping:', savedMapping);
 			}
 
-			return savedMapping;
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'Config saved successfully.',
+				data: savedMapping,
+			});
 		} catch (error) {
 			Logger.error('Error saving mapping:', error);
-			throw new Error(`Failed to update mappings: ${error.message}`);
+			return new ErrorResponse({
+				statusCode: HttpStatus.NOT_FOUND,
+				errorMessage: error.message,
+			});
 		}
 	}
 
-	async getSettings(key: string): Promise<Setting> {
-		const setting = await this.settingRepository.findOne({
-			where: { key },
-			order: { created: 'DESC' },
-		});
+	async getConfig(key: string): Promise<SuccessResponse | ErrorResponse> {
+		try {
+			const setting = await this.settingRepository.findOne({
+				where: { key },
+				order: { created: 'DESC' },
+			});
 
-		if (!setting) {
-			throw new NotFoundException(`No setting found with key: ${key}`);
+			if (!setting) {
+				return new ErrorResponse({
+					statusCode: HttpStatus.NOT_FOUND,
+					errorMessage: `No setting found with key: ${key}`,
+				});
+			}
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'Config retrieved successfully',
+				data: setting,
+			});
+		} catch (error) {
+			Logger.error('Error in getConfig:', error);
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage:
+					'An unexpected error occurred while retrieving the configuration',
+			});
 		}
-
-		return setting;
 	}
 }
