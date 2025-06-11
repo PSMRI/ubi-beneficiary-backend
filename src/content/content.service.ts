@@ -908,4 +908,105 @@ export class ContentService {
 			throw new Error(`Error checking benefits eligibility: ${error.message}`);
 		}
 	}
+
+	async getUserBenefitEligibility(benefitId, req): Promise<any>{
+		try{
+			if (!benefitId) {
+				throw new Error('Benefit ID is required');
+			}
+
+			const userId = req?.mw_userid;
+			
+			const body = { filters: { item_id: benefitId } };
+			const filteredData = await this.hasuraService.findJobsCache(body);
+			
+			if (filteredData instanceof ErrorResponse) {
+				throw new Error(`Failed to fetch benefit details: ${filteredData.errorMessage}`);
+			}
+
+			let filteredJobs: any[] = [];
+			if (
+				typeof filteredData.data === 'object' &&
+				filteredData.data !== null &&
+				'ubi_network_cache' in filteredData.data
+			) {
+				filteredJobs = (filteredData.data as any).ubi_network_cache ?? [];
+			}
+
+			if (filteredJobs.length === 0) {
+				throw new Error('No benefit found with the provided ID');
+			}
+
+			// Get user info if userId is present
+			let userInfo = null;
+			try {
+				if (userId) {
+					const request = { user: { keycloak_id: userId } };
+					const response = await this.userService.findOne(request, true);
+					
+					if (response instanceof ErrorResponse) {
+						throw new Error(`Failed to fetch user details: ${response.errorMessage}`);
+					}
+
+					let user = null;
+					if (response?.data) {
+						user = response.data;
+					}
+
+					if (!user) {
+						throw new Error('User not found');
+					}
+
+					userInfo = Object.fromEntries(
+						Object.entries(user).map(([key, value]) => [
+							key,
+							value !== null && value !== undefined ? String(value) : '',
+						]),
+					);
+				}
+			} catch (userError) {
+				this.logger.error('Error fetching user details:', userError);
+				throw new Error(`Failed to process user details: ${userError.message}`);
+			}
+
+			// Eligibility filtering if userInfo is present
+			if (!userInfo) {
+				throw new Error('User information is required for eligibility check');
+			}
+
+			try {
+				const strictCheck = true; 
+				const benefitsList = this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs);
+				
+				if (!benefitsList || benefitsList.length === 0) {
+					throw new Error('No eligibility criteria found for the benefit');
+				}
+
+				const eligibilityData = await this.checkBenefitsEligibility(
+					userInfo,
+					benefitsList,
+					strictCheck,
+				);
+				
+				if (!eligibilityData) {
+					throw new Error('Failed to get eligibility data');
+				}
+
+				return {
+					success: true,
+					data: eligibilityData
+				};
+				
+			} catch (eligibilityError) {
+				this.logger.error('Error in eligibility check:', eligibilityError);
+				throw new Error(`Eligibility check failed: ${eligibilityError.message}`);
+			}
+		} catch (err) {
+			this.logger.error('Error in getUserBenefitEligibility:', err);
+			return {
+				success: false,
+				error: err.message || 'An unexpected error occurred'
+			};
+		}
+	}
 }

@@ -65,6 +65,11 @@ export class HasuraService {
   filterJobs(jobs, filters, search) {
     if (!filters && !search) return jobs;
 
+    // First filter by item_id if present
+    if (filters?.item_id) {
+      jobs = jobs.filter(job => job.item_id === filters.item_id);
+    }
+
     // Utility to parse and evaluate a tag's value against a filter
     const evaluateCondition = (tagValueJson, filterKey, filterValue) => {
       try {

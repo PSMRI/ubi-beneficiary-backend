@@ -6,6 +6,7 @@ import {
   Post,
   Query,
   Request,
+  UseGuards
 } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { ContentService } from './content.service';
@@ -13,6 +14,7 @@ import { CreateOrderDto } from './dto/create-user.dto';
 import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { AuthGuard } from '@modules/auth/auth.guard';
 
 @ApiTags('Content')
 @Controller('content')
@@ -153,5 +155,12 @@ export class ContentController {
     @Body() body: { encryptedData: string },
   ) {
     return this.contentService.decryption(body.encryptedData);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('/eligibility-check/:benefitId')
+  async getEligibilityCheck(@Param('benefitId') benefitId: string, @Request() request, @Body() body) {
+    this.logger.log(`GET /eligibility-check/${benefitId}`);
+    return this.contentService.getUserBenefitEligibility( benefitId, request);
   }
 }
