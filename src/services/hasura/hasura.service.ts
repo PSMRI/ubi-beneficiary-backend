@@ -44,7 +44,7 @@ export class HasuraService {
 			const jobs = response.data[this.cache_db];
 
 			let filteredJobs = this.filterJobs(jobs, filters, search);
-
+console.log(filters,'==--------====')
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
 				message: 'Ok.',
@@ -74,48 +74,124 @@ export class HasuraService {
     const evaluateCondition = (tagValueJson, filterKey, filterValue) => {
       try {
         const tagValue = JSON.parse(tagValueJson);
-        const condition = tagValue.condition;
-        const conditionValues = tagValue.conditionValues;
+        // Normalize condition: remove spaces, convert to lowercase, and join words
+        const condition = String(tagValue.condition)
+          .toLowerCase()
+          .replace(/\s+/g, '')  // Remove all whitespace
+          .replace(/[^a-z0-9=<>]/g, '') // Keep only alphanumeric and comparison operators
+          .replace(/[=<>]+/g, match => {
+            // Normalize symbolic operators
+            switch(match) {
+              case '=': return 'equals';
+              case '<=': return 'lte';
+              case '>=': return 'gte';
+              case '<': return 'lt';
+              case '>': return 'gt';
+              default: return match;
+            }
+          });
 
-        if (filterKey === 'annualIncome' && filterValue.includes('-')) {
-          // Special case: Handle range for annualIncome
-          const [filterMin, filterMax] = filterValue.split('-').map(Number);
-          if (isNaN(filterMin) || isNaN(filterMax)) {
-            return false; // Invalid range
+        // Get condition values from the criteria object
+        const conditionValues = Array.isArray(tagValue.criteria?.conditionValues) 
+          ? tagValue.criteria.conditionValues 
+          : [tagValue.criteria?.conditionValues];
+
+        // Clean and normalize values
+        const cleanFilterValue = String(filterValue).trim().toLowerCase();
+        const cleanConditionValues = conditionValues.map(v => String(v).trim().toLowerCase());
+
+        // Special handling for annualIncome
+        if (filterKey === 'annualIncome') {
+          let annualIncomeValue;
+          
+          // Handle range format (e.g., "0-270000")
+          if (cleanFilterValue.includes('-')) {
+            const [min, max] = cleanFilterValue.split('-').map(v => parseFloat(v.trim()));
+            if (!isNaN(min) && !isNaN(max)) {
+              annualIncomeValue = max;
+            }
+          } 
+          // Handle monthly income (convert to annual)
+          else if (parseFloat(cleanFilterValue) <= 100000) { // Assuming monthly income won't exceed 1L
+            annualIncomeValue = parseFloat(cleanFilterValue) * 12;
+          }
+          // Handle direct annual income
+          else {
+            annualIncomeValue = parseFloat(cleanFilterValue);
           }
 
-          const maxConditionValue = parseFloat(conditionValues);
-
-          // Check if the filter range is within the condition's maximum range
-          return filterMax <= maxConditionValue;
+          if (!isNaN(annualIncomeValue)) {
+            // Convert condition value to number and compare
+            const conditionValue = parseFloat(cleanConditionValues[0]);
+            if (!isNaN(conditionValue)) {
+              return annualIncomeValue <= conditionValue;
+            }
+          }
+          return false;
         }
 
         switch (condition) {
           case 'in':
+          case 'contains':
+          case 'includes':
             // Check if the filter value exists in the conditionValues array
-            return (
-              Array.isArray(conditionValues) &&
-              conditionValues.includes(filterValue)
+            return cleanConditionValues.some(value => 
+              value === cleanFilterValue || 
+              value.includes(cleanFilterValue) || 
+              cleanFilterValue.includes(value)
             );
 
           case 'equals':
-            // Check if the filter value matches the single condition value
-            return conditionValues === filterValue;
+          case 'equal':
+          case 'exact':
+          case 'match':
+          case '=':
+            // Check if the filter value matches the first condition value
+            return cleanConditionValues[0] === cleanFilterValue || 
+              cleanConditionValues[0].replace(/[^a-zA-Z0-9]/g, '') === cleanFilterValue.replace(/[^a-zA-Z0-9]/g, '');
 
-          case 'less than equals':
-            // Check if the filter value is less than or equal to the condition value (numeric comparison)
-            return parseFloat(filterValue) <= parseFloat(conditionValues);
+          case 'lessthanequals':
+          case 'lte':
+          case 'lessthanorequal':
+          case '<=':
+            // Handle numeric comparison with first value
+            const filterNum = parseFloat(cleanFilterValue);
+            const conditionNum = parseFloat(cleanConditionValues[0]);
+            return !isNaN(filterNum) && !isNaN(conditionNum) && filterNum <= conditionNum;
 
-          case 'greater than equals':
-            // Check if the filter value is greater than or equal to the condition value (numeric comparison)
-            return parseFloat(filterValue) >= parseFloat(conditionValues);
+          case 'greaterthanequals':
+          case 'gte':
+          case 'greaterthanorequal':
+          case '>=':
+            // Handle numeric comparison with first value
+            const filterNumGt = parseFloat(cleanFilterValue);
+            const conditionNumGt = parseFloat(cleanConditionValues[0]);
+            return !isNaN(filterNumGt) && !isNaN(conditionNumGt) && filterNumGt >= conditionNumGt;
+
+          case 'lessthan':
+          case 'lt':
+          case '<':
+            // Handle numeric comparison with first value
+            const filterNumLt = parseFloat(cleanFilterValue);
+            const conditionNumLt = parseFloat(cleanConditionValues[0]);
+            return !isNaN(filterNumLt) && !isNaN(conditionNumLt) && filterNumLt < conditionNumLt;
+
+          case 'greaterthan':
+          case 'gt':
+          case '>':
+            // Handle numeric comparison with first value
+            const filterNumGt2 = parseFloat(cleanFilterValue);
+            const conditionNumGt2 = parseFloat(cleanConditionValues[0]);
+            return !isNaN(filterNumGt2) && !isNaN(conditionNumGt2) && filterNumGt2 > conditionNumGt2;
 
           default:
-            return false;
+            // Fallback to partial string matching with first value
+            return cleanConditionValues[0].includes(cleanFilterValue) || 
+              cleanFilterValue.includes(cleanConditionValues[0]);
         }
       } catch (error) {
         console.error('Error evaluating condition:', error.message);
-        throw new Error('Error evaluating condition: ' + error.message);
+        return false;
       }
     };
 
@@ -171,17 +247,17 @@ export class HasuraService {
   }
 
   async searchResponse(data) {
-    console.log('searching response from ' + this.response_cache_db);
+    // console.log('searching response from ' + this.response_cache_db);
 
     let result = 'where: {';
     Object.entries(data).forEach(([key, value]) => {
-      console.log(`${key}: ${value}`);
+      // console.log(`${key}: ${value}`);
 
-      console.log('557', `${key}: ${value}`);
+      // console.log('557', `${key}: ${value}`);
       result += `${key}: {_eq: "${value}"}, `;
     });
     result += '}';
-    console.log('result', result);
+    // console.log('result', result);
     //console.log("order", order)
     const query = `query MyQuery {
             ${this.response_cache_db}(${result}) {
@@ -196,7 +272,7 @@ export class HasuraService {
       return response;
     } catch (error) {
       //this.logger.error("Something Went wrong in creating Admin", error);
-      console.log('error', error);
+      // console.log('error', error);
       throw new HttpException(
         'Unable to Fetch content!',
         HttpStatus.BAD_REQUEST,
@@ -252,7 +328,7 @@ export class HasuraService {
           },
         },
       );
-      console.log('response.data', response.data);
+      // console.log('response.data', response.data);
       return response.data;
     } catch (error) {
       console.log('error', error);
