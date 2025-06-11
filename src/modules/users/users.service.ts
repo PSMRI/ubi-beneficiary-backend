@@ -552,14 +552,29 @@ export class UserService {
     }
 
     for (const createUserDocDto of createUserDocsDto) {
-
       // Call the verification method before further processing
-      const verificationResult = await this.verifyVcWithApi(createUserDocDto.doc_data);
-      console.log('Verification result:', verificationResult);
+      let verificationResult;
+      try {
+        verificationResult = await this.verifyVcWithApi(createUserDocDto.doc_data);
+      } catch (error) {
+        // Extract a user-friendly message
+        let message =
+          error?.response?.data?.message ||
+          error?.message ||
+          'VC Verification failed';
+        throw new BadRequestException({
+          message: message,
+          error: 'Bad Request',
+          statusCode: 400,
+        });
+      }
+
       if (!verificationResult.success) {
         throw new BadRequestException({
           message: verificationResult.message || 'VC Verification failed',
           errors: verificationResult.errors || [],
+          statusCode: 400,
+          error: 'Bad Request',
         });
       }
 
