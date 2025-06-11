@@ -1,5 +1,4 @@
 name: Deploy to UBA-DEV
-
 on:
   workflow_dispatch:
   push:
