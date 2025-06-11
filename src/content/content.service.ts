@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { HasuraService } from 'src/services/hasura/hasura.service';
 import { ProxyService } from 'src/services/proxy/proxy.service';
@@ -914,7 +914,9 @@ export class ContentService {
 		const filteredData = await this.hasuraService.findJobsCache(body);
 		
 		if (filteredData instanceof ErrorResponse) {
-			throw new Error(`Failed to fetch benefit details: ${filteredData.errorMessage}`);
+			    throw new BadRequestException(
+				      `Failed to fetch benefit details: ${filteredData.errorMessage}`,
+				    );
 		}
 
 		let filteredJobs: any[] = [];
@@ -927,7 +929,7 @@ export class ContentService {
 		}
 
 		if (filteredJobs.length === 0) {
-			throw new Error('No benefit found with the provided ID');
+			throw new NotFoundException('No benefit found with the provided ID');
 		}
 
 		return filteredJobs;
@@ -954,7 +956,6 @@ export class ContentService {
 	}
 
 	private async checkEligibility(userInfo: any, filteredJobs: any[]) {
-		const strictCheck = true;
 		const benefitsList = this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs);
 		
 		if (!benefitsList || benefitsList.length === 0) {
@@ -964,7 +965,7 @@ export class ContentService {
 		const eligibilityData = await this.checkBenefitsEligibility(
 			userInfo,
 			benefitsList,
-			strictCheck,
+			true,
 		);
 		
 		if (!eligibilityData) {
@@ -977,26 +978,26 @@ export class ContentService {
 	async getUserBenefitEligibility(benefitId: string, req: any): Promise<any> {
 		try {
 			if (!benefitId) {
-				throw new Error('Benefit ID is required');
+				throw new BadRequestException('Benefit ID is required');
 			}
 
 			const userId = req?.mw_userid;
 			if (!userId) {
-				throw new Error('User ID is required');
+				throw new UnauthorizedException('User ID is required');
 			}
 
 			const filteredJobs = await this.fetchBenefitDetails(benefitId);
 			const userInfo = await this.fetchUserInfo(userId);
 			const eligibilityData = await this.checkEligibility(userInfo, filteredJobs);
 
-			return {
-				success: true,
-				data: eligibilityData
-			};
+			return eligibilityData;
 			
 		} catch (err) {
 			this.logger.error('Error in getUserBenefitEligibility:', err);
-			throw err;
+			  throw new HttpException(
+				    err.message || 'An unexpected error occurred',
+				    HttpStatus.BAD_REQUEST,
+			  )
 		}
 	}
 }
