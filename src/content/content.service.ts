@@ -995,7 +995,7 @@ export class ContentService {
 		} catch (err) {
 			this.logger.error('Error in getUserBenefitEligibility:', err);
 			  throw new HttpException(
-				    err.message || 'An unexpected error occurred',
+				    err.message ?? 'An unexpected error occurred',
 				    HttpStatus.BAD_REQUEST,
 			  )
 		}
