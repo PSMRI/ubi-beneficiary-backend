@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner } from 'typeorm';
@@ -551,6 +552,17 @@ export class UserService {
     }
 
     for (const createUserDocDto of createUserDocsDto) {
+
+      // Call the verification method before further processing
+      const verificationResult = await this.verifyVcWithApi(createUserDocDto.doc_data);
+      console.log('Verification result:', verificationResult);
+      if (!verificationResult.success) {
+        throw new BadRequestException({
+          message: verificationResult.message || 'VC Verification failed',
+          errors: verificationResult.errors || [],
+        });
+      }
+
       const userFilePath = path.join(
         baseFolder,
         `${createUserDocDto.user_id}.json`,
@@ -1004,6 +1016,43 @@ export class UserService {
         error: true,
         message: 'Unknown error occurred',
         status: 500,
+      };
+    }
+  }
+
+  private async verifyVcWithApi(vcData: any): Promise<{ success: boolean; message?: string; errors?: any[] }> {
+    try {
+      const verificationPayload = {
+        credential: vcData,
+        config: {
+          method: 'online',
+          issuerName: process.env.VC_DEFAULT_ISSUER_NAME || 'dhiway',
+        },
+      };
+
+      const verificationUrl = process.env.VC_VERIFICATION_SERVICE_URL;
+
+      const response = await axios.post(
+        verificationUrl,
+        verificationPayload,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+
+      // Use the API's response format directly
+      return {
+        success: response.data?.success,
+        message: response.data?.message,
+        errors: response.data?.errors,
+      };
+    } catch (error) {
+      Logger.error('VC Verification error:', error?.response?.data || error.message);
+      return {
+        success: false,
+        message:
+          error?.response?.data?.message ||
+          error.message ||
+          'VC Verification failed',
+        errors: error?.response?.data?.errors,
       };
     }
   }
