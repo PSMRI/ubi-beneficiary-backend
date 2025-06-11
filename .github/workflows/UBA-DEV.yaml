@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - main    
 jobs:
   Deploy_on_UBA_DEV:
     runs-on: ubuntu-latest
