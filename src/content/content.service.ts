@@ -998,7 +998,7 @@ export class ContentService {
 			this.logger.error('Error in getUserBenefitEligibility:', err);
 			return {
 				success: false,
-				error: err.message || 'An unexpected error occurred'
+				error: err.message ?? 'An unexpected error occurred'
 			};
 		}
 	}

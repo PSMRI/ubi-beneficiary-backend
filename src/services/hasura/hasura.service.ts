@@ -139,11 +139,12 @@ export class HasuraService {
           case 'in':
           case 'contains':
           case 'includes':
-            return cleanConditionValues.some(value => 
-              value === cleanFilterValue || 
-              value.includes(cleanFilterValue) || 
-              cleanFilterValue.includes(value)
-            );
+            return cleanConditionValues.some(value => {
+              const exactMatch = value === cleanFilterValue;
+              const valueIncludes = value.includes(cleanFilterValue);
+              const filterIncludes = cleanFilterValue.includes(value);
+              return exactMatch ?? valueIncludes ?? filterIncludes;
+            });
 
           case 'equals':
           case 'equal':
@@ -156,36 +157,42 @@ export class HasuraService {
           case 'lessthanequals':
           case 'lte':
           case 'lessthanorequal':
-          case '<=':
+          case '<=': {
             const filterNum = parseFloat(cleanFilterValue);
             const conditionNum = parseFloat(cleanConditionValues[0]);
             return !isNaN(filterNum) && !isNaN(conditionNum) && filterNum <= conditionNum;
+          }
 
           case 'greaterthanequals':
           case 'gte':
           case 'greaterthanorequal':
-          case '>=':
+          case '>=': {
             const filterNumGt = parseFloat(cleanFilterValue);
             const conditionNumGt = parseFloat(cleanConditionValues[0]);
             return !isNaN(filterNumGt) && !isNaN(conditionNumGt) && filterNumGt >= conditionNumGt;
+          }
 
           case 'lessthan':
           case 'lt':
-          case '<':
+          case '<': {
             const filterNumLt = parseFloat(cleanFilterValue);
             const conditionNumLt = parseFloat(cleanConditionValues[0]);
             return !isNaN(filterNumLt) && !isNaN(conditionNumLt) && filterNumLt < conditionNumLt;
+          }
 
           case 'greaterthan':
           case 'gt':
-          case '>':
+          case '>': {
             const filterNumGt2 = parseFloat(cleanFilterValue);
             const conditionNumGt2 = parseFloat(cleanConditionValues[0]);
             return !isNaN(filterNumGt2) && !isNaN(conditionNumGt2) && filterNumGt2 > conditionNumGt2;
+          }
 
-          default:
-            return cleanConditionValues[0].includes(cleanFilterValue) || 
-              cleanFilterValue.includes(cleanConditionValues[0]);
+          default: {
+            const valueIncludes = cleanConditionValues[0].includes(cleanFilterValue);
+            const filterIncludes = cleanFilterValue.includes(cleanConditionValues[0]);
+            return valueIncludes ?? filterIncludes;
+          }
         }
       } catch (error) {
         console.error('Error evaluating condition:', error.message);
