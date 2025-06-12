@@ -559,20 +559,20 @@ export class UserService {
       } catch (error) {
         // Extract a user-friendly message
         let message =
-          error?.response?.data?.message ||
-          error?.message ||
+          (error?.response?.data?.message ??
+          error?.message) ??
           'VC Verification failed';
         throw new BadRequestException({
           message: message,
           error: 'Bad Request',
-          statusCode: 400,
+          statusCode: 400
         });
       }
 
       if (!verificationResult.success) {
         throw new BadRequestException({
-          message: verificationResult.message || 'VC Verification failed',
-          errors: verificationResult.errors || [],
+          message: verificationResult.message ?? 'VC Verification failed',
+          errors: verificationResult.errors ?? [],
           statusCode: 400,
           error: 'Bad Request',
         });
@@ -1060,12 +1060,12 @@ export class UserService {
         errors: response.data?.errors,
       };
     } catch (error) {
-      Logger.error('VC Verification error:', error?.response?.data || error.message);
+      Logger.error('VC Verification error:', error?.response?.data ?? error.message);
       return {
         success: false,
         message:
-          error?.response?.data?.message ||
-          error.message ||
+          error?.response?.data?.message ??
+          error.message ??
           'VC Verification failed',
         errors: error?.response?.data?.errors,
       };
