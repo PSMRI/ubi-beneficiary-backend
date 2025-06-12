@@ -1011,7 +1011,7 @@ export class ContentService {
 		}
 
 		if (!response?.data) {
-			throw new Error('User not found');
+			throw new NotFoundException('User not found');
 		}
 
 		return response.data; // Return raw user data object
