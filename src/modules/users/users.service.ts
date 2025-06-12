@@ -566,7 +566,11 @@ export class UserService {
     }
 
     // Update profile based on documents
-    await this.updateProfile(userDetails);
+    try {
+      await this.updateProfile(userDetails);
+    } catch (error) {
+      Logger.error('Profile update failed:', error);
+      }
 
     return savedDocs;
   }
@@ -621,7 +625,7 @@ export class UserService {
     if (createUserDocDto.doc_data) {
       const dataString =
         typeof createUserDocDto.doc_data === 'string'
-          ? createUserDocDto.doc_data
+          ? createUserDocDto.doc_data 
           : JSON.stringify(createUserDocDto.doc_data);
 
       // Encrypt the JSON string
@@ -1064,12 +1068,18 @@ export class UserService {
       };
 
       const verificationUrl = process.env.VC_VERIFICATION_SERVICE_URL;
+      if (!verificationUrl) {
+        return {
+          success: false,
+          message: 'VC_VERIFICATION_SERVICE_URL env variable not set',
+          errors: [],
+        };
+      }
 
-      const response = await axios.post(
-        verificationUrl,
-        verificationPayload,
-        { headers: { 'Content-Type': 'application/json' } }
-      );
+      const response = await axios.post(verificationUrl, verificationPayload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 8000,
+      });
 
       // Use the API's response format directly
       return {
