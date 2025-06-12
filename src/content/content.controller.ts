@@ -157,9 +157,11 @@ export class ContentController {
     return this.contentService.decryption(body.encryptedData);
   }
 
-  @UseGuards(AuthGuard)
-  @Get('/eligibility-check/:benefitId')
-  async getEligibilityCheck(@Param('benefitId') benefitId: string, @Request() request, @Body() body) {
+@UseGuards(AuthGuard)
+@Get('/eligibility-check/:benefitId')
+@ApiResponse({ status: 200, description: 'Eligibility result' })
+@ApiResponse({ status: 400, description: 'Invalid request' })
+async getEligibilityCheck(@Param('benefitId') benefitId: string, @Request() request) {
     this.logger.log(`GET /eligibility-check/${benefitId}`);
     return this.contentService.getUserBenefitEligibility( benefitId, request);
   }

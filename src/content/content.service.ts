@@ -14,6 +14,73 @@ import { HttpService } from '@nestjs/axios';
 import { UserService } from '../modules/users/users.service';
 const crypto = require('crypto');
 
+interface Job {
+	id: number;
+	unique_id: string;
+	item_id: string;
+	provider_id: string;
+	provider_name: string;
+	bpp_id: string;
+	bpp_uri: string;
+	title: string;
+	description: string;
+	url: string | null;
+	item: {
+		descriptor: {
+			long_desc: string;
+			name: string;
+		};
+		id: string;
+		price?: {
+			currency: string;
+			value: string;
+		};
+		rateable: boolean;
+		tags: Array<{
+			descriptor: {
+				code: string;
+				name: string;
+			};
+			display: boolean;
+			list: Array<{
+				descriptor: {
+					code: string;
+					name: string;
+					short_desc?: string;
+				};
+				display: boolean;
+				value: string;
+			}>;
+		}>;
+		time?: {
+			range: {
+				end: string;
+				start: string;
+			};
+		};
+	};
+	descriptor: {
+		images: any[];
+		name: string;
+		short_desc: string;
+	};
+	categories: Array<{
+		descriptor: {
+			code: string;
+			name: string;
+		};
+		id: string;
+	}>;
+	fulfillments: Array<{
+		id: string;
+		tracking: boolean;
+	}>;
+	enrollmentEndDate?: string;
+	offeringInstitute?: any;
+	credits?: string;
+	instructors?: string;
+}
+
 @Injectable()
 export class ContentService {
 	private readonly domain = process.env.DOMAIN;
@@ -909,17 +976,17 @@ export class ContentService {
 		}
 	}
 
-	private async fetchBenefitDetails(benefitId: string) {
+	private async fetchBenefitDetails(benefitId: string): Promise<Job[]> {
 		const body = { filters: { item_id: benefitId } };
 		const filteredData = await this.hasuraService.findJobsCache(body);
 		
 		if (filteredData instanceof ErrorResponse) {
-			    throw new BadRequestException(
-				      `Failed to fetch benefit details: ${filteredData.errorMessage}`,
-				    );
+			throw new BadRequestException(
+				`Failed to fetch benefit details: ${filteredData.errorMessage}`,
+			);
 		}
 
-		let filteredJobs: any[] = [];
+		let filteredJobs: Job[] = [];
 		if (
 			typeof filteredData.data === 'object' &&
 			filteredData.data !== null &&
@@ -947,15 +1014,10 @@ export class ContentService {
 			throw new Error('User not found');
 		}
 
-		return Object.fromEntries(
-			Object.entries(response.data).map(([key, value]) => [
-				key,
-				value !== null && value !== undefined ? String(value) : '',
-			]),
-		);
+		return response.data; // Return raw user data object
 	}
 
-	private async checkEligibility(userInfo: any, filteredJobs: any[]) {
+	private async checkEligibility(userInfo: any, filteredJobs: any[], strictCheck = true): Promise<any> {
 		const benefitsList = this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs);
 		
 		if (!benefitsList || benefitsList.length === 0) {
@@ -965,7 +1027,7 @@ export class ContentService {
 		const eligibilityData = await this.checkBenefitsEligibility(
 			userInfo,
 			benefitsList,
-			true,
+			strictCheck,
 		);
 		
 		if (!eligibilityData) {
@@ -991,13 +1053,17 @@ export class ContentService {
 			const eligibilityData = await this.checkEligibility(userInfo, filteredJobs);
 
 			return eligibilityData;
-			
+
 		} catch (err) {
 			this.logger.error('Error in getUserBenefitEligibility:', err);
-			  throw new HttpException(
-				    err.message ?? 'An unexpected error occurred',
-				    HttpStatus.BAD_REQUEST,
-			  )
+
+			if (err instanceof HttpException) {
+				throw err;
+			}
+			throw new HttpException(
+				'An unexpected error occurred',
+				HttpStatus.INTERNAL_SERVER_ERROR,
+			);
 		}
 	}
 }
