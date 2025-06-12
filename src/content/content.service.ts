@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { HasuraService } from 'src/services/hasura/hasura.service';
 import { ProxyService } from 'src/services/proxy/proxy.service';
@@ -13,6 +13,73 @@ import { ErrorResponse } from 'src/common/responses/error-response';
 import { HttpService } from '@nestjs/axios';
 import { UserService } from '../modules/users/users.service';
 const crypto = require('crypto');
+
+interface Job {
+	id: number;
+	unique_id: string;
+	item_id: string;
+	provider_id: string;
+	provider_name: string;
+	bpp_id: string;
+	bpp_uri: string;
+	title: string;
+	description: string;
+	url: string | null;
+	item: {
+		descriptor: {
+			long_desc: string;
+			name: string;
+		};
+		id: string;
+		price?: {
+			currency: string;
+			value: string;
+		};
+		rateable: boolean;
+		tags: Array<{
+			descriptor: {
+				code: string;
+				name: string;
+			};
+			display: boolean;
+			list: Array<{
+				descriptor: {
+					code: string;
+					name: string;
+					short_desc?: string;
+				};
+				display: boolean;
+				value: string;
+			}>;
+		}>;
+		time?: {
+			range: {
+				end: string;
+				start: string;
+			};
+		};
+	};
+	descriptor: {
+		images: any[];
+		name: string;
+		short_desc: string;
+	};
+	categories: Array<{
+		descriptor: {
+			code: string;
+			name: string;
+		};
+		id: string;
+	}>;
+	fulfillments: Array<{
+		id: string;
+		tracking: boolean;
+	}>;
+	enrollmentEndDate?: string;
+	offeringInstitute?: any;
+	credits?: string;
+	instructors?: string;
+}
 
 @Injectable()
 export class ContentService {
@@ -906,6 +973,97 @@ export class ContentService {
 			return sdkResponse.data;
 		} catch (error) {
 			throw new Error(`Error checking benefits eligibility: ${error.message}`);
+		}
+	}
+
+	private async fetchBenefitDetails(benefitId: string): Promise<Job[]> {
+		const body = { filters: { item_id: benefitId } };
+		const filteredData = await this.hasuraService.findJobsCache(body);
+		
+		if (filteredData instanceof ErrorResponse) {
+			throw new BadRequestException(
+				`Failed to fetch benefit details: ${filteredData.errorMessage}`,
+			);
+		}
+
+		let filteredJobs: Job[] = [];
+		if (
+			typeof filteredData.data === 'object' &&
+			filteredData.data !== null &&
+			'ubi_network_cache' in filteredData.data
+		) {
+			filteredJobs = (filteredData.data as any).ubi_network_cache ?? [];
+		}
+
+		if (filteredJobs.length === 0) {
+			throw new NotFoundException('No benefit found with the provided ID');
+		}
+
+		return filteredJobs;
+	}
+
+	private async fetchUserInfo(userId: string) {
+		const request = { user: { keycloak_id: userId } };
+		const response = await this.userService.findOne(request, true);
+		
+		if (response instanceof ErrorResponse) {
+			throw new Error(`Failed to fetch user details: ${response.errorMessage}`);
+		}
+
+		if (!response?.data) {
+			throw new NotFoundException('User not found');
+		}
+
+		return response.data; // Return raw user data object
+	}
+
+	private async checkEligibility(userInfo: any, filteredJobs: any[], strictCheck = true): Promise<any> {
+		const benefitsList = this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs);
+		
+		if (!benefitsList || benefitsList.length === 0) {
+			throw new Error('No eligibility criteria found for the benefit');
+		}
+
+		const eligibilityData = await this.checkBenefitsEligibility(
+			userInfo,
+			benefitsList,
+			strictCheck,
+		);
+		
+		if (!eligibilityData) {
+			throw new Error('Failed to get eligibility data');
+		}
+
+		return eligibilityData;
+	}
+
+	async getUserBenefitEligibility(benefitId: string, req: any): Promise<any> {
+		try {
+			if (!benefitId) {
+				throw new BadRequestException('Benefit ID is required');
+			}
+
+			const userId = req?.mw_userid;
+			if (!userId) {
+				throw new UnauthorizedException('User ID is required');
+			}
+
+			const filteredJobs = await this.fetchBenefitDetails(benefitId);
+			const userInfo = await this.fetchUserInfo(userId);
+			const eligibilityData = await this.checkEligibility(userInfo, filteredJobs);
+
+			return eligibilityData;
+
+		} catch (err) {
+			this.logger.error('Error in getUserBenefitEligibility:', err);
+
+			if (err instanceof HttpException) {
+				throw err;
+			}
+			throw new HttpException(
+				'An unexpected error occurred',
+				HttpStatus.INTERNAL_SERVER_ERROR,
+			);
 		}
 	}
 }
