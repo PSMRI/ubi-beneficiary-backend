@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner } from 'typeorm';
@@ -540,9 +541,7 @@ export class UserService {
     createUserDocsDto: CreateUserDocDTO[],
   ): Promise<UserDoc[]> {
     const userDetails = await this.getUserDetails(req);
-
     const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
-
     const savedDocs: UserDoc[] = [];
 
     // Ensure the `userData` folder exists
@@ -551,51 +550,101 @@ export class UserService {
     }
 
     for (const createUserDocDto of createUserDocsDto) {
-      const userFilePath = path.join(
-        baseFolder,
-        `${createUserDocDto.user_id}.json`,
-      );
-
-      // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
-      const existingDoc = await this.userDocsRepository.findOne({
-        where: {
-          user_id: userDetails.user_id,
-          doc_type: createUserDocDto.doc_type,
-          doc_subtype: createUserDocDto.doc_subtype,
-        },
-      });
-
-      if (existingDoc) await this.deleteDoc(existingDoc);
-
-      if (createUserDocDto.doc_data) {
-        const dataString =
-          typeof createUserDocDto.doc_data === 'string'
-            ? createUserDocDto.doc_data
-            : JSON.stringify(createUserDocDto.doc_data);
-
-        // Encrypt the JSON string
-        createUserDocDto.doc_data = this.encryptionService.encrypt(dataString);
-      }
-
-      if (!createUserDocDto?.user_id) {
-        createUserDocDto.user_id = userDetails?.user_id;
-      }
-
-      // Create the new document entity for the database
       try {
-        const savedDoc = await this.saveDoc(createUserDocDto);
-        savedDocs.push(savedDoc);
-
-        await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+        const savedDoc = await this.processSingleUserDoc(
+          createUserDocDto,
+          userDetails,
+          baseFolder
+        );
+        if (savedDoc) {
+          savedDocs.push(savedDoc);
+        }
       } catch (error) {
         Logger.error('Error processing document:', error);
+        throw error;
       }
     }
 
     // Update profile based on documents
-    await this.updateProfile(userDetails);
+    try {
+      await this.updateProfile(userDetails);
+    } catch (error) {
+      Logger.error('Profile update failed:', error);
+      }
 
     return savedDocs;
+  }
+
+  private async processSingleUserDoc(
+    createUserDocDto: CreateUserDocDTO,
+    userDetails: any,
+    baseFolder: string
+  ): Promise<UserDoc | null> {
+    // Call the verification method before further processing
+    let verificationResult;
+    try {
+      verificationResult = await this.verifyVcWithApi(createUserDocDto.doc_data);
+    } catch (error) {
+      // Extract a user-friendly message
+      let message =
+        (error?.response?.data?.message ??
+        error?.message) ??
+        'VC Verification failed';
+      throw new BadRequestException({
+        message: message,
+        error: 'Bad Request',
+        statusCode: 400
+      });
+    }
+
+    if (!verificationResult.success) {
+      throw new BadRequestException({
+        message: verificationResult.message ?? 'VC Verification failed',
+        errors: verificationResult.errors ?? [],
+        statusCode: 400,
+        error: 'Bad Request',
+      });
+    }
+
+    const userFilePath = path.join(
+      baseFolder,
+      `${createUserDocDto.user_id}.json`,
+    );
+
+    // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
+    const existingDoc = await this.userDocsRepository.findOne({
+      where: {
+        user_id: userDetails.user_id,
+        doc_type: createUserDocDto.doc_type,
+        doc_subtype: createUserDocDto.doc_subtype,
+      },
+    });
+
+    if (existingDoc) await this.deleteDoc(existingDoc);
+
+    if (createUserDocDto.doc_data) {
+      const dataString =
+        typeof createUserDocDto.doc_data === 'string'
+          ? createUserDocDto.doc_data 
+          : JSON.stringify(createUserDocDto.doc_data);
+
+      // Encrypt the JSON string
+      createUserDocDto.doc_data = this.encryptionService.encrypt(dataString);
+    }
+
+    if (!createUserDocDto?.user_id) {
+      createUserDocDto.user_id = userDetails?.user_id;
+    }
+
+    // Create the new document entity for the database
+    try {
+      const savedDoc = await this.saveDoc(createUserDocDto);
+      await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+      return savedDoc;
+    } catch (error) {
+      Logger.error('Error processing document:', error);
+      return null;
+    }
   }
   // User info
   async createUserInfo(
@@ -1004,6 +1053,49 @@ export class UserService {
         error: true,
         message: 'Unknown error occurred',
         status: 500,
+      };
+    }
+  }
+
+  private async verifyVcWithApi(vcData: any): Promise<{ success: boolean; message?: string; errors?: any[] }> {
+    try {
+      const verificationPayload = {
+        credential: vcData,
+        config: {
+          method: 'online',
+          issuerName: process.env.VC_DEFAULT_ISSUER_NAME ?? 'dhiway',
+        },
+      };
+
+      const verificationUrl = process.env.VC_VERIFICATION_SERVICE_URL;
+      if (!verificationUrl) {
+        return {
+          success: false,
+          message: 'VC_VERIFICATION_SERVICE_URL env variable not set',
+          errors: [],
+        };
+      }
+
+      const response = await axios.post(verificationUrl, verificationPayload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 8000,
+      });
+
+      // Use the API's response format directly
+      return {
+        success: response.data?.success,
+        message: response.data?.message,
+        errors: response.data?.errors,
+      };
+    } catch (error) {
+      Logger.error('VC Verification error:', error?.response?.data ?? error.message);
+      return {
+        success: false,
+        message:
+          error?.response?.data?.message ??
+          error.message ??
+          'VC Verification failed',
+        errors: error?.response?.data?.errors,
       };
     }
   }
