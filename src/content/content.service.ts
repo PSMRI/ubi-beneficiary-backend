@@ -214,7 +214,6 @@ export class ContentService {
 			createUserDto.email,
 		);
 		if (findUser) {
-			console.log('findUser', findUser);
 			const createOrder = {
 				seeker_id: findUser.id,
 				content_id: createOrderDto.content_id,
@@ -223,7 +222,6 @@ export class ContentService {
 			return this.hasuraService.createOrder(createOrder);
 		}
 		const user = await this.hasuraService.createSeekerUser(createUserDto);
-		console.log('user', user.id);
 		if (user) {
 			const createOrder = {
 				seeker_id: user.id,
@@ -266,10 +264,8 @@ export class ContentService {
 
 		try {
 			const response = await this.proxyService.bapCLientApi2('search', data);
-			console.log(JSON.stringify(response), '================');
 			if (response) {
 				const arrayOfObjects = [];
-				//  console.log(response.responses.length())
 				for (const responses of response.responses) {
 					if (responses.message.catalog.providers) {
 						for (const provider of responses.message.catalog.providers) {
@@ -305,14 +301,11 @@ export class ContentService {
 						}
 					}
 				}
-				console.log('arrayOfObjects', arrayOfObjects);
-				console.log('arrayOfObjects length', arrayOfObjects.length);
 				const uniqueObjects = Array.from(
 					new Set(arrayOfObjects.map((obj) => obj.unique_id)),
 				).map((id) => {
 					return arrayOfObjects.find((obj) => obj.unique_id === id);
 				});
-				console.log('uniqueObjects length', uniqueObjects.length);
 				//return uniqueObjects
 				const insertionResponse =
 					await this.hasuraService.insertCacheData(uniqueObjects);
@@ -415,7 +408,6 @@ export class ContentService {
 
 		const response = await this.selectResponseCache(body);
 
-		//console.log("response", response)
 		//return response
 
 		const analytics = response;
@@ -461,7 +453,6 @@ export class ContentService {
 			}
 		});
 
-		//console.log("arrayOfObj", arrayOfObj)
 
 		//return arrayOfObj;
 
@@ -472,7 +463,6 @@ export class ContentService {
 		});
 
 		if (body.fields) {
-			console.log('body.fields', body.fields);
 			const keysToKeep = body.fields;
 
 			const result = uniqueObjects.map((obj) => {
@@ -551,7 +541,6 @@ export class ContentService {
 		}
 
 		const totalDataCount = calculateTotalDataCount(data);
-		console.log('Total sum of data_count:', totalDataCount);
 
 		return {
 			agent: body.agent,
@@ -603,7 +592,6 @@ export class ContentService {
 		//const totalDataCount = calculateTotalDataCount(data);
 
 		const totalDataCount = data.length;
-		console.log('Total sum of data_count:', totalDataCount);
 
 		const transactionsData = data.map((item) => {
 			item.events.ets = this.convertEts(item.events.ets);
@@ -627,8 +615,6 @@ export class ContentService {
 		// Create a Date object with the parsed date
 		const date = new Date(Date.UTC(year, month, day));
 
-		console.log('date', date);
-		console.log('date.toISOString()', date.toISOString());
 
 		//return date.toISOString()
 
@@ -658,12 +644,10 @@ export class ContentService {
 		const date = new Date(timestamp);
 		const formattedDate = date.toISOString().replace(/[TZ]/g, ' ').trim(); // Convert to UTC ISO string and format
 
-		//console.log(formattedDate); // Output: '2024-12-23 03:22:39'
 		return formattedDate;
 	}
 
 	async selectResponseCache(filters) {
-		console.log('filters', filters);
 
 		const query1 = `
       SELECT *
@@ -732,7 +716,6 @@ export class ContentService {
       `;
 
 		const generatedQuery = this.generateQuery(filters);
-		console.log(generatedQuery);
 
 		return await this.responseCacheRepository.query(generatedQuery);
 	}
