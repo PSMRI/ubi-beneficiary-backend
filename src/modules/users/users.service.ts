@@ -52,10 +52,13 @@ export class UserService {
     try {
       const savedUser = await this.userRepository.save(user);
 
+      // Fetch the user again to trigger decryption
+      const savedUserData = await this.userRepository.findOne({ where: { user_id: savedUser.user_id } });
+
       return new SuccessResponse({
         statusCode: HttpStatus.OK, // Created
         message: 'User created successfully.',
-        data: savedUser,
+        data: savedUserData,
       });
     } catch (error) {
       return new ErrorResponse({
@@ -311,7 +314,10 @@ export class UserService {
       sso_id: body.keycloak_id,
       created_at: new Date(),
     });
-    return await this.userRepository.save(user);
+    const savedUser = await this.userRepository.save(user);
+
+    // Fetch the user again to trigger decryption via afterLoad
+    return await this.userRepository.findOne({ where: { user_id: savedUser.user_id } });
   }
   // User docs save
   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
