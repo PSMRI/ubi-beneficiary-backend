@@ -11,6 +11,7 @@ import { UserServiceRegisterDTO } from './dto/user-service-register.dto';
 import { UserServiceResponse } from './dto/user-service-register.response';
 import axios from 'axios';
 import { UserServiceLoginDTO } from './dto/user-service-login.dto';
+import { UserServiceLoginResponse } from './dto/user-service-login.response';
 
 const crypto = require('crypto');
 
@@ -105,7 +106,7 @@ export class AuthService {
       const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL');
 
       // Make the API call to user service
-      const response = await axios.post(
+      const response : UserServiceLoginResponse = await axios.post(
         `${userServiceUrl}/user/v1/auth/login`, 
         body,
         {
