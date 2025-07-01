@@ -27,6 +27,7 @@ import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import axios from 'axios';
+import { EncryptionTransformer } from 'src/common/helper/encryptionTransformer';
 
 @Injectable()
 export class UserService {
@@ -50,13 +51,13 @@ export class UserService {
     try {
       const savedUser = await this.userRepository.save(user);
 
-      // Fetch the user again to trigger decryption
-      const savedUserData = await this.userRepository.findOne({ where: { user_id: savedUser.user_id } });
+      // Apply decryption transformation manually instead of fetching again
+      const decryptedUser = this.applyDecryptionToUser(savedUser);
 
       return new SuccessResponse({
         statusCode: HttpStatus.OK, // Created
         message: 'User created successfully.',
-        data: savedUserData,
+        data: decryptedUser,
       });
     } catch (error) {
       return new ErrorResponse({
@@ -293,19 +294,13 @@ export class UserService {
     });
     const savedUser = await this.userRepository.save(user);
 
-    // Fetch the user again to trigger decryption via afterLoad
-    return await this.userRepository.findOne({ where: { user_id: savedUser.user_id } });
+    // Apply decryption transformation manually instead of fetching again
+    return this.applyDecryptionToUser(savedUser);
   }
   // User docs save
   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
     try {
-      // Convert object to JSON string if needed - transformer will handle encryption
-      if (
-        createUserDocDto.doc_data &&
-        typeof createUserDocDto.doc_data !== 'string'
-      ) {
-        createUserDocDto.doc_data = JSON.stringify(createUserDocDto.doc_data);
-      }
+      // Transformer will handle both object serialization and encryption automatically
 
       // Create and save - transformer handles encryption automatically
       const newUserDoc = this.userDocsRepository.create({
@@ -406,13 +401,7 @@ export class UserService {
           `Document already exists for user_id: ${createUserDocDto.user_id}, doc_type: ${createUserDocDto.doc_type}, doc_subtype: ${createUserDocDto.doc_subtype}`,
         );
       } else {
-        if (
-          createUserDocDto.doc_data &&
-          typeof createUserDocDto.doc_data !== 'string'
-        ) {
-          // Convert to JSON string - transformer will handle encryption
-          createUserDocDto.doc_data = JSON.stringify(createUserDocDto.doc_data);
-        }
+        // Transformer will handle both object serialization and encryption automatically
 
         // Create the new document entity for the database
         const savedDoc = await this.saveDoc(createUserDocDto);
@@ -542,9 +531,9 @@ export class UserService {
       }
     }    // Update profile based on documents
     try {
-      console.log('Starting profile update...');
+      Logger.log('Starting profile update...', 'UserService');
       await this.updateProfile(userDetails);
-      console.log('Profile update completed successfully');
+      Logger.log('Profile update completed successfully', 'UserService');
     } catch (error) {
       Logger.error('Profile update failed:', error);
     }
@@ -599,15 +588,8 @@ export class UserService {
 
     if (existingDoc) await this.deleteDoc(existingDoc);
 
-    if (createUserDocDto.doc_data) {
-      const dataString =
-        typeof createUserDocDto.doc_data === 'string'
-          ? createUserDocDto.doc_data 
-          : JSON.stringify(createUserDocDto.doc_data);
-
-      // Transformer will handle encryption automatically
-      createUserDocDto.doc_data = dataString;
-    }
+    // Transformer will handle both object serialization and encryption automatically
+    // No need to manually convert objects to strings
 
     if (!createUserDocDto?.user_id) {
       createUserDocDto.user_id = userDetails?.user_id;
@@ -1044,5 +1026,26 @@ export class UserService {
         errors: error?.response?.data?.errors,
       };
     }
+  }
+
+  /**
+   * Helper method to manually apply decryption transformation to User entity
+   * This eliminates the need for additional database queries after save operations
+   */
+  private applyDecryptionToUser(user: User): User {
+    if (!user) return user;
+    
+    // Apply decryption transformer to encrypted fields
+    if (user.email) {
+      user.email = EncryptionTransformer.from(user.email);
+    }
+    if (user.phoneNumber) {
+      user.phoneNumber = EncryptionTransformer.from(user.phoneNumber);
+    }
+    if (user.dob) {
+      user.dob = EncryptionTransformer.from(user.dob);
+    }
+    
+    return user;
   }
 }

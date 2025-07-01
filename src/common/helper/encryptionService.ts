@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
+import { ConfigService } from '@nestjs/config';
 
 /**
  * Service for encrypting and decrypting data using AES-256-GCM algorithm.
  * Provides secure encryption with authentication to ensure data integrity.
+ * 
+ * Uses singleton pattern to ensure compatibility with TypeORM transformers
+ * while maintaining NestJS dependency injection support.
  */
 @Injectable()
 export class EncryptionService {
@@ -15,9 +16,12 @@ export class EncryptionService {
   private readonly tagLength = 16; // 16 bytes for authentication tag
 
   private readonly encryptionKey: Buffer;
+  private static instance: EncryptionService;
 
-  constructor() {
-    const keyBase64 = process.env.ENCRYPTION_KEY;
+  constructor(private readonly configService?: ConfigService) {
+    const keyBase64 = this.configService 
+      ? this.configService.get<string>('ENCRYPTION_KEY')
+      : process.env.ENCRYPTION_KEY;
 
     if (!keyBase64) {
       throw new Error('ENCRYPTION_KEY environment variable is required');
@@ -29,6 +33,25 @@ export class EncryptionService {
     if (this.encryptionKey.length !== 32) {
       throw new Error('ENCRYPTION_KEY must be a base64-encoded 32-byte key');
     }
+
+    // Set singleton instance
+    EncryptionService.instance = this;
+  }
+
+  /**
+   * Gets the singleton instance of EncryptionService.
+   * This method is safe to use in TypeORM transformers.
+   * 
+   * When called by NestJS DI, ConfigService is injected.
+   * When called directly (e.g., from transformers), falls back to process.env.
+   * 
+   * @returns EncryptionService instance
+   */
+  static getInstance(): EncryptionService {
+    if (!EncryptionService.instance) {
+      EncryptionService.instance = new EncryptionService();
+    }
+    return EncryptionService.instance;
   }
 
   /**
@@ -71,7 +94,10 @@ export class EncryptionService {
     try {
       return this.decryptWithKey(encryptedValue, this.encryptionKey);
     } catch (error) {
-      console.warn('Failed to decrypt data:', error.message);
+      console.warn('Failed to decrypt data:', {
+        error: error.message,
+        dataLength: encryptedValue?.length
+      });
       return null;
     }
   }
