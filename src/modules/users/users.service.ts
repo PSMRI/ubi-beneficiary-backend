@@ -536,6 +536,7 @@ export class UserService {
       Logger.log('Profile update completed successfully', 'UserService');
     } catch (error) {
       Logger.error('Profile update failed:', error);
+      throw new InternalServerErrorException('Profile update failed after document save');
     }
 
     return savedDocs;
