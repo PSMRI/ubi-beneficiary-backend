@@ -46,15 +46,21 @@ export class AuthMiddleware implements NestMiddleware {
 
       // If keycloak_id is not found in token payload (subject)
       if (!keycloak_id) {
-        req.mw_userid = null;
-        throw new Error('User not found');
+        const decoded: any = jwtDecode(authToken);
+        let keycloak_id = decoded.sub;
+
+        // If keycloak_id is not found in token payload (subject)
+        if (!keycloak_id) {
+          req.mw_userid = null;
+          throw new Error('User not found');
+        }
+
+        const roles = decoded?.resource_access?.hasura?.roles ?? [];
+        req.mw_roles = roles;
+        req.mw_userid = keycloak_id;
       }
 
-      const roles = decoded.resource_access.hasura.roles ?? [];
-      req.mw_roles = roles;
-      req.mw_userid = keycloak_id;
+      next();
     }
-
-    next();
   }
 }

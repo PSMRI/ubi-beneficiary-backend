@@ -37,5 +37,6 @@ import { UsersXref } from '@entities/users_xref.entity';
     ApplicationStatusUpdate,
     ProxyService,
   ],
+   exports: [UserService],
 })
 export class UserModule {}

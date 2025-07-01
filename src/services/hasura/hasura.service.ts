@@ -19,10 +19,9 @@ export class HasuraService {
   }
 
   async findJobsCache(requestBody) {
-    console.log('searching jobs from ' + this.cache_db);
-
-    const { filters, search } = requestBody;
-    const query = `query MyQuery {
+		const { filters, search } = requestBody;
+		
+		const query = `query MyQuery {
            ${this.cache_db}(distinct_on: unique_id) {
             id
             unique_id
@@ -40,78 +39,164 @@ export class HasuraService {
             fulfillments
           }
           }`;
-    try {
-      const response = await this.queryDb(query);
-      const jobs = response.data[this.cache_db];
+		try {
+			const response = await this.queryDb(query);
+			const jobs = response.data[this.cache_db];
 
-      const filteredJobs = this.filterJobs(jobs, filters, search);
+			let filteredJobs = this.filterJobs(jobs, filters, search);
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'Ok.',
 
-      // Return the response in the desired format
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'Ok.',
-        data: {
-          ubi_network_cache: filteredJobs,
-        },
-      });
-    } catch (error) {
-      //this.logger.error("Something Went wrong in creating Admin", error);
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message, // Use error message if available
-      });
-    }
-  }
+				data: {
+					ubi_network_cache: filteredJobs,
+				},
+			});
+		} catch (error) {
+			//this.logger.error("Something Went wrong in creating Admin", error);
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message, // Use error message if available
+			});
+		}
+	}
 
   filterJobs(jobs, filters, search) {
     if (!filters && !search) return jobs;
 
+    // First filter by item_id if present
+    if (filters?.item_id) {
+      jobs = jobs.filter(job => job.item_id === filters.item_id);
+    }
+
     // Utility to parse and evaluate a tag's value against a filter
+    const normalizeCondition = (condition: string): string => {
+      return String(condition)
+        .toLowerCase()
+        .replace(/\s+/g, '')  // Remove all whitespace
+        .replace(/[^a-z0-9=<>]/g, '') // Keep only alphanumeric and comparison operators
+        .replace(/[=<>]+/g, match => {
+          // Normalize symbolic operators
+          switch(match) {
+            case '=': return 'equals';
+            case '<=': return 'lte';
+            case '>=': return 'gte';
+            case '<': return 'lt';
+            case '>': return 'gt';
+            default: return match;
+          }
+        });
+    };
+
+    const handleAnnualIncome = (cleanFilterValue: string, cleanConditionValues: string[]): boolean => {
+      let annualIncomeValue;
+      
+      // Handle range format (e.g., "0-270000")
+      if (cleanFilterValue.includes('-')) {
+        const [min, max] = cleanFilterValue.split('-').map(v => parseFloat(v.trim()));
+        if (!isNaN(min) && !isNaN(max)) {
+          annualIncomeValue = max;
+        }
+      } 
+      // Handle monthly income (convert to annual)
+      else if (parseFloat(cleanFilterValue) <= 100000) { // Assuming monthly income won't exceed 1L
+        annualIncomeValue = parseFloat(cleanFilterValue) * 12;
+      }
+      // Handle direct annual income
+      else {
+        annualIncomeValue = parseFloat(cleanFilterValue);
+      }
+
+      if (!isNaN(annualIncomeValue)) {
+        const conditionValue = parseFloat(cleanConditionValues[0]);
+        if (!isNaN(conditionValue)) {
+          return annualIncomeValue <= conditionValue;
+        }
+      }
+      return false;
+    };
+
     const evaluateCondition = (tagValueJson, filterKey, filterValue) => {
       try {
         const tagValue = JSON.parse(tagValueJson);
-        const condition = tagValue.condition;
-        const conditionValues = tagValue.conditionValues;
+        const condition = normalizeCondition(tagValue.condition);
 
-        if (filterKey === 'annualIncome' && filterValue.includes('-')) {
-          // Special case: Handle range for annualIncome
-          const [filterMin, filterMax] = filterValue.split('-').map(Number);
-          if (isNaN(filterMin) || isNaN(filterMax)) {
-            return false; // Invalid range
-          }
+        // Get condition values from the criteria object
+        const conditionValues = Array.isArray(tagValue.criteria?.conditionValues) 
+          ? tagValue.criteria.conditionValues 
+          : [tagValue.criteria?.conditionValues];
 
-          const maxConditionValue = parseFloat(conditionValues);
+        // Clean and normalize values
+        const cleanFilterValue = String(filterValue).trim().toLowerCase();
+        const cleanConditionValues = conditionValues.map(v => String(v).trim().toLowerCase());
 
-          // Check if the filter range is within the condition's maximum range
-          return filterMax <= maxConditionValue;
+        // Special handling for annualIncome
+        if (filterKey === 'annualIncome') {
+          return handleAnnualIncome(cleanFilterValue, cleanConditionValues);
         }
 
         switch (condition) {
           case 'in':
-            // Check if the filter value exists in the conditionValues array
-            return (
-              Array.isArray(conditionValues) &&
-              conditionValues.includes(filterValue)
-            );
+          case 'contains':
+          case 'includes':
+            return cleanConditionValues.some(value => {
+              const exactMatch = value === cleanFilterValue;
+              const valueIncludes = value.includes(cleanFilterValue);
+              const filterIncludes = cleanFilterValue.includes(value);
+              return exactMatch ?? valueIncludes ?? filterIncludes;
+            });
 
           case 'equals':
-            // Check if the filter value matches the single condition value
-            return conditionValues === filterValue;
+          case 'equal':
+          case 'exact':
+          case 'match':
+          case '=':
+            return cleanConditionValues[0] === cleanFilterValue || 
+              cleanConditionValues[0].replace(/[^a-zA-Z0-9]/g, '') === cleanFilterValue.replace(/[^a-zA-Z0-9]/g, '');
 
-          case 'less than equals':
-            // Check if the filter value is less than or equal to the condition value (numeric comparison)
-            return parseFloat(filterValue) <= parseFloat(conditionValues);
+          case 'lessthanequals':
+          case 'lte':
+          case 'lessthanorequal':
+          case '<=': {
+            const filterNum = parseFloat(cleanFilterValue);
+            const conditionNum = parseFloat(cleanConditionValues[0]);
+            return !isNaN(filterNum) && !isNaN(conditionNum) && filterNum <= conditionNum;
+          }
 
-          case 'greater than equals':
-            // Check if the filter value is greater than or equal to the condition value (numeric comparison)
-            return parseFloat(filterValue) >= parseFloat(conditionValues);
+          case 'greaterthanequals':
+          case 'gte':
+          case 'greaterthanorequal':
+          case '>=': {
+            const filterNumGt = parseFloat(cleanFilterValue);
+            const conditionNumGt = parseFloat(cleanConditionValues[0]);
+            return !isNaN(filterNumGt) && !isNaN(conditionNumGt) && filterNumGt >= conditionNumGt;
+          }
 
-          default:
-            return false;
+          case 'lessthan':
+          case 'lt':
+          case '<': {
+            const filterNumLt = parseFloat(cleanFilterValue);
+            const conditionNumLt = parseFloat(cleanConditionValues[0]);
+            return !isNaN(filterNumLt) && !isNaN(conditionNumLt) && filterNumLt < conditionNumLt;
+          }
+
+          case 'greaterthan':
+          case 'gt':
+          case '>': {
+            const filterNumGt2 = parseFloat(cleanFilterValue);
+            const conditionNumGt2 = parseFloat(cleanConditionValues[0]);
+            return !isNaN(filterNumGt2) && !isNaN(conditionNumGt2) && filterNumGt2 > conditionNumGt2;
+          }
+
+          default: {
+            const valueIncludes = cleanConditionValues[0].includes(cleanFilterValue);
+            const filterIncludes = cleanFilterValue.includes(cleanConditionValues[0]);
+            return valueIncludes ?? filterIncludes;
+          }
         }
       } catch (error) {
         console.error('Error evaluating condition:', error.message);
-        throw new Error('Error evaluating condition: ' + error.message);
+        return false;
       }
     };
 
@@ -167,18 +252,13 @@ export class HasuraService {
   }
 
   async searchResponse(data) {
-    console.log('searching response from ' + this.response_cache_db);
 
     let result = 'where: {';
     Object.entries(data).forEach(([key, value]) => {
-      console.log(`${key}: ${value}`);
 
-      console.log('557', `${key}: ${value}`);
       result += `${key}: {_eq: "${value}"}, `;
     });
     result += '}';
-    console.log('result', result);
-    //console.log("order", order)
     const query = `query MyQuery {
             ${this.response_cache_db}(${result}) {
                 id
@@ -449,4 +529,6 @@ export class HasuraService {
       throw new HttpException('Unable to add telemetry', HttpStatus.BAD_REQUEST);
     }
   }
+
+
 }

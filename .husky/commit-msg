@@ -1,0 +1,37 @@
+echo ""
+echo ">>> Running commit-msg hook... <<<"
+echo "📝 Running check for commit message format..."
+
+# Get the commit message file
+commit_msg_file=$1
+
+# Read the commit message
+commit_msg=$(cat "$commit_msg_file")
+
+# Regex pattern for commit message validation
+# Pattern: (fix|ref|Issue|Task|Bug|Feature) optional_spaces optional_#numbers space (chore|feat|fix|test): space
+regex="^(fix|ref|Issue|Task|Bug|Feature)\s*#?[0-9]*\s(chore|feat|fix|test):\s"
+
+# Check if commit message matches the pattern
+if echo "$commit_msg" | grep -qE "$regex"; then
+  echo "✅ Commit message format is valid"
+  echo ""
+  exit 0
+else
+  echo "❌ Invalid commit message format!"
+  echo ""
+  echo "Your commit message: '$commit_msg'"
+  echo ""
+  echo "Expected format: (fix|ref|Issue|Task|Bug|Feature) [#number] (chore|feat|fix|test): <description>"
+  echo ""
+  echo "Valid examples:"
+  echo "  - Issue #123 chore: Merge upstream/master"
+  echo "  - Issue #234 feat: Add new form for product"
+  echo "  - Issue #345 fix: Order page not loading"
+  echo "  - Issue #567 test: Add test cases for product form"
+  echo "  - Task #234 feat: Add new form for product"
+  echo "  - Bug #345 fix: Order page not loading"
+  echo "  - Feature #234 feat: Add new form for product"
+  echo ""
+  exit 1
+fi 

@@ -162,7 +162,7 @@ export class UserController {
     status: 200,
     description: 'User application data',
     type: UserApplication,
-  })
+  }) 
   @ApiResponse({ status: 404, description: 'User application not found' })
   async findOneUserApplication(
     @Param('internal_application_id') internal_application_id: string,

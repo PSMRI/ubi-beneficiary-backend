@@ -99,6 +99,7 @@ export default class ProfilePopulatorCron {
     } catch (error) {
       Logger.error("Error in 'Profile Populator CRON': ", error);
       throw new Error("Error in 'Profile Populator CRON': " + error);
+      throw new Error("Error in 'Profile Populator CRON': " + error);
     }
   }
 }
