@@ -23,13 +23,13 @@ export class User {
   @Column({ length: 50 })
   lastName: string;
 
-  @Column({ length: 100, unique: true })
+  @Column({ length: 100, unique: true, transformer: EncryptionTransformer })
   email: string;
 
-  @Column({ length: 100, nullable: true, transformer: EncryptionTransformer, })
+  @Column({ length: 100, nullable: true, transformer: EncryptionTransformer })
   phoneNumber: string;
 
-  @Column({ type: 'date', nullable: true })
+  @Column({ type: 'date', nullable: true, transformer: EncryptionTransformer })
   dob: Date;
 
   @Column({ length: 255 })
