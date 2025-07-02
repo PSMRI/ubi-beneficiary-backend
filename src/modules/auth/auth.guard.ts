@@ -5,8 +5,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { jwtDecode } from 'jwt-decode';
 import { Observable } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
+import * as jwt from 'jsonwebtoken';
 interface AuthenticatedRequest extends Request {
   user: {
     keycloak_id: string;
@@ -16,6 +17,8 @@ interface AuthenticatedRequest extends Request {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  constructor(private readonly configService: ConfigService) {}
+
   canActivate(
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
@@ -34,9 +37,8 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Bearer token not found or invalid');
     }
 
-    // Decode and validate the token
+    // Verify and decode the token
     const decoded = this.verifyToken(token);
-
     // Check for keycloak_id in token payload (subject)
     if (!decoded?.sub) {
       throw new UnauthorizedException('Invalid token: keycloak_id missing');
@@ -55,13 +57,14 @@ export class AuthGuard implements CanActivate {
     return true; // Token is valid
   }
 
-  // Verify the token and return decoded value
+  // Verify the token signature and return decoded value
   private verifyToken(token: string): any {
     try {
-      const decoded = jwtDecode(token);
+      const publicKey = this.configService.get<string>('KEYCLOAK_REALM_RSA_PUBLIC_KEY');
+      const pemKey = publicKey.startsWith('-----BEGIN') ? publicKey : `-----BEGIN PUBLIC KEY-----\n${publicKey}\n-----END PUBLIC KEY-----`;
+      const decoded = jwt.verify(token, pemKey, { algorithms: ['RS256'] });
       return decoded;
     } catch (err) {
-      console.error('Token verification failed:', err);
       throw new UnauthorizedException('Invalid token');
     }
   }
