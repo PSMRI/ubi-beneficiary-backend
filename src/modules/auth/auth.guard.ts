@@ -30,7 +30,15 @@ export class AuthGuard implements CanActivate {
     if (!authHeader) {
       throw new UnauthorizedException('Authorization header is missing');
     }
-
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer') {
+      throw new UnauthorizedException('Bearer token not found or invalid');
+    }
+    
+    const tokenParts = parts[1];
+    if (!tokenParts || tokenParts.split('.').length !== 3) {
+      throw new UnauthorizedException('Malformed JWT token');
+    }
     // Split and validate the Bearer token format
     const [bearer, token] = authHeader.split(' ');
     if (bearer.toLowerCase() !== 'bearer' || !token) {
@@ -39,6 +47,7 @@ export class AuthGuard implements CanActivate {
 
     // Verify and decode the token
     const decoded = this.verifyToken(token);
+   
     // Check for keycloak_id in token payload (subject)
     if (!decoded?.sub) {
       throw new UnauthorizedException('Invalid token: keycloak_id missing');
@@ -53,7 +62,6 @@ export class AuthGuard implements CanActivate {
       keycloak_id: decoded.sub,
       ...decoded,
     };
-
     return true; // Token is valid
   }
 
