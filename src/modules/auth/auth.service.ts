@@ -32,20 +32,26 @@ export class AuthService {
     const token = await this.keycloakService.getUserKeycloakToken(body);
 
     if (token) {
-      const user = await this.userService.findByUsername(body.username);
-      let walletToken = null;
-      if (user) {
-        walletToken = user.walletToken || null;
+      // First try to get Keycloak user details
+      const keycloakUser = await this.keycloakService.getUserByUsername(body.username);
+      
+      if (keycloakUser?.user?.id) {
+        // Try to find user by Keycloak ID (sso_id)
+        const user = await this.userService.findBySsoId(keycloakUser.user.id);
+        this.loggerService.log(`User found by Keycloak ID: ${JSON.stringify(user)}`);
+        
+        if (user) {
+          return new SuccessResponse({
+            statusCode: HttpStatus.OK,
+            message: 'LOGGEDIN_SUCCESSFULLY',
+            data: {
+              ...token,
+              username: body.username,
+              walletToken: user.walletToken || null,
+            },
+          });
+        }
       }
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'LOGGEDIN_SUCCESSFULLY',
-        data: {
-          ...token,
-          username: body.username,
-          walletToken,
-        },
-      });
     } else {
       return new ErrorResponse({
         statusCode: HttpStatus.UNAUTHORIZED,

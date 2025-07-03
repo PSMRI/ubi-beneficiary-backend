@@ -295,9 +295,10 @@ export class UserService {
     });
   }
 
-  async findByUsername(username: string): Promise<User | undefined> {
+  async findBySsoId(ssoId: string): Promise<User | undefined> {
+    console.log('Finding user by username:', ssoId);
     return await this.userRepository.findOne({
-      where: { phoneNumber: username },
+      where: { sso_id: ssoId }
     });
   }
 
