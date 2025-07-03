@@ -38,7 +38,7 @@ export class UserApplication {
   status: string;
 
   @Column({ type: 'text', transformer: encryptionTransformer })
-  application_data: string;
+  application_data: any; // Can be object, array, or null after decryption
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

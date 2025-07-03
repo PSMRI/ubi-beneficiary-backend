@@ -78,6 +78,5 @@ export class CreateUserApplicationDto {
     required: false,
   })
   @IsOptional() // Optional
-  @IsString() // Validate as a string
-  application_data?: string; // Updated type to match the entity
+  application_data?: any;  // Can be object, array, or null
 }

@@ -293,7 +293,7 @@ export class UserService {
     try {
       const newUserDoc = this.userDocsRepository.create({
         ...createUserDocDto,
-        doc_data: createUserDocDto.doc_data as string,
+        doc_data: createUserDocDto.doc_data,
       });
 
       const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
@@ -331,7 +331,7 @@ export class UserService {
   async saveDoc(createUserDocDto: CreateUserDocDTO) {
     const newUserDoc = this.userDocsRepository.create({
       ...createUserDocDto,
-      doc_data: createUserDocDto.doc_data as string,
+      doc_data: createUserDocDto.doc_data,
     });
 
     // Save to the database

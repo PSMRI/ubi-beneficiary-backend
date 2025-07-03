@@ -41,7 +41,7 @@ export class UserDoc {
   doc_path: string;
 
   @Column({ type: 'text', nullable: true, transformer: encryptionTransformer })
-  doc_data: string | null;
+  doc_data: any; // Can be object, array, or null after decryption
 
   @Column({ type: 'varchar', length: 100 })
   doc_datatype: string;
