@@ -309,6 +309,7 @@ export class UserService {
       phoneNumber: body.phoneNumber ?? '',
       sso_provider: 'keycloak',
       sso_id: body.keycloak_id,
+      walletToken: body.walletToken ?? null,
       created_at: new Date(),
     });
     return await this.userRepository.save(user);
