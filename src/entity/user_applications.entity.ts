@@ -1,3 +1,4 @@
+import { EncryptionTransformer } from 'src/common/helper/encryptionTransformer';
 import {
   Entity,
   Column,
@@ -32,8 +33,8 @@ export class UserApplication {
   @Column({ type: 'varchar', length: 20 })
   status: string;
 
-  @Column({ type: 'jsonb' })
-  application_data: Record<string, any>;
+  @Column({ type: 'text', transformer: EncryptionTransformer })
+  application_data: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
