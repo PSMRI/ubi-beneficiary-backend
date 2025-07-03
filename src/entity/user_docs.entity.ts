@@ -8,6 +8,10 @@ import {
 } from 'typeorm';
 import { User } from './user.entity';
 import { EncryptionTransformer } from 'src/common/helper/encryptionTransformer';
+import { ConfigService } from '@nestjs/config';
+
+const configService = new ConfigService();
+const encryptionTransformer = EncryptionTransformer(configService);
 
 @Entity('user_docs')
 export class UserDoc {
@@ -36,8 +40,8 @@ export class UserDoc {
   @Column({ type: 'varchar', length: 255, nullable: true })
   doc_path: string;
 
-  @Column({ type: 'text', nullable: true, transformer: EncryptionTransformer })
-  doc_data: string;
+  @Column({ type: 'text', nullable: true, transformer: encryptionTransformer })
+  doc_data: string | null;
 
   @Column({ type: 'varchar', length: 100 })
   doc_datatype: string;

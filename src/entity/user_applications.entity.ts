@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { EncryptionTransformer } from 'src/common/helper/encryptionTransformer';
 import {
   Entity,
@@ -6,6 +7,9 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
+
+const configService = new ConfigService();
+const encryptionTransformer = EncryptionTransformer(configService);
 
 @Entity('user_applications')
 export class UserApplication {
@@ -33,7 +37,7 @@ export class UserApplication {
   @Column({ type: 'varchar', length: 20 })
   status: string;
 
-  @Column({ type: 'text', transformer: EncryptionTransformer })
+  @Column({ type: 'text', transformer: encryptionTransformer })
   application_data: string;
 
   @CreateDateColumn({ type: 'timestamptz' })

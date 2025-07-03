@@ -18,10 +18,8 @@ export class EncryptionService {
   private readonly encryptionKey: Buffer;
   private static instance: EncryptionService;
 
-  constructor(private readonly configService?: ConfigService) {
-    const keyBase64 = this.configService 
-      ? this.configService.get<string>('ENCRYPTION_KEY')
-      : process.env.ENCRYPTION_KEY;
+  constructor(private readonly configService: ConfigService) {
+    const keyBase64 = this.configService.get<string>('ENCRYPTION_KEY');
 
     if (!keyBase64) {
       throw new Error('ENCRYPTION_KEY environment variable is required');
@@ -47,9 +45,9 @@ export class EncryptionService {
    * 
    * @returns EncryptionService instance
    */
-  static getInstance(): EncryptionService {
+  static getInstance(configService: ConfigService): EncryptionService {
     if (!EncryptionService.instance) {
-      EncryptionService.instance = new EncryptionService();
+      EncryptionService.instance = new EncryptionService(configService);
     }
     return EncryptionService.instance;
   }
@@ -94,11 +92,7 @@ export class EncryptionService {
     try {
       return this.decryptWithKey(encryptedValue, this.encryptionKey);
     } catch (error) {
-      console.warn('Failed to decrypt data:', {
-        error: error.message,
-        dataLength: encryptedValue?.length
-      });
-      return null;
+      throw new Error(`Decryption failed: ${error.message}`);
     }
   }
 
@@ -111,6 +105,11 @@ export class EncryptionService {
    */
   private decryptWithKey(encryptedValue: string, key: Buffer): any {
     const buffer = Buffer.from(encryptedValue, 'base64');
+
+    // Ensure buffer length is sufficient to extract IV, auth tag, and encrypted data
+    if (buffer.length < this.ivLength + this.tagLength + 1) {
+      throw new Error('Invalid encrypted data: Buffer is too short');
+    }
 
     // Extract components: IV (12 bytes) + auth tag (16 bytes) + encrypted data
     const iv = buffer.subarray(0, this.ivLength);

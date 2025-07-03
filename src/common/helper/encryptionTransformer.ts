@@ -1,5 +1,6 @@
 import { ValueTransformer } from 'typeorm';
 import { EncryptionService } from './encryptionService';
+import { ConfigService } from '@nestjs/config';
 
 /**
  * TypeORM ValueTransformer for automatic encryption/decryption of database fields.
@@ -13,7 +14,7 @@ import { EncryptionService } from './encryptionService';
  * - Uses AES-256-GCM encryption for secure data storage
  * - Uses singleton pattern for compatibility with NestJS dependency injection
  */
-export const EncryptionTransformer: ValueTransformer = {
+export const EncryptionTransformer = (configService: ConfigService): ValueTransformer => ({
   /**
    * Transforms data before saving to database (encrypts the value).
    * 
@@ -27,7 +28,7 @@ export const EncryptionTransformer: ValueTransformer = {
     }
 
     try {
-      const encryptionService = EncryptionService.getInstance();
+      const encryptionService = EncryptionService.getInstance(configService);
       const encrypted = encryptionService.encrypt(value);
       return encrypted;
     } catch (error) {
@@ -53,17 +54,17 @@ export const EncryptionTransformer: ValueTransformer = {
     }
 
     try {
-      const encryptionService = EncryptionService.getInstance();
+      const encryptionService = EncryptionService.getInstance(configService);
       const decrypted = encryptionService.decrypt(value);
-      
+
       if (decrypted !== null) {
         return decrypted;
       } else {
-        return value;
+        throw new Error('Decryption returned null: Possible data corruption or misconfiguration');
       }
     } catch (error) {
       console.error('Decryption failed:', error);
       throw error;
     }
   },
-};
+});
