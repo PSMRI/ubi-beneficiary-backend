@@ -31,9 +31,6 @@ export class EncryptionService {
     if (this.encryptionKey.length !== 32) {
       throw new Error('ENCRYPTION_KEY must be a base64-encoded 32-byte key');
     }
-
-    // Set singleton instance
-    EncryptionService.instance = this;
   }
 
   /**
@@ -66,7 +63,12 @@ export class EncryptionService {
     const cipher = createCipheriv(this.algorithm, key, iv);
 
     // Convert value to JSON string for consistent encryption
-    const dataToEncrypt = JSON.stringify(value);
+    let dataToEncrypt: string;
+    try {
+      dataToEncrypt = JSON.stringify(value);
+    } catch (error) {
+      throw new Error(`Failed to serialize value for encryption: ${error.message}`);
+    }
 
     // Encrypt the data
     const encrypted = Buffer.concat([
@@ -127,6 +129,10 @@ export class EncryptionService {
     ]);
 
     // Parse JSON string back to original data type
-    return JSON.parse(decrypted.toString('utf8'));
+    try {
+      return JSON.parse(decrypted.toString('utf8'));
+    } catch (error) {
+      throw new Error(`Failed to parse decrypted data as JSON: ${error.message}`);
+    }
   }
 }

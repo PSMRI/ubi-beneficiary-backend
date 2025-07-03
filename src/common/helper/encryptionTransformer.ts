@@ -1,7 +1,9 @@
 import { ValueTransformer } from 'typeorm';
 import { EncryptionService } from './encryptionService';
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 
+const logger = new Logger('EncryptionTransformer');
 /**
  * TypeORM ValueTransformer for automatic encryption/decryption of database fields.
  * 
@@ -32,7 +34,7 @@ export const EncryptionTransformer = (configService: ConfigService): ValueTransf
       const encrypted = encryptionService.encrypt(value);
       return encrypted;
     } catch (error) {
-      console.error('Encryption failed:', error);
+      logger.error('Encryption failed:', error);
       throw error;
     }
   },
@@ -63,7 +65,7 @@ export const EncryptionTransformer = (configService: ConfigService): ValueTransf
         throw new Error('Decryption returned null: Possible data corruption or misconfiguration');
       }
     } catch (error) {
-      console.error('Decryption failed:', error);
+      logger.error('Decryption failed:', error);
       throw error;
     }
   },
