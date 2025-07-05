@@ -151,7 +151,7 @@ export class AuthService {
 
           this.loggerService.log('Starting wallet onboarding for user', 'AuthService');
           const walletResponse = await this.walletService.onboardUser(walletData);
-          walletToken = walletResponse.data.token;
+          walletToken = walletResponse?.data?.token;
 
           // Step 6: Update user with wallet token
           if (walletToken) {
@@ -164,23 +164,23 @@ export class AuthService {
       } catch (walletError) {
         // Rollback user creation in DB and Keycloak if wallet onboarding fails
         this.loggerService.error(
-          `Wallet onboarding failed for user ${user?.user_id}: ${walletError.message}`,
+          'Wallet onboarding failed during user registration',
           walletError.stack,
           'AuthService'
         );
-        // Delete user from DB
+        // Delete user from DB if it exists
         if (user?.user_id) {
-          await this.userService["userRepository"].delete(user.user_id);
+          await this.userService.deleteUser(user.user_id);
           this.loggerService.error(`Rolled back user in DB: ${user.user_id}`, 'AuthService');
         }
-        // Delete user from Keycloak
+        // Delete user from Keycloak if it exists
         if (keycloakId) {
           await this.keycloakService.deleteUser(keycloakId);
           this.loggerService.error(`Rolled back user in Keycloak: ${keycloakId}`, 'AuthService');
         }
         throw new ErrorResponse({
           statusCode: HttpStatus.BAD_GATEWAY,
-          errorMessage: 'User registration failed. Please try again later.',
+          errorMessage: 'Registration could not be completed. Please try again later.',
         });
       }
 

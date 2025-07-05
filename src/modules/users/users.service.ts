@@ -1101,4 +1101,16 @@ export class UserService {
       };
     }
   }
+
+  async deleteUser(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { user_id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID '${userId}' not found`);
+    }
+
+    await this.userRepository.delete(userId);
+  }
 }
