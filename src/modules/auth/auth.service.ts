@@ -50,7 +50,19 @@ export class AuthService {
               walletToken: user.walletToken || null,
             },
           });
+        } else {
+          // User exists in Keycloak but not in database
+          return new ErrorResponse({
+            statusCode: HttpStatus.UNAUTHORIZED,
+            errorMessage: 'User account not found in system',
+          });
         }
+      } else {
+        // Could not find user in Keycloak
+        return new ErrorResponse({
+          statusCode: HttpStatus.UNAUTHORIZED,
+          errorMessage: 'INVALID_USERNAME_PASSWORD_MESSAGE',
+        });
       }
     } else {
       return new ErrorResponse({
