@@ -110,7 +110,7 @@ export class WalletService {
         // API responded with error status
         throw new ErrorResponse({
           statusCode: HttpStatus.BAD_GATEWAY,
-          errorMessage: `Wallet service error: ${error.response.data?.message || error.message}`,
+          errorMessage: `Wallet service error: ${error.response.data?.message ?? error.message}`,
         });
       } else if (error.request) {
         // Network error
