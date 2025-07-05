@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { LoggerService } from 'src/logger/logger.service';
 import { firstValueFrom } from 'rxjs';
 import { ErrorResponse } from 'src/common/responses/error-response';
+import * as https from 'https';
+import * as crypto from 'crypto';
 
 export interface WalletOnboardRequest {
   firstName: string;
@@ -22,6 +24,7 @@ export interface WalletOnboardResponse {
 @Injectable()
 export class WalletService {
   private readonly walletBaseUrl: string;
+  private readonly httpsAgent: https.Agent;
 
   constructor(
     private readonly httpService: HttpService,
@@ -29,12 +32,52 @@ export class WalletService {
     private readonly loggerService: LoggerService,
   ) {
     this.walletBaseUrl = this.configService.get<string>('WALLET_BASE_URL');
+    
+    // Create HTTPS agent with SSL verification disabled (for development only)
+    this.httpsAgent = new https.Agent({
+      rejectUnauthorized: false, // WARNING: This disables SSL certificate validation
+    });
+    
+    this.loggerService.warn(
+      'SSL certificate validation is disabled. This is not recommended for production.',
+      'WalletService'
+    );
+  }
+
+  private validateWalletData(data: WalletOnboardRequest): void {
+    const requiredFields = ['firstName', 'lastName', 'phone', 'username', 'password'];
+    const missingFields = requiredFields.filter(field => !data[field]);
+
+    if (missingFields.length > 0) {
+      throw new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: `Missing required wallet onboard fields: ${missingFields.join(', ')}`,
+      });
+    }
+
+    // Additional validation rules
+    if (data.phone.length < 10) {
+      throw new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'Phone number must be at least 10 digits',
+      });
+    }
+
+    if (data.password.length < 8) {
+      throw new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'Password must be at least 8 characters long',
+      });
+    }
   }
 
   async onboardUser(walletData: WalletOnboardRequest): Promise<WalletOnboardResponse> {
     try {
       if (!this.walletBaseUrl) {
-        throw new Error('WALLET_BASE_URL is not configured');
+        throw new ErrorResponse({
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          errorMessage: 'Wallet service configuration error: WALLET_BASE_URL not set',
+        });
       }
 
       const url = `${this.walletBaseUrl}/api/wallet/onboard`;
@@ -43,10 +86,13 @@ export class WalletService {
       
       const response = await firstValueFrom(
         this.httpService.post<WalletOnboardResponse>(url, walletData, {
-          timeout: 20000, // 20 seconds timeout
+          timeout: 20000,
           headers: {
             'Content-Type': 'application/json',
+            'User-Agent': 'Beneficiary-Backend/1.0',
+            'X-Request-ID': crypto.randomUUID(),
           },
+          httpsAgent: this.httpsAgent,
         })
       );
 

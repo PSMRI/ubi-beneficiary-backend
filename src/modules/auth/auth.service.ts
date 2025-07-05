@@ -46,7 +46,7 @@ export class AuthService {
             message: 'LOGGEDIN_SUCCESSFULLY',
             data: {
               ...token,
-              username: body.username,
+              username: body.username.toLowerCase(),
               walletToken: user.walletToken || null,
             },
           });
@@ -140,13 +140,13 @@ export class AuthService {
       // Step 5: Wallet onboarding integration
       let walletToken = null;
       try {
-        if (user && user.user_id) {
+        if (user?.user_id) {
           const walletData = {
             firstName: body.firstName.trim(),
             lastName: body.lastName.trim(),
             phone: body.phoneNumber.trim(),
             password: password,
-            username: userName,
+            username: userName.toLowerCase(),
           };
 
           this.loggerService.log('Starting wallet onboarding for user', 'AuthService');
@@ -169,7 +169,7 @@ export class AuthService {
           'AuthService'
         );
         // Delete user from DB
-        if (user && user.user_id) {
+        if (user?.user_id) {
           await this.userService["userRepository"].delete(user.user_id);
           this.loggerService.error(`Rolled back user in DB: ${user.user_id}`, 'AuthService');
         }
@@ -180,7 +180,7 @@ export class AuthService {
         }
         throw new ErrorResponse({
           statusCode: HttpStatus.BAD_GATEWAY,
-          errorMessage: `Wallet onboarding failed and user registration rolled back: ${walletError.message}`,
+          errorMessage: 'User registration failed. Please try again later.',
         });
       }
 
@@ -190,7 +190,7 @@ export class AuthService {
         message: 'User created successfully',
         data: { 
           user, 
-          userName, 
+          userName: userName.toLowerCase(),
           password,
           walletOnboarded: !!walletToken 
         },
@@ -249,12 +249,13 @@ export class AuthService {
       enabled: 'true',
       firstName: trimmedFirstName,
       lastName: trimmedLastName,
-      username:
+      username: (
         trimmedFirstName +
         '_' +
         trimmedLastName?.charAt(0) +
         '_' +
-        trimmedPhoneNumber?.slice(-4),
+        trimmedPhoneNumber?.slice(-4)
+      ).toLowerCase(),
       credentials: [
         {
           type: 'password',
