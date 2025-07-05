@@ -63,16 +63,17 @@ export class WalletService {
       });
     }
 
-    if (data.password.length < 8) {
+    if (data.password.length < 4) {
       throw new ErrorResponse({
         statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: 'Password must be at least 8 characters long',
+        errorMessage: 'Password must be at least 4 characters long',
       });
     }
   }
 
   async onboardUser(walletData: WalletOnboardRequest): Promise<WalletOnboardResponse> {
     try {
+      this.validateWalletData(walletData);
       if (!this.walletBaseUrl) {
         throw new ErrorResponse({
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
