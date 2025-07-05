@@ -191,7 +191,7 @@ export class AuthService {
         data: { 
           user, 
           userName: userName.toLowerCase(),
-          password,
+          // password,
           walletOnboarded: !!walletToken 
         },
       });

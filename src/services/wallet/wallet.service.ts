@@ -85,6 +85,7 @@ export class WalletService {
       
       this.loggerService.log(`Calling wallet onboard API: ${url}`, 'WalletService');
       
+      // This section is intentionally sending password in the current format as per API requirements
       const response = await firstValueFrom(
         this.httpService.post<WalletOnboardResponse>(url, walletData, {
           timeout: 20000,
