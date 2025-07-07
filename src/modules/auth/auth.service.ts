@@ -12,7 +12,7 @@ import { UserServiceResponse } from './dto/user-service-register.response';
 import axios from 'axios';
 import { UserServiceLoginDTO } from './dto/user-service-login.dto';
 import { UserServiceLoginResponse } from './dto/user-service-login.response';
-
+import { ExternalUserService } from '../users/externalServices/external-user.service';
 const crypto = require('crypto');
 
 const jwt = require('jwt-decode');
@@ -27,6 +27,7 @@ export class AuthService {
     private readonly keycloakService: KeycloakService,
     private readonly userService: UserService,
     private readonly loggerService: LoggerService,
+    private readonly externalUserService: ExternalUserService,
   ) { }
 
   public async login(body: LoginDTO) {
@@ -102,19 +103,8 @@ export class AuthService {
 
   public async loginInUserService(body: UserServiceLoginDTO) {
     try {
-      // Get the user service API URL from environment variables
-      const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL');
-
       // Make the API call to user service
-      const response : UserServiceLoginResponse = await axios.post(
-        `${userServiceUrl}/user/v1/auth/login`, 
-        body,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
-      );
+      const response : UserServiceLoginResponse = await this.externalUserService.login(body);
 
       this.loggerService.log('User service login successful', body.username);
 
@@ -153,9 +143,6 @@ export class AuthService {
 
   public async registerInUserService(body: UserServiceRegisterDTO) {
     try {     
-      // Get the user service API URL from environment variables
-      const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL');
-      
       // Prepare the payload for user service - pass data as-is
       const userServicePayload = {
         firstName: body?.firstName,
@@ -168,24 +155,16 @@ export class AuthService {
       };
 
       // Make the API call to user service
-      const response = await axios.post(
-        `${userServiceUrl}/user/v1/create`,
-        userServicePayload,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
-      );
+      const response : UserServiceResponse = await this.externalUserService.createExternalUser(userServicePayload);   
 
       // Type the response data for better type safety
-      const responseData: UserServiceResponse = response.data;
-      console.log('response.data.result.userData.userId', responseData.result.userData.userId );
+      
+      console.log('response.data.result.userData.userId', response.result.userData.userId );
 
-      const userXref = await this.userService.createUserXref(responseData.result.userData.userId); 
+      const userXref = await this.userService.createUserXref(response.result.userData.userId); 
       console.log('userXref', userXref);
 
-      this.loggerService.log('User service registration successful', responseData.result.userData.userId);
+      this.loggerService.log('User service registration successful', response.result.userData.userId);
 
       if(!userXref){
         throw new ErrorResponse({
@@ -198,7 +177,7 @@ export class AuthService {
       return new SuccessResponse({
         statusCode: HttpStatus.CREATED,
         message: 'User registered in user service successfully',
-        data: responseData
+        data: response
       });
 
     } catch (error) {
