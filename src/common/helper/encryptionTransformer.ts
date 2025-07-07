@@ -1,9 +1,8 @@
 import { ValueTransformer } from 'typeorm';
 import { EncryptionService } from './encryptionService';
 import { ConfigService } from '@nestjs/config';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
-const logger = new Logger('EncryptionTransformer');
 /**
  * TypeORM ValueTransformer for automatic encryption/decryption of database fields.
  * 
@@ -14,37 +13,44 @@ const logger = new Logger('EncryptionTransformer');
  * - Automatically encrypts data before saving to database
  * - Automatically decrypts data when reading from database
  * - Uses AES-256-GCM encryption for secure data storage
- * - Uses singleton pattern for compatibility with NestJS dependency injection
+ * - Proper NestJS dependency injection support
+ * - Class-based implementation for better TypeScript support
  */
-export const EncryptionTransformer = (configService: ConfigService): ValueTransformer => ({
+@Injectable()
+export class EncryptionTransformer implements ValueTransformer {
+  private readonly logger = new Logger(EncryptionTransformer.name);
+
+  constructor(private readonly configService: ConfigService) {}
+
   /**
    * Transforms data before saving to database (encrypts the value).
    * 
    * @param value - The original value to encrypt
    * @returns Encrypted base64 string or original value if null/undefined
    */
-  to: (value: any) => {
+  to(value: any): any {
     // Skip encryption for null/undefined values
     if (value === undefined || value === null) {
       return value;
     }
 
     try {
-      const encryptionService = EncryptionService.getInstance(configService);
+      const encryptionService = EncryptionService.getInstance(this.configService);
       const encrypted = encryptionService.encrypt(value);
       return encrypted;
     } catch (error) {
-      logger.error('Encryption failed:', error);
+      this.logger.error('Encryption failed:', error);
       throw error;
     }
-  },
+  }
+
   /**
    * Transforms data after reading from database (decrypts the value).
    * 
    * @param value - The encrypted value from database
    * @returns Decrypted original value or original value if null/undefined
    */
-  from: (value: any) => {
+  from(value: any): any {
     // Skip decryption for null/undefined values
     if (value === undefined || value === null) {
       return value;
@@ -56,7 +62,7 @@ export const EncryptionTransformer = (configService: ConfigService): ValueTransf
     }
 
     try {
-      const encryptionService = EncryptionService.getInstance(configService);
+      const encryptionService = EncryptionService.getInstance(this.configService);
       const decrypted = encryptionService.decrypt(value);
 
       if (decrypted !== null) {
@@ -65,8 +71,8 @@ export const EncryptionTransformer = (configService: ConfigService): ValueTransf
         throw new Error('Decryption returned null: Possible data corruption or misconfiguration');
       }
     } catch (error) {
-      logger.error('Decryption failed:', error);
+      this.logger.error('Decryption failed:', error);
       throw error;
     }
-  },
-});
+  }
+}

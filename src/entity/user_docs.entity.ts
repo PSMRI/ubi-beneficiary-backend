@@ -11,7 +11,7 @@ import { EncryptionTransformer } from 'src/common/helper/encryptionTransformer';
 import { ConfigService } from '@nestjs/config';
 
 const configService = new ConfigService();
-const encryptionTransformer = EncryptionTransformer(configService);
+const encryptionTransformer = new EncryptionTransformer(configService);
 
 @Entity('user_docs')
 export class UserDoc {

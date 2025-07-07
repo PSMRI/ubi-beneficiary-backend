@@ -9,7 +9,7 @@ import {
 } from 'typeorm';
 
 const configService = new ConfigService();
-const encryptionTransformer = EncryptionTransformer(configService);
+const encryptionTransformer = new EncryptionTransformer(configService);
 
 @Entity('user_applications')
 export class UserApplication {
