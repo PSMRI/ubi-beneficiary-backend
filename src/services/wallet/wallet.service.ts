@@ -88,7 +88,7 @@ export class WalletService {
       const url = `${this.walletBaseUrl}/api/wallet/onboard`;
       
       // Ensure HTTPS/HTTP is used
-      if (!url.startsWith('https://') && !url.startsWith('http://')) {
+      if (!url.startsWith('https://')) {
         this.loggerService.warn(
           'Wallet API URL is not using HTTPS. This is a security risk.',
           'WalletService'
