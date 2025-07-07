@@ -33,15 +33,11 @@ export class WalletService {
   ) {
     this.walletBaseUrl = this.configService.get<string>('WALLET_BASE_URL');
     
-    // Create HTTPS agent with SSL verification disabled (for development only)
+    // Create HTTPS agent with proper SSL verification
     this.httpsAgent = new https.Agent({
-      rejectUnauthorized: false, // WARNING: This disables SSL certificate validation
+      rejectUnauthorized: true,
+      keepAlive: true,
     });
-    
-    this.loggerService.warn(
-      'SSL certificate validation is disabled. This is not recommended for production.',
-      'WalletService'
-    );
   }
 
   private validateWalletData(data: WalletOnboardRequest): void {
@@ -83,18 +79,30 @@ export class WalletService {
 
       const url = `${this.walletBaseUrl}/api/wallet/onboard`;
       
+      // Ensure HTTPS is used
+      if (!url.startsWith('https://') || !url.startsWith('http://')) {
+        this.loggerService.warn(
+          'Wallet API URL is not using HTTPS. This is a security risk.',
+          'WalletService'
+        );
+      }
+
       this.loggerService.log(`Calling wallet onboard API: ${url}`, 'WalletService');
       
       // This section is intentionally sending password in the current format as per API requirements
+      // Note: Password hashing should be implemented when wallet API supports it
       const response = await firstValueFrom(
         this.httpService.post<WalletOnboardResponse>(url, walletData, {
-          timeout: 20000,
+          timeout: 30000,
           headers: {
             'Content-Type': 'application/json',
             'User-Agent': 'Beneficiary-Backend/1.0',
             'X-Request-ID': crypto.randomUUID(),
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache',
           },
           httpsAgent: this.httpsAgent,
+          maxRedirects: 0, // Prevent redirect attacks
         })
       );
 
