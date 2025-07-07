@@ -42,7 +42,7 @@ export class WalletService {
 
   private validateWalletData(data: WalletOnboardRequest): void {
     const requiredFields = ['firstName', 'lastName', 'phone', 'username', 'password'];
-    const missingFields = requiredFields.filter(field => !data[field]);
+    const missingFields = requiredFields.filter(field => !data[field] || data[field].toString().trim() === '');
 
     if (missingFields.length > 0) {
       throw new ErrorResponse({
@@ -69,6 +69,14 @@ export class WalletService {
 
   async onboardUser(walletData: WalletOnboardRequest): Promise<WalletOnboardResponse> {
     try {
+      // Validate input data
+      if (!walletData) {
+        throw new ErrorResponse({
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: 'Wallet onboard data is required',
+        });
+      }
+
       this.validateWalletData(walletData);
       if (!this.walletBaseUrl) {
         throw new ErrorResponse({
@@ -79,8 +87,8 @@ export class WalletService {
 
       const url = `${this.walletBaseUrl}/api/wallet/onboard`;
       
-      // Ensure HTTPS is used
-      if (!url.startsWith('https://') || !url.startsWith('http://')) {
+      // Ensure HTTPS/HTTP is used
+      if (!url.startsWith('https://') && !url.startsWith('http://')) {
         this.loggerService.warn(
           'Wallet API URL is not using HTTPS. This is a security risk.',
           'WalletService'
