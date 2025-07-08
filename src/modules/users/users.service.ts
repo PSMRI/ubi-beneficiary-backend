@@ -290,12 +290,27 @@ export class UserService {
     });
     return await this.userRepository.save(user);
   }
+  private preprocessDocData(doc_data: any): any {
+    if (typeof doc_data === 'object') {
+      try {
+        return JSON.stringify(doc_data);
+      } catch (error) {
+        Logger.error('Error stringifying doc_data:', error);
+        throw new BadRequestException('Invalid doc_data format: Unable to stringify JSON');
+      }
+    }
+    return doc_data;
+  }
+
   // User docs save
   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
     try {
+      // Stringify the JSON doc_data before encryption
+      const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
+
       const newUserDoc = this.userDocsRepository.create({
         ...createUserDocDto,
-        doc_data: createUserDocDto.doc_data,
+        doc_data: stringifiedDocData,
       });
 
       const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
@@ -331,9 +346,12 @@ export class UserService {
   }
 
   async saveDoc(createUserDocDto: CreateUserDocDTO) {
+    // Stringify the JSON doc_data before saving (encryption happens via entity transformer)
+    const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
+
     const newUserDoc = this.userDocsRepository.create({
       ...createUserDocDto,
-      doc_data: createUserDocDto.doc_data,
+      doc_data: stringifiedDocData,
     });
 
     // Save to the database
