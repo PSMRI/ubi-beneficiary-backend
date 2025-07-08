@@ -293,9 +293,14 @@ export class UserService {
   // User docs save
   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
     try {
+      // Stringify the JSON doc_data before encryption
+      const stringifiedDocData = typeof createUserDocDto.doc_data === 'object'
+        ? JSON.stringify(createUserDocDto.doc_data)
+        : createUserDocDto.doc_data;
+
       const newUserDoc = this.userDocsRepository.create({
         ...createUserDocDto,
-        doc_data: createUserDocDto.doc_data,
+        doc_data: stringifiedDocData,
       });
 
       const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
@@ -331,9 +336,14 @@ export class UserService {
   }
 
   async saveDoc(createUserDocDto: CreateUserDocDTO) {
+    // Stringify the JSON doc_data before saving (encryption happens via entity transformer)
+    const stringifiedDocData = typeof createUserDocDto.doc_data === 'object'
+      ? JSON.stringify(createUserDocDto.doc_data)
+      : createUserDocDto.doc_data;
+
     const newUserDoc = this.userDocsRepository.create({
       ...createUserDocDto,
-      doc_data: createUserDocDto.doc_data,
+      doc_data: stringifiedDocData,
     });
 
     // Save to the database
