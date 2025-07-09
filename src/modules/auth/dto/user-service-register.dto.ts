@@ -38,7 +38,8 @@ export class UserServiceRegisterDTO {
 
   @ApiProperty({ description: 'Username for the user' })
   @IsString()
-  username: string;
+  @IsOptional()
+  username?: string;
 
   @ApiProperty({ description: 'Password for the user', required: false })
   @IsOptional()

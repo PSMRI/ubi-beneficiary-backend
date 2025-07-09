@@ -9,12 +9,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner } from 'typeorm';
-import { User } from '../../entity/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
 import { CreateUserInfoDto } from './dto/create-user-info.dto';
-import { UserInfo } from '@entities/user_info.entity';
 import { EncryptionService } from 'src/common/helper/encryptionService';
 import { Consent } from '@entities/consent.entity';
 import { CreateConsentDto } from './dto/create-consent.dto';
@@ -31,15 +29,12 @@ import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import axios from 'axios';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
+import { ExternalUserService } from './externalServices/external-user.service';
 @Injectable()
 export class UserService {
   constructor(
-    // @InjectRepository(User)
-    // private readonly userRepository: Repository<User>,
     @InjectRepository(UserDoc)
     private readonly userDocsRepository: Repository<UserDoc>,
-    @InjectRepository(UserInfo)
-    private readonly userInfoRepository: Repository<UserInfo>,
     private readonly encryptionService: EncryptionService,
     @InjectRepository(Consent)
     private readonly consentRepository: Repository<Consent>,
@@ -51,176 +46,129 @@ export class UserService {
     private readonly profilePopulator: ProfilePopulator,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly externalUserService: ExternalUserService,
   ) { }
 
-  async create(createUserDto: CreateUserDto) {
-    const user = {}
-    // this.userRepository.create(createUserDto);
-    try {
-      const savedUser = {}
-      //  await this.userRepository.save(user);
+  // async create(createUserDto: CreateUserDto) {
+  //   const user = {}
+  //   // this.userRepository.create(createUserDto);
+  //   try {
+  //     const savedUser = {}
+  //     //  await this.userRepository.save(user);
 
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK, // Created
-        message: 'User created successfully.',
-        data: savedUser,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
-        errorMessage: error.message,
-      });
-    }
-  }
+  //     return new SuccessResponse({
+  //       statusCode: HttpStatus.OK, // Created
+  //       message: 'User created successfully.',
+  //       data: savedUser,
+  //     });
+  //   } catch (error) {
+  //     return new ErrorResponse({
+  //       statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
+  //       errorMessage: error.message,
+  //     });
+  //   }
+  // }
 
-  async update(userId: string, updateUserDto: any) {
-    // Destructure userInfo from the payload
-    const { userInfo, ...userData } = updateUserDto;
+  // async update(userId: string, updateUserDto: any) {
+  //   // Destructure userInfo from the payload
+  //   const { userInfo, ...userData } = updateUserDto;
 
-    // Check for existing user in the user table
-    const existingUser = {}
-    //  await this.userRepository.findOne({
-    //   where: { user_id: userId },
-    // });
+  //   // Check for existing user in the user table
+  //   const existingUser = {}
+  //   //  await this.userRepository.findOne({
+  //   //   where: { user_id: userId },
+  //   // });
 
-    if (!existingUser) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.NOT_FOUND,
-        errorMessage: `User with ID '${userId}' not found`,
-      });
-    }
+  //   if (!existingUser) {
+  //     return new ErrorResponse({
+  //       statusCode: HttpStatus.NOT_FOUND,
+  //       errorMessage: `User with ID '${userId}' not found`,
+  //     });
+  //   }
 
-    // Update the user information in userRepository
-    Object.assign(existingUser, userData);
+  //   // Update the user information in userRepository
+  //   Object.assign(existingUser, userData);
 
-    try {
-      const updatedUser = {}
-      // await this.userRepository.save(existingUser);
+  //   try {
+  //     const updatedUser = {}
+  //     // await this.userRepository.save(existingUser);
 
-      // Check for existing user info in userInfoRepository
-      const existingUserInfo = await this.userInfoRepository.findOne({
-        where: { user_id: userId },
-      });
+  //     // Check for existing user info in userInfoRepository
+  //     const existingUserInfo = await this.userInfoRepository.findOne({
+  //       where: { user_id: userId },
+  //     });
 
-      if (existingUserInfo) {
-        // Update user info if it exists
-        Object.assign(existingUserInfo, userInfo);
-        await this.userInfoRepository.save(existingUserInfo);
-      } else if (userInfo) {
-        // Create a new user info if it doesn't exist and userInfo is provided
-        const newUserInfo = this.userInfoRepository.create({
-          user_id: userId,
-          ...userInfo,
-        });
-        await this.userInfoRepository.save(newUserInfo);
-      }
+  //     if (existingUserInfo) {
+  //       // Update user info if it exists
+  //       Object.assign(existingUserInfo, userInfo);
+  //       await this.userInfoRepository.save(existingUserInfo);
+  //     } else if (userInfo) {
+  //       // Create a new user info if it doesn't exist and userInfo is provided
+  //       const newUserInfo = this.userInfoRepository.create({
+  //         user_id: userId,
+  //         ...userInfo,
+  //       });
+  //       await this.userInfoRepository.save(newUserInfo);
+  //     }
 
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User and associated info updated successfully',
-        data: {
-          ...updatedUser,
-          userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
-        },
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message ?? 'An error occurred while updating user',
-      });
-    }
-  }
+  //     return new SuccessResponse({
+  //       statusCode: HttpStatus.OK,
+  //       message: 'User and associated info updated successfully',
+  //       data: {
+  //         ...updatedUser,
+  //         userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
+  //       },
+  //     });
+  //   } catch (error) {
+  //     return new ErrorResponse({
+  //       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+  //       errorMessage: error.message ?? 'An error occurred while updating user',
+  //     });
+  //   }
+  // }
 
-  async findOne(req: any, decryptData?: boolean) {
-    try {
-      const sso_id = req?.user?.keycloak_id;
-      if (!sso_id) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'Invalid or missing Keycloak ID',
-        });
-      }
+ 
 
-      const userDetails = {}
-      // await this.userRepository.findOne({
-      //   where: { sso_id },
-      // });
+  // async findConsentByUser(req: any) {
+  //   try {
+  //     const sso_id = req?.user?.keycloak_id;
+  //     if (!sso_id) {
+  //       return new ErrorResponse({
+  //         statusCode: HttpStatus.UNAUTHORIZED,
+  //         errorMessage: 'Invalid or missing Keycloak ID',
+  //       });
+  //     }
 
-      if (!userDetails) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `User with ID '${sso_id}' not found`,
-        });
-      }
+  //     const userDetails = {}
+  //     // await this.userRepository.findOne({
+  //     //   where: { sso_id },
+  //     // });
 
-      const user = {}
-      // await this.findOneUser(userDetails.user_id);
-      const userInfo = {}
-      // await this.findOneUserInfo(
-      //   userDetails.user_id,
-      //   decryptData,
-      // );
-      const userDoc = {}
-      // await this.findUserDocs(userDetails.user_id, decryptData);
+  //     if (!userDetails) {
+  //       return new ErrorResponse({
+  //         statusCode: HttpStatus.NOT_FOUND,
+  //         errorMessage: `User with ID '${sso_id}' not found`,
+  //       });
+  //     }
 
-      const final = {
-        ...user,
-        ...userInfo,
-        docs: userDoc || [],
-      };
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User retrieved successfully.',
-        data: final,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message,
-      });
-    }
-  }
+  //     const consent = {}
+  //     // await this.findUserConsent(userDetails.user_id);
 
-  async findConsentByUser(req: any) {
-    try {
-      const sso_id = req?.user?.keycloak_id;
-      if (!sso_id) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'Invalid or missing Keycloak ID',
-        });
-      }
-
-      const userDetails = {}
-      // await this.userRepository.findOne({
-      //   where: { sso_id },
-      // });
-
-      if (!userDetails) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `User with ID '${sso_id}' not found`,
-        });
-      }
-
-      const consent = {}
-      // await this.findUserConsent(userDetails.user_id);
-
-      const final = {
-        ...consent,
-      };
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User consent retrieved successfully.',
-        data: final,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message,
-      });
-    }
-  }
+  //     const final = {
+  //       ...consent,
+  //     };
+  //     return new SuccessResponse({
+  //       statusCode: HttpStatus.OK,
+  //       message: 'User consent retrieved successfully.',
+  //       data: final,
+  //     });
+  //   } catch (error) {
+  //     return new ErrorResponse({
+  //       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+  //       errorMessage: error.message,
+  //     });
+  //   }
+  // }
 
   // async findOneUser(user_id: string): Promise<User> {
   //   const user = await this.userRepository.findOne({
@@ -230,54 +178,54 @@ export class UserService {
   //   return user;
   // }
 
-  async findOneUserInfo(
-    user_id: string,
-    decryptData: boolean,
-  ): Promise<UserInfo> {
-    const userInfo = await this.userInfoRepository.findOne({
-      where: { user_id },
-    });
+  // async findOneUserInfo(
+  //   user_id: string,
+  //   decryptData: boolean,
+  // ): Promise<UserInfo> {
+  //   const userInfo = await this.userInfoRepository.findOne({
+  //     where: { user_id },
+  //   });
 
-    type EncryptedStringFields = 'aadhaar' | 'udid' | 'bankAccountNumber';
+  //   type EncryptedStringFields = 'aadhaar' | 'udid' | 'bankAccountNumber';
 
-    if (userInfo && decryptData) {
-      const encryptedFields: EncryptedStringFields[] = [
-        'aadhaar',
-        'udid',
-        'bankAccountNumber',
-      ];
+  //   if (userInfo && decryptData) {
+  //     const encryptedFields: EncryptedStringFields[] = [
+  //       'aadhaar',
+  //       'udid',
+  //       'bankAccountNumber',
+  //     ];
 
-      encryptedFields.forEach((field) => {
-        const value = userInfo[field];
-        if (typeof value === 'string' && value.includes(':')) {
-          const decrypted = this.encryptionService.decrypt(value);
-          userInfo[field] = decrypted as string;
-        }
-      });
+  //     encryptedFields.forEach((field) => {
+  //       const value = userInfo[field];
+  //       if (typeof value === 'string' && value.includes(':')) {
+  //         const decrypted = this.encryptionService.decrypt(value);
+  //         userInfo[field] = decrypted as string;
+  //       }
+  //     });
 
-      type EncryptedStringFields = 'aadhaar' | 'udid' | 'bankAccountNumber';
+  //     type EncryptedStringFields = 'aadhaar' | 'udid' | 'bankAccountNumber';
 
-      if (userInfo && decryptData) {
-        const encryptedFields: EncryptedStringFields[] = [
-          'aadhaar',
-          'udid',
-          'bankAccountNumber',
-        ];
+  //     if (userInfo && decryptData) {
+  //       const encryptedFields: EncryptedStringFields[] = [
+  //         'aadhaar',
+  //         'udid',
+  //         'bankAccountNumber',
+  //       ];
 
-        encryptedFields.forEach((field) => {
-          const value = userInfo[field];
-          if (typeof value === 'string' && value.includes(':')) {
-            const decrypted = this.encryptionService.decrypt(value);
-            userInfo[field] = decrypted as string;
-          }
-        });
-      }
+  //       encryptedFields.forEach((field) => {
+  //         const value = userInfo[field];
+  //         if (typeof value === 'string' && value.includes(':')) {
+  //           const decrypted = this.encryptionService.decrypt(value);
+  //           userInfo[field] = decrypted as string;
+  //         }
+  //       });
+  //     }
 
-      return userInfo;
-    }
+  //     return userInfo;
+  //   }
 
-    return userInfo;
-  }
+  //   return userInfo;
+  // }
 
   async findUserDocs(user_id: string, decryptData: boolean) {
     const userDocs = await this.userDocsRepository.find({ where: { user_id } });
@@ -548,6 +496,7 @@ export class UserService {
       Logger.error('Error in updating fields: ', error);
       throw new InternalServerErrorException(
         'An unexpected error occurred while updating profile.',
+        { cause: error }
       );
     }
   }
@@ -687,12 +636,12 @@ export class UserService {
     }
   }
   // User info
-  async createUserInfo(
-    createUserInfoDto: CreateUserInfoDto,
-  ): Promise<UserInfo | null> {
-    try {
+  // async createUserInfo(
+  //   createUserInfoDto: CreateUserInfoDto,
+  // ): Promise<UserInfo | null> {
+  //   try {
       // Ensure you await the result of registerUserWithUsername
-      const userData = await this.registerUserWithUsername(createUserInfoDto);
+      // const userData = await this.registerUserWithUsername(createUserInfoDto);
 
       // Check if userData and userData.user exist
       // if (userData?.user?.user_id) {
@@ -714,32 +663,32 @@ export class UserService {
       //   console.error('User registration failed or returned invalid data.');
       //   return null;
       // }
-      return null;
-    } catch (error) {
-      console.error('Error while creating user info:', error);
-      throw new Error('Could not create user info');
-    }
-  }
+  //     return null;
+  //   } catch (error) {
+  //     console.error('Error while creating user info:', error);
+  //     throw new Error('Could not create user info');
+  //   }
+  // }
 
-  async updateUserInfo(
-    user_id: string,
-    updateUserInfoDto: CreateUserInfoDto,
-  ): Promise<UserInfo> {
-    const userInfo = await this.userInfoRepository.findOne({
-      where: { user_id },
-    });
+  // async updateUserInfo(
+  //   user_id: string,
+  //   updateUserInfoDto: CreateUserInfoDto,
+  // ): Promise<UserInfo> {
+  //   const userInfo = await this.userInfoRepository.findOne({
+  //     where: { user_id },
+  //   });
 
-    if (updateUserInfoDto?.aadhaar) {
-      const encrypted = this.encryptionService.encrypt(
-        updateUserInfoDto?.aadhaar,
-      );
+  //   if (updateUserInfoDto?.aadhaar) {
+  //     const encrypted = this.encryptionService.encrypt(
+  //       updateUserInfoDto?.aadhaar,
+  //     );
 
-      updateUserInfoDto.aadhaar = encrypted;
-    }
-    Object.assign(userInfo, updateUserInfoDto);
-    console.log('userInfo--->>', userInfo);
-    return this.userInfoRepository.save(userInfo);
-  }
+  //     updateUserInfoDto.aadhaar = encrypted;
+  //   }
+  //   Object.assign(userInfo, updateUserInfoDto);
+  //   console.log('userInfo--->>', userInfo);
+  //   return this.userInfoRepository.save(userInfo);
+  // }
   // Create a new consent record
   async createUserConsent(
     createConsentDto: CreateConsentDto,
@@ -747,6 +696,7 @@ export class UserService {
     const consent = this.consentRepository.create(createConsentDto);
     return await this.consentRepository.save(consent);
   }
+  
   async createUserApplication(
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
@@ -768,7 +718,7 @@ export class UserService {
       });
     } catch (error) {
       console.error('Error while creating user application:', error);
-      throw new InternalServerErrorException('Failed to create user application');
+      throw new InternalServerErrorException('Failed to create user application', { cause: error });
     }
   }
 
@@ -855,7 +805,7 @@ export class UserService {
       });
     } catch (error) {
       console.error('Error while fetching user applications:', error);
-      throw new InternalServerErrorException('Failed to fetch user applications');
+      throw new InternalServerErrorException('Failed to fetch user applications', { cause: error });
     }
   }
 
@@ -941,53 +891,6 @@ export class UserService {
     }
   }
 
-  async resetInUsers(
-    field: string,
-    existingDoc: UserDoc,
-    queryRunner: QueryRunner,
-  ) {
-    await queryRunner.manager
-      .getRepository(User)
-      .createQueryBuilder()
-      .update(User)
-      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
-      .where('user_id = :id', { id: existingDoc.user_id })
-      .execute();
-  }
-
-  async resetInUserInfo(
-    field: string,
-    existingDoc: UserDoc,
-    queryRunner: QueryRunner,
-  ) {
-    await queryRunner.manager
-      .getRepository(UserInfo)
-      .createQueryBuilder()
-      .update(UserInfo)
-      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
-      .where('user_id = :id', { id: existingDoc.user_id })
-      .execute();
-  }
-
-  async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
-    const fieldsArray = {
-      aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
-      casteCertificate: ['caste'],
-      enrollmentCertificate: ['class', 'studentType'],
-      incomeCertificate: ['annualIncome'],
-      janAadharCertificate: ['state'],
-      marksheet: ['previousYearMarks'],
-    };
-
-    const fields = fieldsArray[existingDoc.doc_subtype] ?? [];
-
-    for (const field of fields) {
-      if (field === 'middleName')
-        await this.resetInUsers(field, existingDoc, queryRunner);
-      else await this.resetInUserInfo(field, existingDoc, queryRunner);
-    }
-  }
-
   async delete(req: any, doc_id: string) {
     const IsValidUser = req?.user;
     if (!IsValidUser) {
@@ -1041,7 +944,7 @@ export class UserService {
       await queryRunner.startTransaction();
       await queryRunner.manager.remove(existingDoc);
       // Reset the field along with deleting the document
-      await this.resetField(existingDoc, queryRunner);
+      // await this.resetField(existingDoc, queryRunner);
       await queryRunner.commitTransaction();
     } catch (error) {
       Logger.error('Error while deleting the document: ', error);
@@ -1113,30 +1016,18 @@ export class UserService {
   async getUserDetailsByUserId(
     userId: string,
     fieldvalue?: string,
-    tenantId?: string,
     authorization?: string,
   ) {
     try {
-      const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL');
-
-      if (!tenantId || !authorization) {
+      if (!authorization) {
         return new ErrorResponse({
           statusCode: HttpStatus.BAD_REQUEST,
           errorMessage: 'Missing required headers: tenantid and authorization',
         });
       }
 
-      // Construct the external API URL
-      // const baseUrl = 'http://localhost:7000/user/v1/read';
-      // const url = `${baseUrl}/${userId}${fieldvalue ? `?fieldvalue=${fieldvalue}` : ''}`;
-
       // Make the external API call
-      const response = await axios.get(`${userServiceUrl}/user/v1/read/${userId}${fieldvalue ? `?fieldvalue=${fieldvalue}` : ''}`, {
-        headers: {
-          'tenantid': tenantId,
-          'authorization': authorization,
-        },
-      });
+      const response = await this.externalUserService.getExternalUserById(userId, fieldvalue, authorization);
       console.log('response.data', response);
 
       return new SuccessResponse({
@@ -1170,6 +1061,7 @@ export class UserService {
       }
     }
   }
+
   private async verifyVcWithApi(vcData: any): Promise<{ success: boolean; message?: string; errors?: any[] }> {
     try {
       const verificationPayload = {

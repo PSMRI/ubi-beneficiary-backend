@@ -8,20 +8,21 @@ import { UserService } from '@modules/users/users.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 // import { User } from '@entities/user.entity';
 import { UserDoc } from '@entities/user_docs.entity';
-import { UserInfo } from '@entities/user_info.entity';
+// import { UserInfo } from '@entities/user_info.entity';
 import { EncryptionService } from 'src/common/helper/encryptionService';
 import { Consent } from '@entities/consent.entity';
 import { UserApplication } from '@entities/user_applications.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { UsersXref } from '@entities/users_xref.entity';
+import { ExternalUserService } from '@modules/users/externalServices/external-user.service';
 @Module({
   imports: [
     KeycloakModule,
     TypeOrmModule.forFeature([
       // User,
       UserDoc,
-      UserInfo,
+      // UserInfo,
       Consent,
       UserApplication,
       UsersXref,
@@ -36,6 +37,7 @@ import { UsersXref } from '@entities/users_xref.entity';
     EncryptionService,
     LoggerService,
     ProfilePopulator,
+    ExternalUserService,
   ],
   exports: [AuthService, UserService, EncryptionService],
 })

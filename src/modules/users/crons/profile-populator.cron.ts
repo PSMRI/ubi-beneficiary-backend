@@ -1,7 +1,7 @@
 // import { User } from '@entities/user.entity';
 import { UsersXref } from '@entities/users_xref.entity';
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Interval } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
@@ -90,15 +90,17 @@ export default class ProfilePopulatorCron {
     }
   }
 
-  @Cron('*/1 * * * *')
+  // @Cron('*/1 * * * *')
+  // @Interval(5000) // Run every 30 seconds (30000 milliseconds)
   async populateProfile() {
     try {
       console.log("Profile Populator CRON started " + new Date());
       const users = await this.getUsersV2();
+      console.log("Users: ", users);
       await this.profilePopulator.populateProfile(users);
     } catch (error) {
+      console.error("Error in 'Profile Populator CRON': ", error);
       Logger.error("Error in 'Profile Populator CRON': ", error);
-      throw new Error("Error in 'Profile Populator CRON': " + error);
       throw new Error("Error in 'Profile Populator CRON': " + error);
     }
   }

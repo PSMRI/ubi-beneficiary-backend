@@ -33,29 +33,6 @@ export class AuthController {
 
   @Post('/register_with_password')
   @UsePipes(new ValidationPipe())
-  @ApiBody({ type: RegisterDTO })
-  @ApiResponse({ status: 200, description: 'User registered successfully.' })
-  @ApiResponse({ status: 409, description: 'Mobile number already exists.' })
-  @ApiResponse({ status: 400, description: 'Bad Request.' })
-  public async registerWithUsernamePassword(@Body() body: RegisterDTO) {
-    return await this.authService.registerWithUsernamePassword(body);
-  }
-
-  @Post('/login')
-  @UsePipes(new ValidationPipe())
-  @ApiBody({ type: LoginDTO })
-  public async login(@Body() body: LoginDTO) {
-    return await this.authService.login(body);
-  }
-
-  @Post('/logout')
-  @UsePipes(ValidationPipe)
-  logout(@Req() req: Request, @Res() response: Response) {
-    return this.authService.logout(req, response);
-  }
-
-  @Post('/register-in-user-service')
-  @UsePipes(new ValidationPipe())
   @ApiBody({ type: UserServiceRegisterDTO })
   @ApiResponse({ status: 201, description: 'User registered in user service successfully.' })
   @ApiResponse({ status: 400, description: 'Bad Request.' })
@@ -65,7 +42,7 @@ export class AuthController {
     return await this.authService.registerInUserService(body);
   }
 
-  @Post('/login-in-user-service')
+  @Post('/login')
   @UsePipes(new ValidationPipe())
   @ApiBody({ type: UserServiceLoginDTO })
   @ApiResponse({ status: 200, description: 'Login successful.' })
@@ -74,5 +51,11 @@ export class AuthController {
   @ApiResponse({ status: 503, description: 'User service unavailable.' })
   public async loginInUserService(@Body() body: UserServiceLoginDTO) {
     return await this.authService.loginInUserService(body);
+  }
+
+  @Post('/logout')
+  @UsePipes(ValidationPipe)
+  logout(@Req() req: Request, @Res() response: Response) {
+    return this.authService.logout(req, response);
   }
 }

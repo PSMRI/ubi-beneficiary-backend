@@ -34,7 +34,7 @@ export class ExternalUserService {
     );
   }
 
-    async getExternalUserById(userId: string, fieldvalue: string, authorization) {
+  async getExternalUserById(userId: string, fieldvalue: string,authorization: string, ) {
     return await axios.get(`${this.userServiceUrl}/user/v1/read/${userId}${fieldvalue ? `?fieldvalue=${fieldvalue}` : ''}`, {
       headers: {
         'tenantid': this.tenantId,

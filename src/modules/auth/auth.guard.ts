@@ -8,7 +8,7 @@ import { Request } from 'express';
 import { Observable } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
-interface AuthenticatedRequest extends Request {
+export interface AuthenticatedRequest extends Request {
   user: {
     keycloak_id: string;
     // other properties

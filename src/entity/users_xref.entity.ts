@@ -1,6 +1,6 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
   Column,
   Index,
 } from 'typeorm';
@@ -8,10 +8,7 @@ import {
 @Entity('users_xref')
 @Index('idx_users_xref_user_id', ['user_id'])
 export class UsersXref {
-  @PrimaryGeneratedColumn()
-  id: number;
-
-  @Column({ type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid' })
   user_id: string;
 
   @Column({ type: 'boolean', default: false })

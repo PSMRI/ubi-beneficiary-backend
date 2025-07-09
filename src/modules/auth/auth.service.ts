@@ -21,6 +21,8 @@ export class AuthService {
   public keycloak_admin_cli_client_secret = this.configService.get<string>(
     'KEYCLOAK_ADMIN_CLI_CLIENT_SECRET',
   );
+  private readonly tenantId = this.configService.get<string>('TENANT_ID');
+  private readonly roleId = this.configService.get<string>('ROLE_ID');
 
   constructor(
     private readonly configService: ConfigService,
@@ -104,7 +106,7 @@ export class AuthService {
   public async loginInUserService(body: UserServiceLoginDTO) {
     try {
       // Make the API call to user service
-      const response : UserServiceLoginResponse = await this.externalUserService.login(body);
+      const response: UserServiceLoginResponse = await this.externalUserService.login(body);
 
       this.loggerService.log('User service login successful', body.username);
 
@@ -117,7 +119,7 @@ export class AuthService {
 
     } catch (error) {
       this.loggerService.error('Error during user service login:', error);
-      
+
       if (error.response) {
         // The request was made and the server responded with a status code
         // that falls out of the range of 2xx
@@ -142,31 +144,36 @@ export class AuthService {
   }
 
   public async registerInUserService(body: UserServiceRegisterDTO) {
-    try {     
+    try {
       // Prepare the payload for user service - pass data as-is
       const userServicePayload = {
         firstName: body?.firstName,
         lastName: body?.lastName,
         gender: body?.gender || 'male',
-        username: body?.username,
+        username: this.getUserName(body),
+        mobile: body?.phoneNumber,
         password: body?.password,
-        tenantCohortRoleMapping: body?.tenantCohortRoleMapping,
+        tenantCohortRoleMapping: [{
+          "tenantId": this.tenantId,
+          "roleId": this.roleId
+        }]
+        ,
         customFields: body?.customFields
       };
 
       // Make the API call to user service
-      const response : UserServiceResponse = await this.externalUserService.createExternalUser(userServicePayload);   
+      const response: UserServiceResponse = await this.externalUserService.createExternalUser(userServicePayload);
 
       // Type the response data for better type safety
-      
-      console.log('response.data.result.userData.userId', response.result.userData.userId );
 
-      const userXref = await this.userService.createUserXref(response.result.userData.userId); 
+      console.log('response.data.result.userData.userId', response.result.userData.userId);
+
+      const userXref = await this.userService.createUserXref(response.result.userData.userId);
       console.log('userXref', userXref);
 
       this.loggerService.log('User service registration successful', response.result.userData.userId);
 
-      if(!userXref){
+      if (!userXref) {
         throw new ErrorResponse({
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
           errorMessage: 'Unable to create user xref',
@@ -266,7 +273,7 @@ export class AuthService {
         errorMessage: 'Invalid phone number format',
       });
     }
-    const isMobileExist ={ }
+    const isMobileExist = {}
     //  await this.userService.findByMobile(phoneNumber);
     if (isMobileExist) {
       throw new ErrorResponse({
@@ -435,5 +442,13 @@ export class AuthService {
         errorMessage: 'LOGOUT_FAILED',
       });
     }
+  }
+
+  private getUserName(body) {
+    const trimmedFirstName = body?.firstName?.trim();
+    const trimmedLastName = body?.lastName?.trim();
+    const trimmedPhoneNumber = body?.phoneNumber?.trim();
+
+    return trimmedFirstName + '_' + trimmedLastName?.charAt(0) + '_' + trimmedPhoneNumber?.slice(-4);
   }
 }
