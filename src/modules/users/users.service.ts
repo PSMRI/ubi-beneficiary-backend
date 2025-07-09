@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner } from 'typeorm';
@@ -14,7 +15,6 @@ import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
 import { CreateUserInfoDto } from './dto/create-user-info.dto';
 import { UserInfo } from '@entities/user_info.entity';
-import { EncryptionService } from 'src/common/helper/encryptionService';
 import { Consent } from '@entities/consent.entity';
 import { CreateConsentDto } from './dto/create-consent.dto';
 import { UserApplication } from '@entities/user_applications.entity';
@@ -37,7 +37,6 @@ export class UserService {
     private readonly userDocsRepository: Repository<UserDoc>,
     @InjectRepository(UserInfo)
     private readonly userInfoRepository: Repository<UserInfo>,
-    private readonly encryptionService: EncryptionService,
     @InjectRepository(Consent)
     private readonly consentRepository: Repository<Consent>,
     @InjectRepository(UserApplication)
@@ -221,24 +220,6 @@ export class UserService {
       where: { user_id },
     });
 
-    type EncryptedStringFields = 'aadhaar' | 'udid' | 'bankAccountNumber';
-
-    if (userInfo && decryptData) {
-      const encryptedFields: EncryptedStringFields[] = [
-        'aadhaar',
-        'udid',
-        'bankAccountNumber',
-      ];
-
-      encryptedFields.forEach((field) => {
-        const value = userInfo[field];
-        if (typeof value === 'string' && value.includes(':')) {
-          const decrypted = this.encryptionService.decrypt(value);
-          userInfo[field] = decrypted as string;
-        }
-      });
-    }
-
     return userInfo;
   }
 
@@ -248,15 +229,10 @@ export class UserService {
     // Retrieve the document subtypes set from the DocumentListProvider
     const documentTypes = DocumentListProvider.getDocumentSubTypesSet();
 
-    if (decryptData) {
-      return userDocs.map((doc) => ({
-        ...doc,
-        doc_data: this.encryptionService.decrypt(doc.doc_data),
-        is_uploaded: documentTypes.has(doc.doc_subtype),
-      }));
-    }
-
-    return userDocs;
+    return userDocs.map((doc) => ({
+      ...doc,
+      is_uploaded: documentTypes.has(doc.doc_subtype),
+    }));
   }
 
   async findUserConsent(user_id: string): Promise<any> {
@@ -294,9 +270,10 @@ export class UserService {
     });
   }
 
-  async findByUsername(username: string): Promise<User | undefined> {
+  async findBySsoId(ssoId: string): Promise<User | undefined> {
+    console.log('Finding user by username:', ssoId);
     return await this.userRepository.findOne({
-      where: { phoneNumber: username },
+      where: { sso_id: ssoId }
     });
   }
 
@@ -308,28 +285,32 @@ export class UserService {
       phoneNumber: body.phoneNumber ?? '',
       sso_provider: 'keycloak',
       sso_id: body.keycloak_id,
+      walletToken: body.walletToken ?? null,
       created_at: new Date(),
     });
     return await this.userRepository.save(user);
   }
+  private preprocessDocData(doc_data: any): any {
+    if (typeof doc_data === 'object') {
+      try {
+        return JSON.stringify(doc_data);
+      } catch (error) {
+        Logger.error('Error stringifying doc_data:', error);
+        throw new BadRequestException('Invalid doc_data format: Unable to stringify JSON');
+      }
+    }
+    return doc_data;
+  }
+
   // User docs save
   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
     try {
-      if (
-        createUserDocDto.doc_data &&
-        typeof createUserDocDto.doc_data !== 'string'
-      ) {
-        const jsonDataString = JSON.stringify(createUserDocDto.doc_data);
+      // Stringify the JSON doc_data before encryption
+      const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
 
-        // Encrypt the JSON string
-        createUserDocDto.doc_data =
-          this.encryptionService.encrypt(jsonDataString);
-      }
-
-      // Ensure doc_data is always a string when calling create
       const newUserDoc = this.userDocsRepository.create({
         ...createUserDocDto,
-        doc_data: createUserDocDto.doc_data as string,
+        doc_data: stringifiedDocData,
       });
 
       const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
@@ -365,9 +346,12 @@ export class UserService {
   }
 
   async saveDoc(createUserDocDto: CreateUserDocDTO) {
+    // Stringify the JSON doc_data before saving (encryption happens via entity transformer)
+    const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
+
     const newUserDoc = this.userDocsRepository.create({
       ...createUserDocDto,
-      doc_data: createUserDocDto.doc_data as string,
+      doc_data: stringifiedDocData,
     });
 
     // Save to the database
@@ -425,16 +409,6 @@ export class UserService {
           `Document already exists for user_id: ${createUserDocDto.user_id}, doc_type: ${createUserDocDto.doc_type}, doc_subtype: ${createUserDocDto.doc_subtype}`,
         );
       } else {
-        if (
-          createUserDocDto.doc_data &&
-          typeof createUserDocDto.doc_data !== 'string'
-        ) {
-          const jsonDataString = JSON.stringify(createUserDocDto.doc_data);
-
-          // Encrypt the JSON string
-          createUserDocDto.doc_data =
-            this.encryptionService.encrypt(jsonDataString);
-        }
 
         // Create the new document entity for the database
         const savedDoc = await this.saveDoc(createUserDocDto);
@@ -540,9 +514,7 @@ export class UserService {
     createUserDocsDto: CreateUserDocDTO[],
   ): Promise<UserDoc[]> {
     const userDetails = await this.getUserDetails(req);
-
     const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
-
     const savedDocs: UserDoc[] = [];
 
     // Ensure the `userData` folder exists
@@ -551,51 +523,93 @@ export class UserService {
     }
 
     for (const createUserDocDto of createUserDocsDto) {
-      const userFilePath = path.join(
-        baseFolder,
-        `${createUserDocDto.user_id}.json`,
-      );
-
-      // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
-      const existingDoc = await this.userDocsRepository.findOne({
-        where: {
-          user_id: userDetails.user_id,
-          doc_type: createUserDocDto.doc_type,
-          doc_subtype: createUserDocDto.doc_subtype,
-        },
-      });
-
-      if (existingDoc) await this.deleteDoc(existingDoc);
-
-      if (createUserDocDto.doc_data) {
-        const dataString =
-          typeof createUserDocDto.doc_data === 'string'
-            ? createUserDocDto.doc_data
-            : JSON.stringify(createUserDocDto.doc_data);
-
-        // Encrypt the JSON string
-        createUserDocDto.doc_data = this.encryptionService.encrypt(dataString);
-      }
-
-      if (!createUserDocDto?.user_id) {
-        createUserDocDto.user_id = userDetails?.user_id;
-      }
-
-      // Create the new document entity for the database
       try {
-        const savedDoc = await this.saveDoc(createUserDocDto);
-        savedDocs.push(savedDoc);
-
-        await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+        const savedDoc = await this.processSingleUserDoc(
+          createUserDocDto,
+          userDetails,
+          baseFolder
+        );
+        if (savedDoc) {
+          savedDocs.push(savedDoc);
+        }
       } catch (error) {
         Logger.error('Error processing document:', error);
+        throw error;
       }
     }
 
     // Update profile based on documents
-    await this.updateProfile(userDetails);
+    try {
+      await this.updateProfile(userDetails);
+    } catch (error) {
+      Logger.error('Profile update failed:', error);
+      }
 
     return savedDocs;
+  }
+
+  private async processSingleUserDoc(
+    createUserDocDto: CreateUserDocDTO,
+    userDetails: any,
+    baseFolder: string
+  ): Promise<UserDoc | null> {
+    // Call the verification method before further processing
+    let verificationResult;
+    try {
+      verificationResult = await this.verifyVcWithApi(createUserDocDto.doc_data);
+    } catch (error) {
+      // Extract a user-friendly message
+      let message =
+        (error?.response?.data?.message ??
+        error?.message) ??
+        'VC Verification failed';
+      throw new BadRequestException({
+        message: message,
+        error: 'Bad Request',
+        statusCode: 400
+      });
+    }
+
+    if (!verificationResult.success) {
+      throw new BadRequestException({
+        message: verificationResult.message ?? 'VC Verification failed',
+        errors: verificationResult.errors ?? [],
+        statusCode: 400,
+        error: 'Bad Request',
+      });
+    }
+
+    const userFilePath = path.join(
+      baseFolder,
+      `${createUserDocDto.user_id}.json`,
+    );
+
+    // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
+    const existingDoc = await this.userDocsRepository.findOne({
+      where: {
+        user_id: userDetails.user_id,
+        doc_type: createUserDocDto.doc_type,
+        doc_subtype: createUserDocDto.doc_subtype,
+      },
+    });
+
+    if (existingDoc) await this.deleteDoc(existingDoc);
+
+
+
+    if (!createUserDocDto?.user_id) {
+      createUserDocDto.user_id = userDetails?.user_id;
+    }
+
+    // Create the new document entity for the database
+    try {
+      const savedDoc = await this.saveDoc(createUserDocDto);
+      await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+      return savedDoc;
+    } catch (error) {
+      Logger.error('Error processing document:', error);
+      return null;
+    }
   }
   // User info
   async createUserInfo(
@@ -609,12 +623,6 @@ export class UserService {
       if (userData?.user?.user_id) {
         // Assign the user_id from userData to createUserInfoDto
         createUserInfoDto.user_id = userData.user.user_id;
-
-        // Encrypt the aadhaar before saving
-        const encrypted = this.encryptionService.encrypt(
-          createUserInfoDto.aadhaar,
-        );
-        createUserInfoDto.aadhaar = encrypted;
 
         // Create and save the new UserInfo record
         const userInfo = this.userInfoRepository.create(createUserInfoDto);
@@ -638,13 +646,6 @@ export class UserService {
       where: { user_id },
     });
 
-    if (updateUserInfoDto?.aadhaar) {
-      const encrypted = this.encryptionService.encrypt(
-        updateUserInfoDto?.aadhaar,
-      );
-
-      updateUserInfoDto.aadhaar = encrypted;
-    }
     Object.assign(userInfo, updateUserInfoDto);
     console.log('userInfo--->>', userInfo);
     return this.userInfoRepository.save(userInfo);
@@ -660,10 +661,6 @@ export class UserService {
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
     try {
-      const encrypted = this.encryptionService.encrypt(
-        createUserApplicationDto.application_data,
-      );
-      createUserApplicationDto.application_data = { encrypted };
       const userApplication = this.userApplicationRepository.create(
         createUserApplicationDto,
       );
@@ -690,10 +687,6 @@ export class UserService {
         `Application with ID '${internal_application_id}' not found`,
       );
     }
-    const decrypted = this.encryptionService.decrypt(
-      userApplication?.application_data?.encrypted,
-    );
-    userApplication.application_data = decrypted;
     return new SuccessResponse({
       statusCode: HttpStatus.OK,
       message: 'User application retrieved successfully.',
@@ -741,21 +734,6 @@ export class UserService {
           take: limit,
         });
 
-      // Decrypt data in parallel
-      if (userApplication.length > 0) {
-        await Promise.all(
-          userApplication.map(async (item) => {
-            try {
-              const decrypted = this.encryptionService.decrypt(
-                item?.application_data?.encrypted,
-              );
-              item.application_data = decrypted;
-            } catch (decryptionError) {
-              console.error('Error decrypting data:', decryptionError);
-            }
-          }),
-        );
-      }
 
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
@@ -1006,5 +984,60 @@ export class UserService {
         status: 500,
       };
     }
+  }
+
+  private async verifyVcWithApi(vcData: any): Promise<{ success: boolean; message?: string; errors?: any[] }> {
+    try {
+      const verificationPayload = {
+        credential: vcData,
+        config: {
+          method: 'online',
+          issuerName: process.env.VC_DEFAULT_ISSUER_NAME ?? 'dhiway',
+        },
+      };
+
+      const verificationUrl = process.env.VC_VERIFICATION_SERVICE_URL;
+      if (!verificationUrl) {
+        return {
+          success: false,
+          message: 'VC_VERIFICATION_SERVICE_URL env variable not set',
+          errors: [],
+        };
+      }
+
+      const response = await axios.post(verificationUrl, verificationPayload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 8000,
+      });
+
+      // Use the API's response format directly
+      return {
+        success: response.data?.success,
+        message: response.data?.message,
+        errors: response.data?.errors,
+      };
+    } catch (error) {
+      Logger.error('VC Verification error:', error?.response?.data ?? error.message);
+      return {
+        success: false,
+        message:
+          error?.response?.data?.message ??
+          error.message ??
+          'VC Verification failed',
+        errors: error?.response?.data?.errors,
+      };
+    }
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { user_id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID '${userId}' not found`);
+    }
+
+    await this.userRepository.delete(userId);
   }
 }

@@ -1,3 +1,5 @@
+import { ConfigService } from '@nestjs/config';
+import { EncryptionTransformer } from 'src/common/helper/encryptionTransformer';
 import {
 	Entity,
 	Column,
@@ -5,6 +7,9 @@ import {
 	CreateDateColumn,
 	UpdateDateColumn,
 } from 'typeorm';
+
+const configService = new ConfigService();
+const encryptionTransformer = new EncryptionTransformer(configService);
 
 @Entity('user_applications')
 export class UserApplication {
@@ -35,8 +40,8 @@ export class UserApplication {
 	@Column({ type: 'text', nullable: true })
 	remark: string;
 
-	@Column({ type: 'jsonb' })
-	application_data: Record<string, any>;
+	@Column({ type: 'text', transformer: encryptionTransformer })
+	application_data: any; // Can be object, array, or null after decryption
 
 	@CreateDateColumn({ type: 'timestamptz' })
 	created_at: Date;
