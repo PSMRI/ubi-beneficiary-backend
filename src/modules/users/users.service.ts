@@ -660,21 +660,43 @@ export class UserService {
   async createUserApplication(
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
+    //console.log("createUserApplicationDto123", createUserApplicationDto);
+
     try {
-      const userApplication = this.userApplicationRepository.create(
-        createUserApplicationDto,
-      );
-      const response = await this.userApplicationRepository.save(
-        userApplication,
-      );
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User application created successfully.',
-        data: response,
+      // Check if an application already exists for the given benefit_id and user_id
+      const existingApplication = await this.userApplicationRepository.findOne({
+        where: {
+          benefit_id: createUserApplicationDto.benefit_id,
+          user_id: createUserApplicationDto.user_id,
+        },
       });
+
+      if (existingApplication) {
+        // Update the existing application with new values from the DTO
+        Object.assign(existingApplication, createUserApplicationDto);
+        const updated = await this.userApplicationRepository.save(existingApplication);
+        return new SuccessResponse({
+          statusCode: HttpStatus.OK,
+          message: 'User application resubmitted successfully.',
+          data: updated,
+        });
+      } else {
+        // Create a new application
+        const userApplication = this.userApplicationRepository.create(
+          createUserApplicationDto,
+        );
+        const response = await this.userApplicationRepository.save(
+          userApplication,
+        );
+        return new SuccessResponse({
+          statusCode: HttpStatus.OK,
+          message: 'User application submitted successfully.',
+          data: response,
+        });
+      }
     } catch (error) {
-      console.error('Error while creating user application:', error);
-      throw new InternalServerErrorException('Failed to create user application');
+      console.error('Error while creating/updating user application:', error);
+      throw new InternalServerErrorException('Failed to create or update user application');
     }
   }
 
