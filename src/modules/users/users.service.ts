@@ -660,7 +660,7 @@ export class UserService {
   async createUserApplication(
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
-    //console.log("createUserApplicationDto123", createUserApplicationDto);
+  
 
     try {
       // Check if an application already exists for the given benefit_id and user_id
