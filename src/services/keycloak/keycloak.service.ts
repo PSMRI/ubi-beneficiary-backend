@@ -67,12 +67,12 @@ export class KeycloakService {
 	public async getUserKeycloakToken(data) {
 		const url = `${this.keycloak_url}/realms/${this.realm_name_app}/protocol/openid-connect/token`;
 
-		let payload = {
-			client_id: this.client_name_app,
-			grant_type: 'password',
-			username: data.username,
-			password: data.password,
-		};
+    let payload = {
+      client_id: this.client_name_app,
+      grant_type: 'password',
+      username: data.username.toLowerCase(),
+      password: data.password,
+    };
 
 		const config: AxiosRequestConfig = {
 			headers: {
@@ -141,39 +141,39 @@ export class KeycloakService {
 					'KEYCLOAK_URL',
 				)}/admin/realms/${this.realm_name_app}/users`;
 
-				const {
-					headers,
-					status,
-					data: [user],
-				} = await lastValueFrom(
-					this.httpService
-						.get(url, {
-							params: { username, exact: true },
-							headers: {
-								'Content-Type': 'application/json',
-								Authorization: `Bearer ${adminResultData.access_token}`,
-							},
-						})
-						.pipe(map((res) => res)),
-				);
-				if (!user) {
-					return { isUserExist: false, user: null };
-				}
-				return {
-					headers,
-					status,
-					user,
-				};
-			} else {
-				throw new BadRequestException('User not found in keycloak !');
-			}
-		} catch (e) {
-			console.log('error 105' + e.message);
-			throw new HttpException(e.message, HttpStatus.CONFLICT, {
-				cause: e,
-			});
-		}
-	}
+        const {
+          headers,
+          status,
+          data: [user],
+        } = await lastValueFrom(
+          this.httpService
+            .get(url, {
+              params: { username: username.toLowerCase(), exact: true },
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${adminResultData.access_token}`,
+              },
+            })
+            .pipe(map((res) => res)),
+        );
+        if (!user) {
+          return { isUserExist: false, user: null };
+        }
+        return {
+          headers,
+          status,
+          user,
+        };
+      } else {
+        throw new BadRequestException('User not found in keycloak !');
+      }
+    } catch (e) {
+      console.log('error 105' + e.message);
+      throw new HttpException(e.message, HttpStatus.CONFLICT, {
+        cause: e,
+      });
+    }
+  }
 
 	public async createUser(userData): Promise<{ [key: string]: any }> {
 		try {
