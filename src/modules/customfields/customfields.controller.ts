@@ -28,7 +28,6 @@ import { CreateFieldDto } from './dto/create-field.dto';
 import { UpdateFieldDto } from './dto/update-field.dto';
 import { QueryFieldsDto } from './dto/query-fields.dto';
 import { Field, FieldContext } from './entities/field.entity';
-import { CustomFieldResponseDto } from './dto/custom-field.dto';
 import { CustomFieldDto } from './dto/custom-field.dto';
 
 /**
@@ -324,12 +323,12 @@ export class CustomFieldsController {
 	@ApiResponse({
 		status: 200,
 		description: 'Custom fields retrieved successfully',
-		type: [CustomFieldResponseDto],
+		type: [CustomFieldDto],
 	})
 	async getCustomFields(
 		@Param('context') context: FieldContext,
 		@Param('itemId', ParseIntPipe) itemId: number
-	): Promise<CustomFieldResponseDto[]> {
+	): Promise<CustomFieldDto[]> {
 		return this.customFieldsService.getCustomFields(itemId, context);
 	}
 

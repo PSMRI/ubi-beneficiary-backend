@@ -6,7 +6,6 @@ import {
 	IsNumber,
 	IsBoolean,
 	IsObject,
-	IsUUID,
 	Length,
 	Min,
 	Max,
