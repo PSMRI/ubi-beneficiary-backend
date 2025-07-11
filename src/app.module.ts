@@ -18,9 +18,10 @@ import { Role } from '@entities/role.entity';
 import { UserRole } from '@entities/user_roles.entity';
 import { AuthModule } from '@modules/auth/auth.module';
 import { OtpModule } from '@modules/otp/otp.module';
+import { AuthMiddleware } from './common/middlewares/auth.middleware';
+import { CustomFieldsModule } from './modules/customfields/customfields.module';
 import { AdminModule } from './modules/admin/admin.module';
 
-import { AuthMiddleware } from './common/middlewares/auth.middleware';
 @Module({
 	imports: [
 		ConfigModule.forRoot({ isGlobal: true }),
@@ -28,11 +29,11 @@ import { AuthMiddleware } from './common/middlewares/auth.middleware';
 			imports: [ConfigModule],
 			inject: [ConfigService],
 			useFactory: async (
-				configService: ConfigService,
+				configService: ConfigService
 			): Promise<TypeOrmModuleOptions> => ({
-				type: configService.get<'postgres' | 'mysql' | 'sqlite' | 'mariadb'>(
-					'DB_TYPE',
-				),
+				type: configService.get<
+					'postgres' | 'mysql' | 'sqlite' | 'mariadb'
+				>('DB_TYPE'),
 				host: configService.get<string>('DB_HOST'),
 				port: parseInt(configService.get<string>('DB_PORT'), 10),
 				username: configService.get<string>('DB_USERNAME'),
@@ -53,7 +54,8 @@ import { AuthMiddleware } from './common/middlewares/auth.middleware';
 		UserRolesModule,
 		AuthModule,
 		OtpModule,
-		AdminModule,
+		CustomFieldsModule,
+    AdminModule,
 	],
 	controllers: [AppController],
 	providers: [
@@ -66,9 +68,9 @@ import { AuthMiddleware } from './common/middlewares/auth.middleware';
 	],
 })
 export class AppModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(AuthMiddleware)
-      .forRoutes({ path: '/*', method: RequestMethod.ALL }); // this will not affect the existing UI and apis
-  }
+	configure(consumer: MiddlewareConsumer) {
+		consumer
+			.apply(AuthMiddleware)
+			.forRoutes({ path: '/*', method: RequestMethod.ALL }); // this will not affect the existing UI and apis
+	}
 }

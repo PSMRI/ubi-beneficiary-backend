@@ -112,7 +112,7 @@ export class ApplicationStatusUpdate {
 		}
 	}
 
-	@Cron('*/15 * * * *')
+	@Cron('*/1 * * * *')
 	async updateApplicationStatusCron() {
 		try {
 			// Get user application records from databse

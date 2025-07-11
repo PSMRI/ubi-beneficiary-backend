@@ -68,7 +68,7 @@ export class CreateUserApplicationDto {
     example: 'submitted',
   })
   @IsString()
-  @IsIn(['submitted', 'approved', 'rejected'])
+  @IsIn(['submitted', 'approved', 'rejected', 'application pending'])
   @IsNotEmpty()
   status: string;
 
