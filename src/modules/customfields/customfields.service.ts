@@ -176,13 +176,13 @@ export class CustomFieldsService {
 
 	/**
 	 * Create or update field values for an entity
-	 * @param itemId Entity ID
+	 * @param itemId Entity ID (UUID)
 	 * @param context Entity context
 	 * @param customFields Array of custom field data
 	 * @returns Array of created/updated field values
 	 */
 	async saveCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext,
 		customFields: CustomFieldDto[]
 	): Promise<FieldValue[]> {
@@ -265,12 +265,12 @@ export class CustomFieldsService {
 
 	/**
 	 * Get custom fields for an entity
-	 * @param itemId Entity ID
+	 * @param itemId Entity ID (UUID)
 	 * @param context Entity context
 	 * @returns Array of custom field response DTOs
 	 */
 	async getCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext
 	): Promise<CustomFieldResponseDto[]> {
 		this.logger.debug(
@@ -331,13 +331,13 @@ export class CustomFieldsService {
 
 	/**
 	 * Delete custom fields for an entity
-	 * @param itemId Entity ID
+	 * @param itemId Entity ID (UUID)
 	 * @param context Entity context
 	 * @param fieldIds Optional array of field IDs to delete specific fields
 	 * @returns Delete result
 	 */
 	async deleteCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext,
 		fieldIds?: string[]
 	): Promise<DeleteResult> {
@@ -374,7 +374,7 @@ export class CustomFieldsService {
 	async searchByCustomFields(
 		context: FieldContext,
 		searchCriteria: { fieldId: string; value: any }[]
-	): Promise<number[]> {
+	): Promise<string[]> {
 		this.logger.debug(`Searching by custom fields in context: ${context}`);
 
 		if (!searchCriteria || searchCriteria.length === 0) {

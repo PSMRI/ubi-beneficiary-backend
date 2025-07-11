@@ -29,6 +29,7 @@ import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import axios from 'axios';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { FieldContext } from '@modules/customfields/entities/field.entity';
+import { CustomFieldDto } from '@modules/customfields/dto/custom-field.dto';
 
 @Injectable()
 export class UserService {
@@ -147,9 +148,9 @@ export class UserService {
      
       const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
 
-      // Get custom fields for the user using the numeric id
+      // Get custom fields for the user using the user_id
       const customFields = await this.customFieldsService.getCustomFields(
-        userDetails.id,
+        userDetails.user_id,
         FieldContext.USERS
       );
 
@@ -1067,5 +1068,50 @@ export class UserService {
     }
 
     await this.userRepository.delete(userId);
+  }
+
+  /**
+   * Save custom fields for a user
+   * @param user_id User ID (UUID)
+   * @param customFields Array of custom field data
+   * @returns Array of saved field values
+   */
+  async saveUserCustomFields(
+    user_id: string,
+    customFields: CustomFieldDto[]
+  ): Promise<any[]> {
+    const user = await this.userRepository.findOne({
+      where: { user_id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID '${user_id}' not found`);
+    }
+
+    return await this.customFieldsService.saveCustomFields(
+      user_id,
+      FieldContext.USERS,
+      customFields
+    );
+  }
+
+  /**
+   * Get custom fields for a user
+   * @param user_id User ID (UUID)
+   * @returns Array of custom field response DTOs
+   */
+  async getUserCustomFields(user_id: string): Promise<any[]> {
+    const user = await this.userRepository.findOne({
+      where: { user_id },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID '${user_id}' not found`);
+    }
+
+    return await this.customFieldsService.getCustomFields(
+      user_id,
+      FieldContext.USERS
+    );
   }
 }
