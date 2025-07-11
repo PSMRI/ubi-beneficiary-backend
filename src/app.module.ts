@@ -19,6 +19,8 @@ import { UserRole } from '@entities/user_roles.entity';
 import { AuthModule } from '@modules/auth/auth.module';
 import { OtpModule } from '@modules/otp/otp.module';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
+import { CustomFieldsModule } from '@modules/customfields/customfields.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -51,6 +53,7 @@ import { AuthMiddleware } from './common/middlewares/auth.middleware';
     UserRolesModule,
     AuthModule,
     OtpModule,
+    CustomFieldsModule,
   ],
   controllers: [AppController],
   providers: [

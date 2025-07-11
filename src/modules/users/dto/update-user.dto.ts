@@ -1,5 +1,7 @@
-import { IsOptional, IsString, IsEmail, Length } from 'class-validator';
+import { IsOptional, IsString, IsEmail, Length, IsArray, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { CustomFieldValueDto } from './create-user.dto';
 
 export class UpdateUserDto {
   @ApiProperty({
@@ -78,4 +80,21 @@ export class UpdateUserDto {
   @IsString()
   @Length(0, 255)
   image?: string;
+
+  @ApiProperty({
+    type: [CustomFieldValueDto],
+    description: 'Custom field values for the user',
+    required: false,
+    example: [
+      {
+        fieldId: '2cc58846-dbcf-45e9-8295-5e853c7f3af8',
+        value: 'hellyyo',
+      },
+    ],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CustomFieldValueDto)
+  customFields?: CustomFieldValueDto[];
 }

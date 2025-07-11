@@ -27,6 +27,8 @@ import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import axios from 'axios';
+import { CustomFieldsService } from '@modules/customfields/customfields.service';
+import { FieldContext } from '@entities/field.entity';
 
 @Injectable()
 export class UserService {
@@ -43,29 +45,43 @@ export class UserService {
     private readonly userApplicationRepository: Repository<UserApplication>,
     private readonly keycloakService: KeycloakService,
     private readonly profilePopulator: ProfilePopulator,
+    public readonly customFieldsService: CustomFieldsService,
   ) { }
 
   async create(createUserDto: CreateUserDto) {
-    const user = this.userRepository.create(createUserDto);
+    const { customFields, ...userData } = createUserDto;
+    const user = this.userRepository.create(userData);
+    
     try {
       const savedUser = await this.userRepository.save(user);
 
+      // Handle custom fields if provided
+      if (customFields && customFields.length > 0) {
+        await this.customFieldsService.createOrUpdateFieldValues({
+          itemId: savedUser.user_id,
+          fields: customFields,
+        });
+      }
+
+      // Get user with custom fields
+      const userWithCustomFields = await this.getUserWithCustomFields(savedUser.user_id);
+
       return new SuccessResponse({
-        statusCode: HttpStatus.OK, // Created
+        statusCode: HttpStatus.CREATED,
         message: 'User created successfully.',
-        data: savedUser,
+        data: userWithCustomFields,
       });
     } catch (error) {
       return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         errorMessage: error.message,
       });
     }
   }
 
   async update(userId: string, updateUserDto: any) {
-    // Destructure userInfo from the payload
-    const { userInfo, ...userData } = updateUserDto;
+    // Destructure userInfo and customFields from the payload
+    const { userInfo, customFields, ...userData } = updateUserDto;
 
     // Check for existing user in the user table
     const existingUser = await this.userRepository.findOne({
@@ -103,13 +119,21 @@ export class UserService {
         await this.userInfoRepository.save(newUserInfo);
       }
 
+      // Handle custom fields if provided
+      if (customFields && customFields.length > 0) {
+        await this.customFieldsService.createOrUpdateFieldValues({
+          itemId: userId,
+          fields: customFields,
+        });
+      }
+
+      // Get user with custom fields
+      const userWithCustomFields = await this.getUserWithCustomFields(userId);
+
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User and associated info updated successfully',
-        data: {
-          ...updatedUser,
-          userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
-        },
+        data: userWithCustomFields,
       });
     } catch (error) {
       return new ErrorResponse({
@@ -140,22 +164,13 @@ export class UserService {
         });
       }
 
-      const user = await this.findOneUser(userDetails.user_id);
-      const userInfo = await this.findOneUserInfo(
-        userDetails.user_id,
-        decryptData,
-      );
-      const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
+      // Get user with custom fields
+      const userWithCustomFields = await this.getUserWithCustomFields(userDetails.user_id);
 
-      const final = {
-        ...user,
-        ...userInfo,
-        docs: userDoc || [],
-      };
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User retrieved successfully.',
-        data: final,
+        data: userWithCustomFields,
       });
     } catch (error) {
       return new ErrorResponse({
@@ -1060,6 +1075,30 @@ export class UserService {
       throw new NotFoundException(`User with ID '${userId}' not found`);
     }
 
+    // Delete custom fields for the user
+    await this.customFieldsService.deleteAllFieldValuesForItem(userId);
+    
     await this.userRepository.delete(userId);
+  }
+
+  async getUserWithCustomFields(userId: string): Promise<any> {
+    const user = await this.userRepository.findOne({ where: { user_id: userId } });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    const userInfo = await this.findOneUserInfo(userId, false);
+    const userDoc = await this.findUserDocs(userId, false);
+    const customFields = await this.customFieldsService.getEntityWithCustomFields(
+      userId,
+      FieldContext.USERS,
+    );
+
+    return {
+      ...user,
+      ...userInfo,
+      docs: userDoc || [],
+      customFields: customFields.customFields,
+    };
   }
 }
