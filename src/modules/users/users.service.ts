@@ -29,7 +29,6 @@ import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import axios from 'axios';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { FieldContext } from '@modules/customfields/entities/field.entity';
-import { CustomFieldDto } from '@modules/customfields/dto/custom-field.dto';
 
 @Injectable()
 export class UserService {

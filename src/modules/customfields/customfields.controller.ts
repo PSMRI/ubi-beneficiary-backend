@@ -12,7 +12,6 @@ import {
 	ParseUUIDPipe,
 	UsePipes,
 	ValidationPipe,
-	BadRequestException,
 } from '@nestjs/common';
 import {
 	ApiTags,
