@@ -13,6 +13,7 @@ import ProfilePopulatorCron from './crons/profile-populator.cron';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { ApplicationStatusUpdate } from './crons/application-status-update.cron';
 import { ProxyService } from '@services/proxy/proxy.service';
+import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ProxyService } from '@services/proxy/proxy.service';
       Consent,
       UserApplication,
     ]),
+    CustomFieldsModule,
   ],
   controllers: [UserController],
   providers: [

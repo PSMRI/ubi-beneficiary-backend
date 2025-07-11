@@ -27,6 +27,8 @@ import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import axios from 'axios';
+import { CustomFieldsService } from '@modules/customfields/customfields.service';
+import { FieldContext } from '@modules/customfields/entities/field.entity';
 
 @Injectable()
 export class UserService {
@@ -43,6 +45,7 @@ export class UserService {
     private readonly userApplicationRepository: Repository<UserApplication>,
     private readonly keycloakService: KeycloakService,
     private readonly profilePopulator: ProfilePopulator,
+    private readonly customFieldsService: CustomFieldsService,
   ) { }
 
   async create(createUserDto: CreateUserDto) {
@@ -141,15 +144,15 @@ export class UserService {
       }
 
       const user = await this.findOneUser(userDetails.user_id);
-      const userInfo = await this.findOneUserInfo(
-        userDetails.user_id,
-        decryptData,
+      const customFields = await this.customFieldsService.getCustomFields(
+        parseInt(userDetails.user_id),
+        FieldContext.USERS
       );
       const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
 
       const final = {
         ...user,
-        ...userInfo,
+        customFields: customFields || [],
         docs: userDoc || [],
       };
       return new SuccessResponse({
