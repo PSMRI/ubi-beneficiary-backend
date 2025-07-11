@@ -16,7 +16,9 @@ import { UserApplication } from '@entities/user_applications.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { WalletService } from 'src/services/wallet/wallet.service';
-
+import { CustomFieldsService } from '@modules/customfields/customfields.service';
+import { Field } from '@modules/customfields/entities/field.entity';
+import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 @Module({
   imports: [
     HttpModule,
@@ -27,6 +29,8 @@ import { WalletService } from 'src/services/wallet/wallet.service';
       UserInfo,
       Consent,
       UserApplication,
+      Field,
+      FieldValue,
     ]),
   ],
   controllers: [AuthController],
@@ -39,6 +43,7 @@ import { WalletService } from 'src/services/wallet/wallet.service';
     LoggerService,
     ProfilePopulator,
     WalletService,
+    CustomFieldsService,
   ],
   exports: [AuthService, UserService, EncryptionService, WalletService],
 })

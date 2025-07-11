@@ -25,10 +25,10 @@ export class CustomFieldsService {
 
 	constructor(
 		@InjectRepository(Field)
-		private fieldRepository: Repository<Field>,
+		private readonly fieldRepository: Repository<Field>,
 		@InjectRepository(FieldValue)
-		private fieldValueRepository: Repository<FieldValue>
-	) {}
+		private readonly fieldValueRepository: Repository<FieldValue>
+	) { }
 
 	/**
 	 * Create a new custom field
@@ -182,10 +182,11 @@ export class CustomFieldsService {
 	 * @returns Array of created/updated field values
 	 */
 	async saveCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext,
 		customFields: CustomFieldDto[]
 	): Promise<FieldValue[]> {
+
 		this.logger.debug(
 			`Saving custom fields for item: ${itemId}, context: ${context}`
 		);
@@ -261,6 +262,7 @@ export class CustomFieldsService {
 			`Saved ${savedValues.length} custom field values for item: ${itemId}`
 		);
 		return savedValues;
+
 	}
 
 	/**
@@ -270,7 +272,7 @@ export class CustomFieldsService {
 	 * @returns Array of custom field response DTOs
 	 */
 	async getCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext
 	): Promise<CustomFieldResponseDto[]> {
 		this.logger.debug(
@@ -337,7 +339,7 @@ export class CustomFieldsService {
 	 * @returns Delete result
 	 */
 	async deleteCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext,
 		fieldIds?: string[]
 	): Promise<DeleteResult> {
@@ -374,7 +376,7 @@ export class CustomFieldsService {
 	async searchByCustomFields(
 		context: FieldContext,
 		searchCriteria: { fieldId: string; value: any }[]
-	): Promise<number[]> {
+	): Promise<string[]> {
 		this.logger.debug(`Searching by custom fields in context: ${context}`);
 
 		if (!searchCriteria || searchCriteria.length === 0) {
