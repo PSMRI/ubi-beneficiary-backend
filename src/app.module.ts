@@ -19,7 +19,7 @@ import { UserRole } from '@entities/user_roles.entity';
 import { AuthModule } from '@modules/auth/auth.module';
 import { OtpModule } from '@modules/otp/otp.module';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
-import { CustomFieldsModule } from './modules/customfields/customfields.module';
+import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 
 @Module({
   imports: [

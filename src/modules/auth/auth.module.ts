@@ -16,12 +16,14 @@ import { LoggerService } from 'src/logger/logger.service';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { WalletService } from 'src/services/wallet/wallet.service';
 import { UserModule } from '@modules/users/users.module';
+import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 
 @Module({
   imports: [
     HttpModule,
     KeycloakModule,
     UserModule,
+    CustomFieldsModule,
     TypeOrmModule.forFeature([
       User,
       UserDoc,

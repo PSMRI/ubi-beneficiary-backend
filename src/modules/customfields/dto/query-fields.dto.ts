@@ -1,61 +1,61 @@
+import { IsOptional, IsEnum, IsString, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsEnum, IsBoolean, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
-import { FieldContext } from '../entities/field.entity';
+import { FieldContext, FieldType } from '@entities/field.entity';
 
-/**
- * DTO for querying fields with filters
- */
 export class QueryFieldsDto {
-	/**
-	 * Filter by context
-	 * @description Entity context to filter fields
-	 */
-	@ApiProperty({
-		description: 'Filter by context',
-		enum: FieldContext,
-		required: false,
-	})
-	@IsOptional()
-	@IsEnum(FieldContext)
-	context?: FieldContext;
+  @ApiProperty({
+    example: FieldContext.USERS,
+    description: 'Filter by context',
+    enum: FieldContext,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(FieldContext)
+  context?: FieldContext;
 
-	/**
-	 * Filter by context type
-	 * @description Context subtype to filter fields
-	 */
-	@ApiProperty({
-		description: 'Filter by context type',
-		example: 'User',
-		required: false,
-	})
-	@IsOptional()
-	@IsString()
-	contextType?: string;
+  @ApiProperty({
+    example: 'User',
+    description: 'Filter by context type',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  contextType?: string;
 
-	/**
-	 * Filter by required status
-	 * @description Whether to filter by required fields
-	 */
-	@ApiProperty({
-		description: 'Filter by required status',
-		required: false,
-	})
-	@IsOptional()
-	@IsBoolean()
-	@Type(() => Boolean)
-	isRequired?: boolean;
+  @ApiProperty({
+    example: FieldType.TEXT,
+    description: 'Filter by field type',
+    enum: FieldType,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(FieldType)
+  type?: FieldType;
 
-	/**
-	 * Filter by hidden status
-	 * @description Whether to filter by hidden fields
-	 */
-	@ApiProperty({
-		description: 'Filter by hidden status',
-		required: false,
-	})
-	@IsOptional()
-	@IsBoolean()
-	@Type(() => Boolean)
-	isHidden?: boolean;
-}
+  @ApiProperty({
+    example: false,
+    description: 'Filter by required status',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isRequired?: boolean;
+
+  @ApiProperty({
+    example: false,
+    description: 'Filter by hidden status',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isHidden?: boolean;
+
+  @ApiProperty({
+    example: 'tenant-123',
+    description: 'Filter by tenant ID',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+} 

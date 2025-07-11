@@ -215,4 +215,50 @@ export class UserController {
   async fetchVcJson(@Body() fetchVcUrlDto: FetchVcUrlDto) {
     return await this.userService.fetchVcJsonFromUrl(fetchVcUrlDto.url);
   }
+
+  @UseGuards(AuthGuard)
+  @Get('/:userId/custom-fields')
+  @ApiBasicAuth('access-token')
+  @ApiOperation({ summary: 'Get user with custom fields' })
+  @ApiResponse({ status: 200, description: 'User with custom fields retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getUserWithCustomFields(
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+  ) {
+    try {
+      const userWithCustomFields = await this.userService.getUserWithCustomFields(userId);
+      return {
+        statusCode: 200,
+        message: 'User with custom fields retrieved successfully',
+        data: userWithCustomFields,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException('Failed to get user with custom fields');
+    }
+  }
+
+  @UseGuards(AuthGuard)
+  @Put('/:userId/custom-fields')
+  @ApiBasicAuth('access-token')
+  @ApiOperation({ summary: 'Update user custom fields' })
+  @ApiResponse({ status: 200, description: 'User custom fields updated successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateUserCustomFields(
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body() customFieldsDto: { fields: any[] },
+  ) {
+    try {
+      const result = await this.userService.customFieldsService.createOrUpdateFieldValues({
+        itemId: userId,
+        fields: customFieldsDto.fields,
+      });
+      return {
+        statusCode: 200,
+        message: 'User custom fields updated successfully',
+        data: result,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException('Failed to update user custom fields');
+    }
+  }
 }
