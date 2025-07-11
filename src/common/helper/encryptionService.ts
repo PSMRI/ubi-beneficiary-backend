@@ -29,7 +29,7 @@ export class EncryptionService {
     this.encryptionKey = Buffer.from(keyBase64, 'base64');
     
     if (this.encryptionKey.length !== 32) {
-      // throw new Error('ENCRYPTION_KEY must be a base64-encoded 32-byte key');
+      throw new Error('ENCRYPTION_KEY must be a base64-encoded 32-byte key');
     }
   }
 
