@@ -1069,49 +1069,4 @@ export class UserService {
 
     await this.userRepository.delete(userId);
   }
-
-  /**
-   * Save custom fields for a user
-   * @param user_id User ID (UUID)
-   * @param customFields Array of custom field data
-   * @returns Array of saved field values
-   */
-  async saveUserCustomFields(
-    user_id: string,
-    customFields: CustomFieldDto[]
-  ): Promise<any[]> {
-    const user = await this.userRepository.findOne({
-      where: { user_id },
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User with ID '${user_id}' not found`);
-    }
-
-    return await this.customFieldsService.saveCustomFields(
-      user_id,
-      FieldContext.USERS,
-      customFields
-    );
-  }
-
-  /**
-   * Get custom fields for a user
-   * @param user_id User ID (UUID)
-   * @returns Array of custom field response DTOs
-   */
-  async getUserCustomFields(user_id: string): Promise<any[]> {
-    const user = await this.userRepository.findOne({
-      where: { user_id },
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User with ID '${user_id}' not found`);
-    }
-
-    return await this.customFieldsService.getCustomFields(
-      user_id,
-      FieldContext.USERS
-    );
-  }
 }
