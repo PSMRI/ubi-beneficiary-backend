@@ -12,7 +12,6 @@ import {
 	ParseUUIDPipe,
 	UsePipes,
 	ValidationPipe,
-	ParseIntPipe,
 } from '@nestjs/common';
 import {
 	ApiTags,

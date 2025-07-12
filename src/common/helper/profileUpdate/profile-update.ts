@@ -1,6 +1,5 @@
 import { User } from '@entities/user.entity';
 import { UserDoc } from '@entities/user_docs.entity';
-import { UserInfo } from '@entities/user_info.entity';
 import { Injectable, Logger } from '@nestjs/common';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
@@ -19,8 +18,6 @@ export default class ProfilePopulator {
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(UserDoc)
     private readonly userDocRepository: Repository<UserDoc>,
-    @InjectRepository(UserInfo)
-    private readonly userInfoRepository: Repository<UserInfo>,
     private readonly keycloakService: KeycloakService,
     private readonly customFieldsService: CustomFieldsService
   ) { }

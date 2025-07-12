@@ -4,7 +4,6 @@ import { UserController } from '@modules/users/users.controller';
 import { UserService } from '@modules/users/users.service';
 import { User } from '@entities/user.entity';
 import { UserDoc } from '@entities/user_docs.entity';
-import { UserInfo } from '@entities/user_info.entity';
 import { EncryptionService } from 'src/common/helper/encryptionService';
 import { Consent } from '@entities/consent.entity';
 import { UserApplication } from '@entities/user_applications.entity';
@@ -21,7 +20,6 @@ import { FieldValue } from '@modules/customfields/entities/field-value.entity';
     TypeOrmModule.forFeature([
       User,
       UserDoc,
-      UserInfo,
       Consent,
       UserApplication,
       Field,
