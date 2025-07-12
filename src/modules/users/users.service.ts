@@ -794,7 +794,7 @@ export class UserService {
     try {
       const fieldData = await this.customFieldsService.getFieldByName(field, FieldContext.USERS);
 
-      if (!fieldData || !fieldData.fieldId) {
+      if (!fieldData?.fieldId) {
         Logger.warn(`Field '${field}' not found in custom fields`);
         return;
       }
