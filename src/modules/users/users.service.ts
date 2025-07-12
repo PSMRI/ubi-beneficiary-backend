@@ -83,9 +83,9 @@ export class UserService {
     Object.assign(existingUser, userData);
 
     try {
-      const updatedUser : User = await this.userRepository.save(existingUser);
+      const updatedUser: User = await this.userRepository.save(existingUser);
 
-      const existingUserInfo = await this.customFieldsService.saveCustomFields(updatedUser.user_id, FieldContext.USERS, userInfo); 
+      const existingUserInfo = await this.customFieldsService.saveCustomFields(updatedUser.user_id, FieldContext.USERS, userInfo);
 
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
@@ -505,7 +505,7 @@ export class UserService {
       await this.updateProfile(userDetails);
     } catch (error) {
       Logger.error('Profile update failed:', error);
-      }
+    }
 
     return savedDocs;
   }
@@ -523,7 +523,7 @@ export class UserService {
       // Extract a user-friendly message
       let message =
         (error?.response?.data?.message ??
-        error?.message) ??
+          error?.message) ??
         'VC Verification failed';
       throw new BadRequestException({
         message: message,
@@ -584,7 +584,7 @@ export class UserService {
   async createUserApplication(
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
-  
+
 
     try {
       // Check if an application already exists for the given benefit_id and user_id
@@ -791,9 +791,19 @@ export class UserService {
     field: string,
     existingDoc: UserDoc,
   ) {
-    const fieldData = await this.customFieldsService.getFieldByName(field, FieldContext.USERS);
+    try {
+      const fieldData = await this.customFieldsService.getFieldByName(field, FieldContext.USERS);
 
-    await this.customFieldsService.setFieldValueToNull(existingDoc.user_id, fieldData.fieldId);
+      if (!fieldData || !fieldData.fieldId) {
+        Logger.warn(`Field '${field}' not found in custom fields`);
+        return;
+      }
+
+      await this.customFieldsService.setFieldValueToNull(existingDoc.user_id, fieldData.fieldId);
+    } catch (error) {
+      Logger.error(`Error resetting field '${field}' for user ${existingDoc.user_id}:`, error);
+      throw error;
+    }
   }
 
   async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
