@@ -20,55 +20,57 @@ import { AuthModule } from '@modules/auth/auth.module';
 import { OtpModule } from '@modules/otp/otp.module';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
 import { CustomFieldsModule } from './modules/customfields/customfields.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
-  imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: async (
-        configService: ConfigService,
-      ): Promise<TypeOrmModuleOptions> => ({
-        type: configService.get<'postgres' | 'mysql' | 'sqlite' | 'mariadb'>(
-          'DB_TYPE',
-        ),
-        host: configService.get<string>('DB_HOST'),
-        port: parseInt(configService.get<string>('DB_PORT'), 10),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_NAME'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: false,
-        // logging: true,
-      }),
-    }),
-    TypeOrmModule.forFeature([ResponseCache, User, UserRole, Role]),
-    {
-      ...HttpModule.register({}),
-      global: true,
-    },
-    ContentModule,
-    UserModule,
-    UserRolesModule,
-    AuthModule,
-    OtpModule,
-    CustomFieldsModule,
-  ],
-  controllers: [AppController],
-  providers: [
-    AppService,
-    HasuraService,
-    ProxyService,
-    LoggerService,
-    ContentService,
-    EncryptionService,
-  ],
+	imports: [
+		ConfigModule.forRoot({ isGlobal: true }),
+		TypeOrmModule.forRootAsync({
+			imports: [ConfigModule],
+			inject: [ConfigService],
+			useFactory: async (
+				configService: ConfigService
+			): Promise<TypeOrmModuleOptions> => ({
+				type: configService.get<
+					'postgres' | 'mysql' | 'sqlite' | 'mariadb'
+				>('DB_TYPE'),
+				host: configService.get<string>('DB_HOST'),
+				port: parseInt(configService.get<string>('DB_PORT'), 10),
+				username: configService.get<string>('DB_USERNAME'),
+				password: configService.get<string>('DB_PASSWORD'),
+				database: configService.get<string>('DB_NAME'),
+				entities: [__dirname + '/**/*.entity{.ts,.js}'],
+				synchronize: false,
+				// logging: true,
+			}),
+		}),
+		TypeOrmModule.forFeature([ResponseCache, User, UserRole, Role]),
+		{
+			...HttpModule.register({}),
+			global: true,
+		},
+		ContentModule,
+		UserModule,
+		UserRolesModule,
+		AuthModule,
+		OtpModule,
+		CustomFieldsModule,
+    AdminModule,
+	],
+	controllers: [AppController],
+	providers: [
+		AppService,
+		HasuraService,
+		ProxyService,
+		LoggerService,
+		ContentService,
+		EncryptionService,
+	],
 })
 export class AppModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(AuthMiddleware)
-      .forRoutes({ path: '/*', method: RequestMethod.ALL }); // this will not affect the existing UI and apis
-  }
+	configure(consumer: MiddlewareConsumer) {
+		consumer
+			.apply(AuthMiddleware)
+			.forRoutes({ path: '/*', method: RequestMethod.ALL }); // this will not affect the existing UI and apis
+	}
 }

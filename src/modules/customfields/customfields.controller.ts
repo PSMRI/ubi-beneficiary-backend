@@ -399,7 +399,8 @@ export class CustomFieldsController {
 	@ApiParam({
 		name: 'itemId',
 		type: String,
-		description: 'Entity instance ID',
+		format: 'uuid',
+		description: 'Entity instance ID (UUID)',
 	})
 	@ApiBody({
 		type: [CustomFieldDto],

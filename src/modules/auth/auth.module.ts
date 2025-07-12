@@ -18,6 +18,7 @@ import { WalletService } from 'src/services/wallet/wallet.service';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
+import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 @Module({
   imports: [
     HttpModule,
@@ -30,6 +31,7 @@ import { FieldValue } from '@modules/customfields/entities/field-value.entity';
       Field,
       FieldValue,
     ]),
+    CustomFieldsModule,
   ],
   controllers: [AuthController],
   providers: [

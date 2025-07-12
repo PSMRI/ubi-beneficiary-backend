@@ -15,6 +15,7 @@ import { ProxyService } from '@services/proxy/proxy.service';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
+import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -25,6 +26,7 @@ import { FieldValue } from '@modules/customfields/entities/field-value.entity';
       Field,
       FieldValue,
     ]),
+    CustomFieldsModule,
   ],
   controllers: [UserController],
   providers: [

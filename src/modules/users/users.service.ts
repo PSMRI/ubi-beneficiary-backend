@@ -125,13 +125,13 @@ export class UserService {
       }
 
       const user = await this.findOneUser(userDetails.user_id);
-      const userInfo = await this.customFieldsService.getFieldValuesByItemId(userDetails.user_id);
+      const customFields = await this.customFieldsService.getFieldValuesByItemId(userDetails.user_id);
       const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
 
       const final = {
         ...user,
-        ...userInfo,
         docs: userDoc || [],
+        customFields: customFields || [],
       };
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
