@@ -12,7 +12,6 @@ import {
 	ParseUUIDPipe,
 	UsePipes,
 	ValidationPipe,
-	ParseIntPipe,
 } from '@nestjs/common';
 import {
 	ApiTags,
@@ -327,7 +326,7 @@ export class CustomFieldsController {
 	})
 	async getCustomFields(
 		@Param('context') context: FieldContext,
-		@Param('itemId', ParseIntPipe) itemId: number
+		@Param('itemId', ParseUUIDPipe) itemId: string
 	): Promise<CustomFieldDto[]> {
 		return this.customFieldsService.getCustomFields(itemId, context);
 	}
@@ -368,7 +367,7 @@ export class CustomFieldsController {
 	})
 	async deleteCustomFields(
 		@Param('context') context: FieldContext,
-		@Param('itemId', ParseIntPipe) itemId: number,
+		@Param('itemId', ParseUUIDPipe) itemId: string,
 		@Query('fieldIds') fieldIds?: string
 	): Promise<void> {
 		const fieldIdArray = fieldIds ? fieldIds.split(',') : undefined;
@@ -399,8 +398,9 @@ export class CustomFieldsController {
 	})
 	@ApiParam({
 		name: 'itemId',
-		type: Number,
-		description: 'Entity instance ID',
+		type: String,
+		format: 'uuid',
+		description: 'Entity instance ID (UUID)',
 	})
 	@ApiBody({
 		type: [CustomFieldDto],
@@ -413,7 +413,7 @@ export class CustomFieldsController {
 	})
 	async saveCustomFields(
 		@Param('context') context: FieldContext,
-		@Param('itemId', ParseIntPipe) itemId: number,
+		@Param('itemId', ParseUUIDPipe) itemId: string,
 		@Body() customFields: CustomFieldDto[]
 	): Promise<any> {
 		return this.customFieldsService.saveCustomFields(
@@ -496,7 +496,7 @@ export class CustomFieldsController {
 			properties: {
 				itemIds: {
 					type: 'array',
-					items: { type: 'number' },
+					items: { type: 'string', format: 'uuid' },
 				},
 				total: { type: 'number' },
 			},
@@ -508,7 +508,7 @@ export class CustomFieldsController {
 		searchDto: {
 			searchCriteria: { fieldId: string; value: any }[];
 		}
-	): Promise<{ itemIds: number[]; total: number }> {
+	): Promise<{ itemIds: string[]; total: number }> {
 		const itemIds = await this.customFieldsService.searchByCustomFields(
 			context,
 			searchDto.searchCriteria

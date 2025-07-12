@@ -176,13 +176,13 @@ export class CustomFieldsService {
 
 	/**
 	 * Create or update field values for an entity
-	 * @param itemId Entity ID
+	 * @param itemId Entity ID (UUID)
 	 * @param context Entity context
 	 * @param customFields Array of custom field data
 	 * @returns Array of created/updated field values
 	 */
 	async saveCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext,
 		customFields: CustomFieldDto[]
 	): Promise<FieldValue[]> {
@@ -265,46 +265,39 @@ export class CustomFieldsService {
 
 	/**
 	 * Get custom fields for an entity
-	 * @param itemId Entity ID
+	 * @param itemId Entity ID (UUID)
 	 * @param context Entity context
 	 * @returns Array of custom field response DTOs
 	 */
 	async getCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext
 	): Promise<CustomFieldResponseDto[]> {
 		this.logger.debug(
 			`Getting custom fields for item: ${itemId}, context: ${context}`
 		);
 
-		// Get all fields for this context
-		const fields = await this.fieldRepository.find({
-			where: {
-				context,
-				isHidden: false,
-			},
-			order: {
-				ordering: 'ASC',
-				name: 'ASC',
-			},
-		});
-
-		// Get field values for this item
+		// Get field values for this item with field relations
 		const fieldValues = await this.fieldValueRepository.find({
 			where: {
 				itemId,
-				fieldId: In(fields.map((f) => f.fieldId)),
 			},
 			relations: ['field'],
 		});
 
-		// Create response DTOs
+		// Filter out field values where the field doesn't match the context or is hidden
+		const validFieldValues = fieldValues.filter(fv => 
+			fv.field && 
+			fv.field.context === context && 
+			!fv.field.isHidden
+		);
+
+		// Create response DTOs - only include fields that have values
 		const responseFields: CustomFieldResponseDto[] = [];
 
-		for (const field of fields) {
-			const fieldValue = fieldValues.find(
-				(fv) => fv.fieldId === field.fieldId
-			);
+		for (const fieldValue of validFieldValues) {
+			const field = fieldValue.field;
+			if (!field) continue;
 
 			const response: CustomFieldResponseDto = {
 				fieldId: field.fieldId,
@@ -331,13 +324,13 @@ export class CustomFieldsService {
 
 	/**
 	 * Delete custom fields for an entity
-	 * @param itemId Entity ID
+	 * @param itemId Entity ID (UUID)
 	 * @param context Entity context
 	 * @param fieldIds Optional array of field IDs to delete specific fields
 	 * @returns Delete result
 	 */
 	async deleteCustomFields(
-		itemId: number,
+		itemId: string,
 		context: FieldContext,
 		fieldIds?: string[]
 	): Promise<DeleteResult> {
@@ -374,7 +367,7 @@ export class CustomFieldsService {
 	async searchByCustomFields(
 		context: FieldContext,
 		searchCriteria: { fieldId: string; value: any }[]
-	): Promise<number[]> {
+	): Promise<string[]> {
 		this.logger.debug(`Searching by custom fields in context: ${context}`);
 
 		if (!searchCriteria || searchCriteria.length === 0) {

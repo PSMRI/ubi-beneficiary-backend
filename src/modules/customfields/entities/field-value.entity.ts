@@ -49,17 +49,17 @@ export class FieldValue {
 
 	/**
 	 * Generic entity instance ID
-	 * @description ID of the entity instance (e.g., userId, cohortId, etc.)
+	 * @description UUID of the entity instance (e.g., userId, cohortId, etc.)
 	 * This allows the same field to be used across different entity types
 	 */
 	@ApiProperty({
 		description: 'Generic entity instance ID',
-		example: 12345,
-		type: 'integer',
+		example: '550e8400-e29b-41d4-a716-446655440000',
+		format: 'uuid',
 	})
-	@Column({ type: 'int' })
+	@Column({ type: 'uuid' })
 	@Index()
-		itemId: number;
+		itemId: string;
 
 	/**
 	 * The field value
