@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main    
+      - feat-custom-fields    
 jobs:
   Deploy_on_UBA_DEV:
     runs-on: ubuntu-latest
