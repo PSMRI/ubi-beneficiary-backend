@@ -13,13 +13,16 @@ import { AdminService } from './admin.service';
 import { ConfigKeyDto } from './dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { validate } from 'class-validator';
-
+import { RoleGuard } from '@modules/auth/role.guard';
+import { Roles } from '@modules/auth/decorators/roles.decorator';
+import { UserRole } from '@modules/auth/enums/roles.enum';
 @Controller('admin')
 export class AdminController {
 	constructor(private readonly adminService: AdminService) {}
 
 	@Post('config')
-	@UseGuards(AuthGuard)
+	@UseGuards(AuthGuard, RoleGuard)
+	@Roles(UserRole.ADMIN)
 	async createOrUpdateConfig(@Body() body: any, @Request() req) {
 		// Validate key field
 		const keyDto = new ConfigKeyDto();

@@ -115,22 +115,22 @@ export class UserController {
     return this.userService.createUserDocsNew(req, createUserDocDto);
   }
 
-  @UseGuards(AuthGuard)
-  @Post('/user_info')
-  @ApiBasicAuth('access-token')
-  async createUSerInfo(@Body() createUserInfoDto: CreateUserInfoDto) {
-    return await this.userService.createUserInfo(createUserInfoDto);
-  }
+  // @UseGuards(AuthGuard)
+  // @Post('/user_info')
+  // @ApiBasicAuth('access-token')
+  // async createUSerInfo(@Body() createUserInfoDto: CreateUserInfoDto) {
+  //   return await this.userService.createUserInfo(createUserInfoDto);
+  // }
 
-  @UseGuards(AuthGuard)
-  @Put('/user_info/:user_id')
-  @ApiBasicAuth('access-token')
-  async updateUserInfo(
-    @Param('user_id') user_id: string,
-    @Body() updateUserInfoDto: CreateUserInfoDto,
-  ) {
-    return await this.userService.updateUserInfo(user_id, updateUserInfoDto);
-  }
+  // @UseGuards(AuthGuard)
+  // @Put('/user_info/:user_id')
+  // @ApiBasicAuth('access-token')
+  // async updateUserInfo(
+  //   @Param('user_id') user_id: string,
+  //   @Body() updateUserInfoDto: CreateUserInfoDto,
+  // ) {
+  //    return await this.userService.updateUserInfo(user_id, updateUserInfoDto);
+  // }
 
   @UseGuards(AuthGuard)
   @Post('/consent')

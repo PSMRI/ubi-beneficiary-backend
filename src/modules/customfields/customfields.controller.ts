@@ -329,7 +329,7 @@ export class CustomFieldsController {
 	})
 	@ApiParam({
 		name: 'itemId',
-		type: Number,
+		type: String,
 		description: 'Entity instance ID',
 	})
 	@ApiResponse({
@@ -367,7 +367,7 @@ export class CustomFieldsController {
 	})
 	@ApiParam({
 		name: 'itemId',
-		type: Number,
+		type: String,
 		description: 'Entity instance ID',
 	})
 	@ApiQuery({
