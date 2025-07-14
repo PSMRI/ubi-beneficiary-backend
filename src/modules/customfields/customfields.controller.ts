@@ -12,9 +12,7 @@ import {
 	ParseUUIDPipe,
 	UsePipes,
 	ValidationPipe,
-	UnauthorizedException,
-	UseGuards,
-	Logger
+	UseGuards
 } from '@nestjs/common';
 import {
 	ApiTags,
