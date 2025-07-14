@@ -24,7 +24,7 @@ export const isValidRole = (role: string): boolean => {
 // Helper function to get role display name
 export const getRoleDisplayName = (role: UserRole): string => {
   const displayNames: Record<UserRole, string> = {
-    [UserRole.ADMIN]: 'Administrator',
+    [UserRole.ADMIN]: 'Benefit Admin',
     [UserRole.USER]: 'User',
     [UserRole.MODERATOR]: 'Moderator',
     [UserRole.SUPER_ADMIN]: 'Super Administrator',
