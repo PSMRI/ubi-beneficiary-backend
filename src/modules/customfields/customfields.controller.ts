@@ -12,6 +12,9 @@ import {
 	ParseUUIDPipe,
 	UsePipes,
 	ValidationPipe,
+	UnauthorizedException,
+	UseGuards,
+	Logger
 } from '@nestjs/common';
 import {
 	ApiTags,
@@ -28,6 +31,10 @@ import { UpdateFieldDto } from './dto/update-field.dto';
 import { QueryFieldsDto } from './dto/query-fields.dto';
 import { Field, FieldContext } from './entities/field.entity';
 import { CustomFieldDto } from './dto/custom-field.dto';
+import { AuthGuard } from '@modules/auth/auth.guard';
+import { RoleGuard } from '@modules/auth/role.guard';
+import { Roles } from '@modules/auth/decorators/roles.decorator';
+import { UserRole } from '@modules/auth/enums/roles.enum';
 
 /**
  * Controller for managing custom fields
@@ -47,6 +54,8 @@ export class CustomFieldsController {
 	 * @description Creates a new field definition that can be used with entities
 	 */
 	@Post()
+	@UseGuards(AuthGuard, RoleGuard)
+	@Roles(UserRole.ADMIN)
 	@HttpCode(HttpStatus.CREATED)
 	@ApiOperation({
 		summary: 'Create a new custom field',
@@ -199,6 +208,8 @@ export class CustomFieldsController {
 	 * @description Updates an existing field definition
 	 */
 	@Put(':fieldId')
+	@UseGuards(AuthGuard, RoleGuard)
+	@Roles(UserRole.ADMIN)
 	@ApiOperation({
 		summary: 'Update field definition',
 		description: 'Updates an existing field definition with new properties',
@@ -271,6 +282,8 @@ export class CustomFieldsController {
 	 * @description Deletes a field definition and all associated values
 	 */
 	@Delete(':fieldId')
+	@UseGuards(AuthGuard, RoleGuard)
+	@Roles(UserRole.ADMIN)
 	@HttpCode(HttpStatus.NO_CONTENT)
 	@ApiOperation({
 		summary: 'Delete field definition',
@@ -339,6 +352,8 @@ export class CustomFieldsController {
 	 * @description Deletes all or specific custom field values for an entity instance
 	 */
 	@Delete('values/:context/:itemId')
+	@UseGuards(AuthGuard, RoleGuard)
+	@Roles(UserRole.ADMIN)
 	@HttpCode(HttpStatus.NO_CONTENT)
 	@ApiOperation({
 		summary: 'Delete custom fields for entity',
@@ -386,6 +401,8 @@ export class CustomFieldsController {
 	 * @description Saves or updates custom field values for a specific entity instance
 	 */
 	@Post('values/:context/:itemId')
+	@UseGuards(AuthGuard, RoleGuard)
+	@Roles(UserRole.ADMIN)
 	@ApiOperation({
 		summary: 'Save custom field values for entity',
 		description:

@@ -17,6 +17,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { WalletService } from 'src/services/wallet/wallet.service';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
+import { RoleGuard } from './role.guard';
 
 @Module({
   imports: [
@@ -41,7 +42,8 @@ import { CustomFieldsModule } from '@modules/customfields/customfields.module';
     LoggerService,
     ProfilePopulator,
     WalletService,
+    RoleGuard,
   ],
-  exports: [AuthService, UserService, EncryptionService, WalletService],
+  exports: [AuthService, UserService, EncryptionService, WalletService, RoleGuard],
 })
 export class AuthModule {}
