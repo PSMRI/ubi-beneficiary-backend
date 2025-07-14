@@ -21,7 +21,9 @@ import { AdminService } from './admin.service';
 import { ConfigKeyDto, CreateOrUpdateConfigDto, ConfigResponseDto } from './dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { validate } from 'class-validator';
-
+import { RoleGuard } from 'src/common/guards/role.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UserRole } from 'src/common/enums/roles.enum';
 /**
  * Controller for admin operations
  * @description Provides API endpoints for administrative tasks like configuration management
@@ -39,7 +41,8 @@ export class AdminController {
 	 * @description Creates a new configuration entry or updates an existing one
 	 */
 	@Post('config')
-	@UseGuards(AuthGuard)
+	@UseGuards(AuthGuard, RoleGuard)
+	@Roles(UserRole.ADMIN)
 	@ApiOperation({
 		summary: 'Create or update configuration',
 		description: 'Creates a new configuration entry or updates an existing one. Requires authentication.',

@@ -19,6 +19,8 @@ import { CustomFieldsService } from '@modules/customfields/customfields.service'
 import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
+import { RoleGuard } from '../../common/guards/role.guard';
+
 @Module({
   imports: [
     HttpModule,
@@ -44,7 +46,8 @@ import { CustomFieldsModule } from '@modules/customfields/customfields.module';
     ProfilePopulator,
     WalletService,
     CustomFieldsService,
+    RoleGuard,
   ],
-  exports: [AuthService, UserService, EncryptionService, WalletService],
+  exports: [AuthService, UserService, EncryptionService, WalletService, RoleGuard],
 })
 export class AuthModule {}
