@@ -289,7 +289,8 @@ export default class ProfilePopulator {
 
     const userInfo = [];
     for (const field of fieldList) {
-      if (profile[field.name] && !['firstName', 'lastName', 'middleName', 'dob'].includes(field.name)) {
+      // only add fields that are not already present in userData as custom fields
+      if (profile[field.name] && !['firstName', 'lastName', 'middleName', 'dob', 'phoneNumber', 'email'].includes(field.name)) {
 
         userInfo.push(
           {

@@ -13,7 +13,6 @@ import { User } from '../../entity/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
-import { CreateUserInfoDto } from './dto/create-user-info.dto';
 import { Consent } from '@entities/consent.entity';
 import { CreateConsentDto } from './dto/create-consent.dto';
 import { UserApplication } from '@entities/user_applications.entity';
@@ -125,7 +124,7 @@ export class UserService {
       }
 
       const user = await this.findOneUser(userDetails.user_id);
-      const customFields = await this.customFieldsService.getFieldValuesByItemId(userDetails.user_id);
+      const customFields = await this.customFieldsService.getCustomFields(userDetails.user_id, FieldContext.USERS);
       const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
 
       const final = {
@@ -807,14 +806,25 @@ export class UserService {
   }
 
   async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
-    // TODO: Add more fields to the fieldsArray
-    const fieldsArray = {
-      aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
-      casteCertificate: ['caste'],
-      enrollmentCertificate: ['class', 'studentType'],
+    
+    // const fieldsArray = {
+    //   aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
+    //   casteCertificate: ['caste'],
+    //   enrollmentCertificate: ['class', 'studentType'],
+    //   incomeCertificate: ['annualIncome'],
+    //   janAadharCertificate: ['state'],
+    //   marksheet: ['previousYearMarks'],
+    // };
+
+    // Mapped fields array where document types are keys and field arrays are values
+     const fieldsArray = {
+      disabilityCertificate: ['aadhaar', 'disabilityRange', 'disabilityType', 'udid'],
       incomeCertificate: ['annualIncome'],
-      janAadharCertificate: ['state'],
-      marksheet: ['previousYearMarks'],
+      bankAccountDetails: ['bankAccountHolderName', 'bankAccountNumber', 'bankAddress', 'bankIfscCode', 'bankName', 'branchCode'],
+      marksheet: ['class', 'currentSchoolName', 'previousYearMarks'],
+      enrollmentCertificate: ['class', 'state'],
+      otrCertificate: ['dob', 'fatherName', 'firstName', 'gender', 'lastName', 'middleName', 'nspOtr'],
+      feeReceipt: ['miscFeePaid', 'tuitionAndAdminFeePaid'],
     };
 
     const fields = fieldsArray[existingDoc.doc_subtype] ?? [];

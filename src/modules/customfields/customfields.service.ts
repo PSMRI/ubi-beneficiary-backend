@@ -280,12 +280,7 @@ export class CustomFieldsService {
 		);
 
 		// Get field values for this item with field relations
-		const fieldValues = await this.fieldValueRepository.find({
-			where: {
-				itemId,
-			},
-			relations: ['field'],
-		});
+		const fieldValues = await this.getFieldValuesByItemId(itemId);
 
 		// Filter out field values where the field doesn't match the context or is hidden
 		const validFieldValues = fieldValues.filter(fv => 
