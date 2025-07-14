@@ -7,21 +7,17 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
-import { ROLES_KEY } from './decorators/roles.decorator';
-import { UserRole, isValidRole } from './enums/roles.enum';
+import { ROLES_KEY } from '../decorators/roles.decorator';
+import { UserRole, isValidRole } from '../enums/roles.enum';
 
 interface AuthenticatedRequest extends Request {
   user: {
     keycloak_id: string;
     resource_access?: {
-      account?: {
+      'beneficiary-app'?: {
         roles?: string[];
-      };
-      hasura?: {
-        roles?: string[];
-      };
+      }
     };
-    // other properties from decoded JWT
   };
  
 }
@@ -64,7 +60,6 @@ export class RoleGuard implements CanActivate {
         `Access denied. Required roles: ${requiredRoles.join(', ')}. User roles: ${userRoles.join(', ')}`
       );
     }
-
     return true;
   }
 } 

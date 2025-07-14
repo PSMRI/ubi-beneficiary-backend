@@ -279,22 +279,37 @@ export class CustomFieldsService {
 			`Getting custom fields for item: ${itemId}, context: ${context}`
 		);
 
-		// Get field values for this item with field relations
-		const fieldValues = await this.getFieldValuesByItemId(itemId);
+		// Get ALL fields for this context (excluding hidden fields)
+		const allFields = await this.fieldRepository.find({
+			where: { 
+				context,
+				isHidden: false 
+			},
+			order: {
+				ordering: 'ASC',
+				name: 'ASC',
+			},
+		});
 
-		// Filter out field values where the field doesn't match the context or is hidden
-		const validFieldValues = fieldValues.filter(fv => 
-			fv.field && 
-			fv.field.context === context && 
-			!fv.field.isHidden
-		);
+		// Get field values for this specific item
+		const fieldValues = await this.fieldValueRepository.find({
+			where: { itemId },
+			relations: ['field'],
+		});
 
-		// Create response DTOs - only include fields that have values
+		// Create a map of field values for quick lookup
+		const fieldValueMap = new Map<string, FieldValue>();
+		fieldValues.forEach(fv => {
+			if (fv.field && fv.field.context === context) {
+				fieldValueMap.set(fv.fieldId, fv);
+			}
+		});
+
+		// Create response DTOs - include ALL fields, with null values for missing ones
 		const responseFields: CustomFieldResponseDto[] = [];
 
-		for (const fieldValue of validFieldValues) {
-			const field = fieldValue.field;
-			if (!field) continue;
+		for (const field of allFields) {
+			const fieldValue = fieldValueMap.get(field.fieldId);
 
 			const response: CustomFieldResponseDto = {
 				fieldId: field.fieldId,
@@ -304,7 +319,7 @@ export class CustomFieldsService {
 				value: fieldValue ? fieldValue.getParsedValue() : null,
 				fieldParams: field.fieldParams,
 				fieldAttributes: field.fieldAttributes,
-				metadata: fieldValue?.metadata,
+				metadata: fieldValue?.metadata || null,
 				isRequired: field.isRequired,
 				isHidden: field.isHidden,
 				ordering: field.ordering,
@@ -314,7 +329,7 @@ export class CustomFieldsService {
 		}
 
 		this.logger.debug(
-			`Retrieved ${responseFields.length} custom fields for item: ${itemId}`
+			`Retrieved ${responseFields.length} custom fields for item: ${itemId} (${fieldValueMap.size} have values)`
 		);
 		return responseFields;
 	}

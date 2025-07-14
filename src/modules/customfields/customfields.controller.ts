@@ -30,9 +30,9 @@ import { QueryFieldsDto } from './dto/query-fields.dto';
 import { Field, FieldContext } from './entities/field.entity';
 import { CustomFieldDto } from './dto/custom-field.dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
-import { RoleGuard } from '@modules/auth/role.guard';
-import { Roles } from '@modules/auth/decorators/roles.decorator';
-import { UserRole } from '@modules/auth/enums/roles.enum';
+import { RoleGuard } from 'src/common/guards/role.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UserRole } from 'src/common/enums/roles.enum';
 
 /**
  * Controller for managing custom fields
