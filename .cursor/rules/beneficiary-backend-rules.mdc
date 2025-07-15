@@ -1,10 +1,7 @@
-
 ---
 description: USE WHEN working on beneficiary backend specific features, business logic, or project conventions
-globs: ["**/*"]
 alwaysApply: false
 ---
-
 # Beneficiary Backend Project Rules
 
 ## Project Overview
