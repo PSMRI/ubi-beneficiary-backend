@@ -20,6 +20,7 @@ import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { RoleGuard } from '../../common/guards/role.guard';
+import { AdminModule } from '@modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { RoleGuard } from '../../common/guards/role.guard';
       FieldValue,
     ]),
     CustomFieldsModule,
+    AdminModule,
   ],
   controllers: [AuthController],
   providers: [

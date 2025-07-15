@@ -453,13 +453,6 @@ export class CustomFieldsService {
 		return statistics;
 	}
 
-	async getFieldValuesByItemId(itemId: string): Promise<FieldValue[]> {
-		return this.fieldValueRepository.find({
-			where: { itemId },
-			relations: ['field'],
-		});
-	}
-
 	async setFieldValueToNull(itemId: string, fieldId: string): Promise<UpdateResult> {
 		return await this.fieldValueRepository.update({ itemId, fieldId }, { value: null });
 	}

@@ -61,10 +61,7 @@ export class AdminService {
 
 	async getConfig(key: string): Promise<SuccessResponse | ErrorResponse> {
 		try {
-			const setting = await this.settingRepository.findOne({
-				where: { key },
-				order: { created: 'DESC' },
-			});
+			const setting = await this.getConfigByKey(key);
 
 			if (!setting) {
 				return new ErrorResponse({
@@ -85,5 +82,12 @@ export class AdminService {
 					'An unexpected error occurred while retrieving the configuration',
 			});
 		}
+	}
+
+	async getConfigByKey(key: string): Promise<Setting> {
+		return await this.settingRepository.findOne({
+			where: { key },
+			order: { created: 'DESC' },
+		});
 	}
 }
