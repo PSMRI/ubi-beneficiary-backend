@@ -18,6 +18,9 @@ export class AuthService {
   public keycloak_admin_cli_client_secret = this.configService.get<string>(
     'KEYCLOAK_ADMIN_CLI_CLIENT_SECRET',
   );
+  public default_group_path = this.configService.get<string>(
+    'KEYCLOAK_DEFAULT_GROUP_PATH',
+  );
 
   constructor(
     private readonly configService: ConfigService,
@@ -30,7 +33,6 @@ export class AuthService {
   public async login(body: LoginDTO) {
 
     const token = await this.keycloakService.getUserKeycloakToken(body);
-
     if (token) {
       // First try to get Keycloak user details
       const keycloakUser = await this.keycloakService.getUserByUsername(body.username);
@@ -134,7 +136,6 @@ export class AuthService {
       // Step 2: Get Keycloak admin token
       const token = await this.keycloakService.getAdminKeycloakToken();
       this.validateToken(token);
-
       // Step 3: Register user in Keycloak
       const keycloakId = await this.registerUserInKeycloak(
         rest,
@@ -247,6 +248,7 @@ export class AuthService {
         firstName: body?.firstName,
         lastName: body?.lastName,
       },
+      groups: this.default_group_path ? [this.default_group_path] : [],
     };
   }
 
@@ -282,6 +284,7 @@ export class AuthService {
         firstName: trimmedFirstName,
         lastName: trimmedLastName,
       },
+      groups: this.default_group_path ? [this.default_group_path] : [],
     };
   }
 
