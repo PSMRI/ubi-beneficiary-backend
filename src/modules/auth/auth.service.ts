@@ -18,10 +18,9 @@ export class AuthService {
   public keycloak_admin_cli_client_secret = this.configService.get<string>(
     'KEYCLOAK_ADMIN_CLI_CLIENT_SECRET',
   );
-  public default_group_path = this.configService.get<string>(
+  private readonly defaultGroupPath = this.configService.get<string>(
     'KEYCLOAK_DEFAULT_GROUP_PATH',
   );
-
   constructor(
     private readonly configService: ConfigService,
     private readonly keycloakService: KeycloakService,
@@ -248,7 +247,7 @@ export class AuthService {
         firstName: body?.firstName,
         lastName: body?.lastName,
       },
-      groups: this.default_group_path ? [this.default_group_path] : [],
+      groups: this.defaultGroupPath ? [this.defaultGroupPath] : [],
     };
   }
 
@@ -284,7 +283,7 @@ export class AuthService {
         firstName: trimmedFirstName,
         lastName: trimmedLastName,
       },
-      groups: this.default_group_path ? [this.default_group_path] : [],
+      groups: this.defaultGroupPath ? [this.defaultGroupPath] : [],
     };
   }
 

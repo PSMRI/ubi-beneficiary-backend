@@ -16,6 +16,8 @@ import { CustomFieldsService } from '@modules/customfields/customfields.service'
 import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
+import { AdminModule } from '@modules/admin/admin.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -27,6 +29,7 @@ import { CustomFieldsModule } from '@modules/customfields/customfields.module';
       FieldValue,
     ]),
     CustomFieldsModule,
+    AdminModule,
   ],
   controllers: [UserController],
   providers: [
