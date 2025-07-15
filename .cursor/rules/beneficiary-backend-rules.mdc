@@ -9,431 +9,195 @@ alwaysApply: false
 
 ## Project Overview
 
-### Technology Stack
+### Technology Stack & Purpose
 - **Framework**: NestJS with TypeScript
-- **Database**: PostgreSQL with Hasura GraphQL
+- **Database**: PostgreSQL with Hasura GraphQL layer
 - **Authentication**: Keycloak integration
-- **Purpose**: Beneficiary management system with digital wallet integration for service delivery
+- **Purpose**: Digital beneficiary management platform with multi-service integration for document verification, wallet onboarding, and benefit application tracking
 
-### System Architecture
+## Project Structure & Module Responsibilities
 
-#### Service Integration Components
-- **Keycloak**: Identity and access management
-- **PostgreSQL**: Primary data storage with encrypted sensitive fields
-- **Hasura**: GraphQL API layer and data management
-- **Wallet Service**: Digital wallet integration for beneficiaries
-- **VC Verification API**: Verifiable Credentials validation service
+### Core Application Modules (`src/modules/`)
 
-#### Data Security Framework
-- **Automatic Encryption**: Sensitive fields use `EncryptionTransformer` for transparent encryption/decryption
-- **Encrypted Fields**: `doc_data`, `application_data`
-- **Field-Level Encryption**: Uses AES-256-GCM with authentication tags
+#### Authentication Module (`auth/`)
+- **Purpose**: Manages dual authentication flow with Keycloak and internal user management
+- **Responsibilities**: User registration, login, token validation, username generation patterns
+- **Integration**: Coordinates with Keycloak for identity management and Wallet service for user onboarding
 
-## Core Business Processes
+#### Users Module (`users/`)
+- **Purpose**: Central user management with document handling and profile management
+- **Responsibilities**: User CRUD operations, document upload/verification, profile population, consent management
+- **Special Features**: Includes automated cron jobs for profile updates and application status synchronization
+- **Sub-modules**: 
+  - Cron jobs for scheduled operations
+  - Document management workflows
+  - User profile aggregation from multiple sources
 
-### User Registration & External Service Integration
+#### OTP Module (`otp/`)
+- **Purpose**: Handles one-time password generation and validation
+- **Integration**: Works with external SMS/communication services
 
-#### Dual Registration Flow
-```typescript
-// Registration process involves both Keycloak and Wallet Service
-public async registerWithUsernamePassword(body) {
-  // 1. Register in Keycloak first
-  const keycloakId = await this.registerUserInKeycloak(userData, token.access_token);
-  
-  // 2. Create user in PostgreSQL
-  const user = await this.userService.createKeycloakData(userData);
-  
-  // 3. Onboard to Wallet Service
-  const walletResponse = await this.walletService.onboardUser(walletData);
-  
-  // 4. Store wallet token for future API calls
-  await this.userService.update(user.user_id, { walletToken: walletToken });
-}
-```
+#### User Roles Module (`user_roles/`)
+- **Purpose**: Manages role-based access control and permissions
+- **Integration**: Coordinates with Keycloak role mapping
 
-#### Rollback Strategy
-- **External Service Failure**: Automatically deletes user from both PostgreSQL and Keycloak
-- **Transactional Consistency**: Ensures user exists in all systems or none
-- **Error Handling**: Returns user-friendly error messages while logging detailed failures
+### Core Services (`src/services/`)
 
-#### Username Generation Pattern
-- **Format**: `{firstName}_{lastNameInitial}_{phoneLastFourDigits}`.toLowerCase()
-- **Example**: `john_d_1234` for John Doe with phone ending in 1234
+#### Keycloak Service (`keycloak/`)
+- **Purpose**: Manages all interactions with Keycloak identity provider
+- **Responsibilities**: User registration, token management, admin operations, role synchronization
 
-### Document Management System
+#### Wallet Service (`wallet/`)
+- **Purpose**: Handles integration with external digital wallet platform
+- **Responsibilities**: User onboarding to wallet, token management for wallet operations
 
-#### Document Upload API Flow (`/users/wallet/user_docs`)
-```typescript
-async createUserDocsNew(req, createUserDocsDto: CreateUserDocDTO[]) {
-  // 1. Extract user from authenticated request
-  const userDetails = await this.getUserDetails(req);
-  
-  // 2. Process each document with verification
-  for (const docDto of createUserDocsDto) {
-    // 3. Verify document with VC API
-    const verificationResult = await this.verifyVcWithApi(docDto.doc_data);
-    
-    // 4. Handle document overwrites (delete existing)
-    if (existingDoc) await this.deleteDoc(existingDoc);
-    
-    // 5. Save encrypted document to database
-    await this.saveDoc(docDto);
-  }
-  
-  // 6. Trigger profile update based on new documents
-  await this.updateProfile(userDetails);
-}
-```
+#### Hasura Service (`hasura/`)
+- **Purpose**: Manages GraphQL operations and dynamic query construction
+- **Responsibilities**: Complex filtering, eligibility criteria handling, benefit provider data management
 
-#### Document Storage Strategy
-- **Database Storage**: Database for metadata and encrypted document content
-- **Verification Required**: All documents must pass VC verification before storage
-- **Document Types**: Managed through `DocumentListProvider` with master list configuration
+#### Proxy Service (`proxy/`)
+- **Purpose**: Handles proxied requests and external service communication
+- **Responsibilities**: Request forwarding, response transformation, external API integration
 
-#### Document Field Reset on Deletion
-- **Automatic Reset**: When documents are deleted, related user profile fields are automatically set to NULL
-- **Field Mapping**: Each document type maps to specific User/UserInfo fields
+### Supporting Infrastructure (`src/common/`)
 
-### User Profile & Data Retrieval
+#### Helper Utilities (`helper/`)
+- **Document Management**: Centralized document type definitions and validation
+- **Encryption Services**: Field-level encryption/decryption for sensitive data
+- **Profile Update Logic**: Configuration-driven profile field extraction from verifiable credentials
 
-#### Comprehensive User API (`/users/get_one`)
-```typescript
-async findOne(req: any, decryptData?: boolean) {
-  // 1. Extract user from Keycloak token
-  const sso_id = req?.user?.keycloak_id;
-  
-  // 2. Get user details from database
-  const userDetails = await this.userRepository.findOne({ where: { sso_id } });
-  
-  // 3. Aggregate user data from multiple sources
-  const user = await this.findOneUser(userDetails.user_id);
-  const userInfo = await this.findOneUserInfo(userDetails.user_id, decryptData);
-  const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
-  
-  // 4. Return combined profile with documents
-  return { ...user, ...userInfo, docs: userDoc || [] };
-}
-```
+#### Middleware & Filters (`middlewares/`, `filters/`)
+- **Authentication Middleware**: Token extraction and user context establishment
+- **Exception Filters**: Standardized error response formatting
+- **Response Interceptors**: Uniform API response structure
 
-#### User Document Enrichment
-- **Document Classification**: Automatically marks documents as `is_uploaded` based on master list
-- **Verification Status**: Tracks `doc_verified` flag for each document
-- **Import Source**: Records `imported_from` for audit trails
+### Data Layer (`src/entity/`)
+- **User Entities**: Core user, user info, and user roles
+- **Document Entities**: User documents with verification status
+- **Application Entities**: Benefit application tracking
+- **Consent Entities**: User consent management
+- **Response Entities**: Standardized API response structures
 
-### Consent Management
+## Key Integration Workflows
 
-#### Consent API Implementation
-- **Endpoint**: `/users/get_my_consents` - retrieves all user consents
-- **Endpoint**: `/users/consent` - creates new consent records
-- **Data Structure**: purpose, purpose_text, accepted (boolean), consent_date
-- **User Association**: Automatically links to authenticated user via `sso_id`
+### Multi-Service User Registration
+- **Workflow**: Sequential registration across Keycloak → Database → Wallet Service
+- **Rollback Strategy**: Automatic cleanup on any service failure
+- **Unique Constraint**: Username generation follows specific pattern for consistency
 
-## Automated Operations
+### Document Verification & Storage
+- **Workflow**: Upload → VC API Verification → Database Storage → Profile Update Trigger
+- **Verification Requirement**: All documents must pass verifiable credentials validation
+- **Storage Strategy**: Database-only storage with automatic encryption for sensitive fields
 
 ### Profile Population System
+- **Automation**: Scheduled cron jobs extract profile data from verified documents
+- **Configuration-Driven**: Uses JSON configuration files for field mapping from VCs
+- **Priority Processing**: Smart ordering prioritizes incomplete or unverified profiles
 
-#### CRON-Based Profile Updates
-```typescript
-@Cron('*/5 * * * *') // Every 5 minutes
-async populateProfile() {
-  // 1. Prioritize users with incomplete/unverified profiles
-  const users = await this.getUsers(); // Smart ordering query
-  
-  // 2. Process each user's documents
-  for (const user of users) {
-    const userDocs = await this.getUserDocs(user);
-    const vcs = await this.buildVCs(userDocs);
-    const { userProfile, validationData } = await this.buildProfile(vcs);
-    
-    // 3. Update user fields based on VC data
-    await this.updateDatabase(userProfile, validationData, user);
-  }
-}
-```
+### Application Status Synchronization
+- **Automation**: Regular synchronization with external benefit provider systems
+- **State Management**: Tracks application lifecycle across multiple terminal states
+- **External Integration**: Fetches real-time status updates from provider APIs
 
-#### VC to Profile Field Mapping
-- **Configuration-Driven**: Uses `vcArray.json` and `vcPaths/*.json` for field mappings
-- **Smart Ordering**: Processes users by verification status and last update time
-- **Field Validation**: Includes validation data in user entity for audit purposes
-- **Auto-Verification**: Sets `fieldsVerified` and `fieldsVerifiedAt` upon successful population
+## External Service Integration Points
 
-### Application Status Management
+### Keycloak Integration
+- **Purpose**: Primary identity and access management
+- **Usage**: User authentication, role management, token validation
+- **Special Handling**: Admin token management for user operations
 
-#### Automated Status Updates
-```typescript
-@Cron('*/1 * * * *') // Every minute
-async updateApplicationStatusCron() {
-  // 1. Get applications not in terminal states
-  const applications = await this.getApplications(); // Excludes 'amount received', 'rejected', 'disbursed'
-  
-  // 2. Check status with external benefit providers
-  for (const application of applications) {
-    const statusData = await this.getStatus(application.external_application_id);
-    await this.updateStatus(application, statusData);
-  }
-}
-```
+### Digital Wallet Integration
+- **Purpose**: Beneficiary digital wallet onboarding
+- **Usage**: New user registration, token storage for service-to-service communication
+- **Failure Handling**: Mandatory integration with rollback on failure
 
-#### Status Synchronization
-- **External Integration**: Fetches status from benefit provider APIs
-- **Status Parsing**: Handles stringified JSON status responses
-- **Transaction Safety**: Uses QueryRunner for status updates
-- **Audit Trail**: Stores status comments and timestamps
+### VC (Verifiable Credentials) API
+- **Purpose**: Document verification and validation
+- **Usage**: All uploaded documents undergo verification before storage
+- **Data Extraction**: Profile field population from verified credentials
 
-## Technical Implementation Patterns
+### Hasura GraphQL
+- **Purpose**: Data layer management and complex querying
+- **Usage**: Dynamic query construction, eligibility filtering, job management
+- **Caching**: Provider-specific data caching for performance optimization
 
-### Authentication & Authorization
+## Automated Operations (Cron Jobs)
 
-#### Keycloak Token Integration
-```typescript
-// Auth middleware extracts user information
-req.user = {
-  keycloak_id: decoded.sub,
-  roles: decoded?.resource_access?.hasura?.roles ?? []
-};
+### Profile Population Scheduler
+- **Frequency**: Every 5 minutes
+- **Purpose**: Automated extraction of user profile data from verified documents
+- **Intelligence**: Prioritizes users with incomplete profiles or failed previous attempts
 
-// Services use sso_id for user identification
-const userDetails = await this.userRepository.findOne({
-  where: { sso_id: req?.user?.keycloak_id }
-});
-```
+### Application Status Updater
+- **Frequency**: Every minute
+- **Purpose**: Synchronizes application status with external benefit providers
+- **Scope**: Processes non-terminal applications for real-time status updates
 
-#### Token Validation Requirements
-- **Bearer Token**: Must be present in Authorization header
-- **Token Structure**: JWT with `sub` (keycloak_id) and roles
-- **Expiry Check**: Validates token expiration before processing
-- **Role Extraction**: Extracts Hasura roles from `resource_access.hasura.roles`
+## Unique Design Decisions
 
-### Data Processing Conventions
+### Data Security Architecture
+- **Field-Level Encryption**: Transparent encryption/decryption for sensitive fields
+- **Controlled Decryption**: API-level parameter controls data exposure
+- **Encrypted Fields**: Document data and application-specific sensitive information
 
-#### Encryption Transformer Usage
-```typescript
-@Column({ type: 'text', transformer: encryptionTransformer })
-doc_data: Record<string, unknown> | null;
-```
+### Document Management Strategy
+- **Database-Centric**: Single source of truth in database with encryption
+- **Verification-First**: No storage without successful VC verification
+- **Composite Uniqueness**: Enforced uniqueness on user, document type, and subtype combinations
 
-#### Date Formatting Standards
-- **Input Flexibility**: Accepts multiple date formats (yyyy-MM-dd, dd-MM-yyyy, etc.)
-- **Storage Format**: Standardizes to yyyy-MM-dd (ISO 8601)
-- **DOB Processing**: Special handling in profile population for various date formats
+### Username Generation Convention
+- **Pattern**: Structured format using first name, last name initial, and phone digits
+- **Consistency**: Ensures predictable username format across the platform
 
-#### JSON Data Preprocessing
-```typescript
-private preprocessDocData(docData: any): string {
-  if (typeof docData === 'object') {
-    return JSON.stringify(docData);
-  }
-  return docData;
-}
-```
+### Profile Field Mapping
+- **Configuration-Based**: JSON files define extraction paths from different VC types
+- **Multi-Source**: Single profile field can be populated from multiple document types
+- **Transformation Logic**: Handles format conversions and data normalization
 
-### VC (Verifiable Credentials) Integration
+## API Design Patterns
 
-#### Document Verification Flow
-- **Verification API**: All uploaded documents must pass VC verification
-- **Error Handling**: Returns structured error responses with user-friendly messages
-- **Verification Result**: Includes success flag, message, and detailed errors array
+### User Profile APIs
+- **Comprehensive Retrieval**: Single API aggregates user data from multiple sources
+- **Selective Decryption**: Controlled exposure of encrypted data via query parameters
+- **Document Enrichment**: Automatic classification and verification status tracking
 
-#### VC Data Extraction
-- **Path-Based Extraction**: Uses JSON path configurations to extract profile fields
-- **Field Transformation**: Handles special cases like Roman numeral to integer conversion
-- **Multi-Source Mapping**: Single profile field can be sourced from multiple VC types
+### Document Management APIs
+- **Batch Processing**: Support for multiple document uploads in single transaction
+- **Overwrite Logic**: Automatic replacement of existing documents by type
+- **Profile Triggering**: Document uploads automatically trigger profile updates
 
-## Configuration & Environment
+### Consent Management APIs
+- **Purpose-Driven**: Consent tracking linked to specific purposes and services
+- **User Context**: Automatic association with authenticated user context
+- **Audit Trail**: Complete consent history tracking
 
-### Environment-Specific Configurations
+## Configuration Management
 
-#### Required Environment Variables
-- `ENCRYPTION_KEY`: 32-byte base64 key for data encryption
-- `WALLET_BASE_URL`: Wallet service endpoint for user onboarding
-- `KEYCLOAK_URL` + `REALM_NAME_APP`: Keycloak configuration
-- `VC_VERIFICATION_API_URL`: Verifiable credentials verification service
+### Environment-Specific Settings
+- **Encryption Keys**: 32-byte base64 keys for field-level encryption
+- **Service Endpoints**: External service URL configurations
+- **Authentication Realms**: Keycloak realm-specific configurations
+- **VC Verification**: Verifiable credentials API endpoint configuration
 
-#### Service Integration Points
-- **Wallet Service**: User onboarding with password-based authentication
-- **Keycloak**: User management and token-based authentication  
-- **Hasura**: GraphQL data operations and job filtering
-- **VC API**: Document verification and validation
+### Document Schema Configuration
+- **Master Lists**: Centralized document type and subtype definitions
+- **VC Path Mapping**: JSON configuration for field extraction from different VC types
+- **Upload Classification**: Automatic categorization of uploaded vs system-generated documents
 
-### Error Handling Patterns
+## Performance Optimization Strategies
 
-#### Service-Specific Error Responses
-```typescript
-// Wallet onboarding failure with rollback
-catch (walletError) {
-  if (user?.user_id) {
-    await this.userService.deleteUser(user.user_id);
-    await this.keycloakService.deleteUser(keycloakId);
-  }
-  throw new ErrorResponse({
-    statusCode: HttpStatus.BAD_GATEWAY,
-    errorMessage: 'Registration could not be completed. Please try again later.',
-  });
-}
-```
+### Query Optimization
+- **Smart Ordering**: Custom prioritization for user processing workflows
+- **Filtered Queries**: Exclusion-based querying for active application processing
+- **Composite Indexing**: Database indexes for document uniqueness constraints
 
-#### Structured Error Responses
-- **User-Friendly Messages**: Hide technical details while logging full errors
-- **Status Code Mapping**: Maps service errors to appropriate HTTP status codes
-- **Rollback Logic**: Implements compensation transactions for failed operations
+### Caching Patterns
+- **Document Types**: In-memory caching for fast document type lookups
+- **Provider Data**: External service data caching for performance
+- **Configuration Data**: Cached document schema and mapping configurations
 
-
-
-## Performance & Optimization
-
-### Query Optimization Patterns
-
-#### User Prioritization Query
-```typescript
-.orderBy(
-  `CASE
-    WHEN user.fieldsVerified IS NULL THEN 0
-    WHEN user.fieldsVerified = false AND user.fieldsVerifiedAt IS NOT NULL THEN 1
-    ELSE 2
-  END`,
-  'ASC',
-)
-```
-
-#### Application Filtering
-```typescript
-where: {
-  status: Not(In(['amount received', 'rejected', 'disbursed'])),
-}
-```
-
-### Business Logic Constraints
-
-#### Document Uniqueness
-- **Composite Key**: Enforced uniqueness on (user_id, doc_type, doc_subtype)
-- **Overwrite Logic**: Automatically replaces existing documents with same identifiers
-- **Verification Required**: No document storage without successful VC verification
-
-#### User State Management
-- **Profile Verification**: Tracks completion and timestamps of profile data
-- **External Service Integration**: Mandatory external service onboarding for user registration
-- **Status Transitions**: Managed application lifecycle with automated status updates
-
-#### Data Consistency Rules
-- **User Creation**: Must succeed in authentication service, database, and external services
-- **Document Uploads**: Must pass verification and be stored in database
-- **Profile Updates**: Triggered automatically when new documents are uploaded
-- **Status Updates**: Synchronized with external provider systems
-
-## API Design Specifications
-
-### Project-Specific API Behaviors
-
-#### Response Standardization
-```typescript
-// All APIs return standardized response format
-return new SuccessResponse({
-  statusCode: HttpStatus.OK,
-  message: 'Operation completed successfully',
-  data: result,
-});
-
-return new ErrorResponse({
-  statusCode: HttpStatus.BAD_REQUEST,
-  errorMessage: 'User-friendly error message',
-});
-```
-
-#### Authentication Header Requirements
-- **Format**: `Bearer {jwt_token}`
-- **Token Claims**: Must contain `sub` (keycloak_id) and `resource_access.hasura.roles`
-- **Validation**: Automatic token expiry checking in AuthGuard
-- **User Extraction**: Middleware sets `req.user.keycloak_id` from token
-
-#### Specific CRON Schedules
-- **Profile Populator**: `*/5 * * * *` (every 5 minutes)
-- **Application Status Update**: `*/1 * * * *` (every minute)
-- **Smart User Processing**: Prioritizes unverified profiles and oldest updates
-
-## External Service Integration
-
-### Integration-Specific Patterns
-
-#### External Wallet Service Communication
-```typescript
-// All wallet requests require specific headers
-headers: {
-  'Content-Type': 'application/json',
-  'User-Agent': 'Beneficiary-Backend/1.0',
-  'X-Request-ID': crypto.randomUUID(),
-  'Accept': 'application/json',
-  'Cache-Control': 'no-cache',
-}
-```
-
-#### Hasura GraphQL Integration
-- **Query Construction**: Dynamic queries based on user filters and eligibility
-- **Filter Logic**: Handles complex eligibility criteria (income ranges, caste, location)
-- **Cache Management**: Provider-specific data caching for performance
-- **Job Filtering**: Multi-criteria filtering with range and exact match support
-
-#### VC API Integration Patterns
-```typescript
-// Document verification requires specific format
-const verificationResult = await this.verifyVcWithApi(createUserDocDto.doc_data);
-if (!verificationResult.success) {
-  throw new BadRequestException({
-    message: verificationResult.message ?? 'VC Verification failed',
-    errors: verificationResult.errors ?? [],
-  });
-}
-```
-
-### Authentication Service Implementation
-
-#### User Management Operations
-- **Admin Token**: Required for all user management operations
-- **Realm Specific**: Uses `realm_name_app` environment variable
-- **Username Pattern**: Enforced format for consistent user identification
-- **Password Defaults**: Uses `SIGNUP_DEFAULT_PASSWORD` environment variable when not provided
-
-#### Token Management
-- **Refresh Strategy**: Automatic token refresh for expired tokens
-- **Role Mapping**: Maps authentication service roles to GraphQL permissions
-- **Session Management**: Stores external service tokens for service-to-service communication
-
-## Document Schema & Configuration
-
-### Document Schema Management
-
-#### VC Path Configuration
-```json
-// Example: vcPaths/aadhaar.json
-{
-  "aadhaar": "credentialSubject.id",
-  "name": "credentialSubject.name", 
-  "dob": "credentialSubject.dob",
-  "gender": "credentialSubject.gender"
-}
-```
-
-#### Document Type Registry
-- **Master List**: Centralized document type definitions in `documentMasterList.json`
-- **Subtype Validation**: Automatic validation against registered document subtypes
-- **Upload Classification**: Auto-marking documents as uploaded vs. system-generated
-
-#### Profile Field Extraction
-- **Multi-Source**: Single profile field can be populated from multiple VC types
-- **Transformation Logic**: Roman numeral conversion, date formatting, gender mapping
-- **Validation Rules**: Field-specific validation during profile population
-
-### Performance Optimization Patterns
-
-#### Batch Processing
-- **Document Upload**: Processes multiple documents in single transaction
-- **Profile Updates**: Batch user profile updates in CRON jobs
-- **Status Updates**: Parallel processing of application status checks
-
-#### Caching Strategies
-- **Document Types**: In-memory set for fast lookup operations
-- **Provider Data**: Specific caching for external provider information
-
-#### Query Optimizations
-- **Smart Ordering**: Custom SQL for user processing priority
-- **Filtered Queries**: Exclusion-based queries for active applications
-- **Index Usage**: Leverages composite indexes for document uniqueness 
+### Batch Processing
+- **Document Operations**: Multiple document processing in single transactions
+- **Profile Updates**: Batch user profile updates in scheduled operations
+- **Status Synchronization**: Parallel processing of application status checks 
