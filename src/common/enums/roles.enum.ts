@@ -1,5 +1,5 @@
 export enum UserRole {
-  ADMIN = 'beneficiary_admin',
+  ADMIN = 'admin',
   BENEFICIARY = 'beneficiary'
 }
 
@@ -16,7 +16,7 @@ export const isValidRole = (role: string): boolean => {
 // Helper function to get role display name
 export const getRoleDisplayName = (role: UserRole): string => {
   const displayNames: Record<UserRole, string> = {
-    [UserRole.ADMIN]: 'beneficiary_admin',
+    [UserRole.ADMIN]: 'admin',
     [UserRole.BENEFICIARY]: 'beneficiary'
   };
   
