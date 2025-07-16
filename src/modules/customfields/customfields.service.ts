@@ -286,8 +286,7 @@ export class CustomFieldsService {
 				isHidden: false 
 			},
 			order: {
-				ordering: 'ASC',
-				name: 'ASC',
+				ordering: 'ASC'
 			},
 		});
 
