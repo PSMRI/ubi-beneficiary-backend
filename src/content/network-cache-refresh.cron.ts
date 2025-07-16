@@ -84,12 +84,12 @@ export class NetworkCacheRefreshCron {
         bpp_id,
       ),
       item_id: item.id,
-      title: item?.descriptor?.name ? item.descriptor.name : '',
-      description: item?.descriptor?.long_desc ? item.descriptor.long_desc : '',
-      provider_id: provider.id ? provider.id : '',
-      provider_name: provider.descriptor?.name ? provider.descriptor.name : '',
-      bpp_id: bpp_id ? bpp_id : '',
-      bpp_uri: bpp_uri ? bpp_uri : '',
+      title: item?.descriptor?.name ?? '',
+      description: item?.descriptor?.long_desc ?? '',
+      provider_id: provider.id ?? '',
+      provider_name: provider.descriptor?.name ?? '',
+      bpp_id: bpp_id ?? '',
+      bpp_uri: bpp_uri ?? '',
       item: item,
       descriptor: provider.descriptor,
       categories: provider.categories,
@@ -135,7 +135,7 @@ export class NetworkCacheRefreshCron {
   }
 
   private async processSearchResponse(response: any): Promise<any[]> {
-    if (!response || !response.responses) {
+    if (!response?.responses) {
       this.logger.warn('No valid response data received from search API');
       return [];
     }
@@ -143,8 +143,8 @@ export class NetworkCacheRefreshCron {
     const arrayOfObjects = [];
 
     for (const responses of response.responses) {
-      const bpp_id = responses.context.bpp_id || '';
-      const bpp_uri = responses.context.bpp_uri || '';
+      const bpp_id = responses.context.bpp_id ?? '';
+      const bpp_uri = responses.context.bpp_uri ?? '';
       
       const responseItems = this.processResponseMessage(responses.message, bpp_id, bpp_uri);
       arrayOfObjects.push(...responseItems);
@@ -172,15 +172,12 @@ export class NetworkCacheRefreshCron {
     for (const item of newData) {
       try {
         // Step 1: Check if item_id already exists and delete it
-        try {
-          const deleteResult = await this.hasuraService.deleteItemByItemId(item.item_id);
-          console.log('deleteResult', deleteResult);
-          if (deleteResult?.data?.delete_ubi_network_cache?.affected_rows > 0) {
-            deletedCount++;
-            this.logger.log(`Deleted existing item with item_id: ${item.item_id}`);
-          }
-        } catch (deleteError) {
-          // Item might not exist, which is fine
+        const deleteResult = await this.hasuraService.deleteItemByItemId(item.item_id);
+        console.log('deleteResult', deleteResult);
+        if (deleteResult?.data?.delete_ubi_network_cache?.affected_rows > 0) {
+          deletedCount++;
+          this.logger.log(`Deleted existing item with item_id: ${item.item_id}`);
+        } else {
           this.logger.debug(`No existing item found for item_id: ${item.item_id}`);
         }
 
@@ -205,7 +202,7 @@ export class NetworkCacheRefreshCron {
     this.logger.log(`One-by-one processing completed: ${processedCount} items processed, ${deletedCount} deleted, ${insertedCount} inserted`);
   }
 
-  @Cron(process.env.NETWORK_CACHE_REFRESH_CRON_TIME ?? '*/10 * * * *')
+  @Cron(process.env.NETWORK_CACHE_REFRESH_CRON_TIME ?? '* * * * *')
   async refreshNetworkCache() {
     try {
       this.logger.log('Network Cache Refresh CRON started at ' + new Date().toISOString());
