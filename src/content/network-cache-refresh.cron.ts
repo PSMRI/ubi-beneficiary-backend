@@ -76,6 +76,64 @@ export class NetworkCacheRefreshCron {
     }
   }
 
+  private createItemObject(item: any, provider: any, bpp_id: string, bpp_uri: string): any {
+    return {
+      unique_id: this.generateFixedId(
+        item.id,
+        item.descriptor?.name || '',
+        bpp_id,
+      ),
+      item_id: item.id,
+      title: item?.descriptor?.name ? item.descriptor.name : '',
+      description: item?.descriptor?.long_desc ? item.descriptor.long_desc : '',
+      provider_id: provider.id ? provider.id : '',
+      provider_name: provider.descriptor?.name ? provider.descriptor.name : '',
+      bpp_id: bpp_id ? bpp_id : '',
+      bpp_uri: bpp_uri ? bpp_uri : '',
+      item: item,
+      descriptor: provider.descriptor,
+      categories: provider.categories,
+      fulfillments: provider.fulfillments,
+    };
+  }
+
+  private processProviderItems(provider: any, bpp_id: string, bpp_uri: string): any[] {
+    const items = [];
+    if (!provider.items) {
+      return items;
+    }
+
+    for (const item of provider.items) {
+      const itemObject = this.createItemObject(item, provider, bpp_id, bpp_uri);
+      items.push(itemObject);
+    }
+    return items;
+  }
+
+  private processProvider(provider: any, bpp_id: string, bpp_uri: string): any[] {
+    return this.processProviderItems(provider, bpp_id, bpp_uri);
+  }
+
+  private processResponseMessage(message: any, bpp_id: string, bpp_uri: string): any[] {
+    const items = [];
+    if (!message?.catalog?.providers) {
+      return items;
+    }
+
+    for (const provider of message.catalog.providers) {
+      const providerItems = this.processProvider(provider, bpp_id, bpp_uri);
+      items.push(...providerItems);
+    }
+    return items;
+  }
+
+  private removeDuplicates(arrayOfObjects: any[]): any[] {
+    const uniqueIds = new Set(arrayOfObjects.map((obj) => obj.unique_id));
+    return Array.from(uniqueIds).map((id) => {
+      return arrayOfObjects.find((obj) => obj.unique_id === id);
+    });
+  }
+
   private async processSearchResponse(response: any): Promise<any[]> {
     if (!response || !response.responses) {
       this.logger.warn('No valid response data received from search API');
@@ -85,49 +143,15 @@ export class NetworkCacheRefreshCron {
     const arrayOfObjects = [];
 
     for (const responses of response.responses) {
-      if (responses.message?.catalog?.providers) {
-        for (const provider of responses.message.catalog.providers) {
-          if (provider.items) {
-            for (const [index, item] of provider.items.entries()) {
-              const obj = {
-                unique_id: this.generateFixedId(
-                  item.id,
-                  item.descriptor?.name || '',
-                  responses.context.bpp_id,
-                ),
-                item_id: item.id,
-                title: item?.descriptor?.name ? item.descriptor.name : '',
-                description: item?.descriptor?.long_desc
-                  ? item.descriptor.long_desc
-                  : '',
-                provider_id: provider.id ? provider.id : '',
-                provider_name: provider.descriptor?.name
-                  ? provider.descriptor.name
-                  : '',
-                bpp_id: responses.context.bpp_id
-                  ? responses.context.bpp_id
-                  : '',
-                bpp_uri: responses.context.bpp_uri
-                  ? responses.context.bpp_uri
-                  : '',
-                item: item,
-                descriptor: provider.descriptor,
-                categories: provider.categories,
-                fulfillments: provider.fulfillments,
-              };
-              arrayOfObjects.push(obj);
-            }
-          }
-        }
-      }
+      const bpp_id = responses.context.bpp_id || '';
+      const bpp_uri = responses.context.bpp_uri || '';
+      
+      const responseItems = this.processResponseMessage(responses.message, bpp_id, bpp_uri);
+      arrayOfObjects.push(...responseItems);
     }
 
     // Remove duplicates based on unique_id
-    const uniqueObjects = Array.from(
-      new Set(arrayOfObjects.map((obj) => obj.unique_id)),
-    ).map((id) => {
-      return arrayOfObjects.find((obj) => obj.unique_id === id);
-    });
+    const uniqueObjects = this.removeDuplicates(arrayOfObjects);
 
     this.logger.log(`Processed ${uniqueObjects.length} unique items from search response`);
     return uniqueObjects;
