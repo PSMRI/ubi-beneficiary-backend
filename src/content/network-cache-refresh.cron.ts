@@ -181,7 +181,7 @@ export class NetworkCacheRefreshCron {
     this.logger.log(`One-by-one processing completed: ${processedCount} items processed, ${deletedCount} deleted, ${insertedCount} inserted`);
   }
 
-  @Cron(process.env.NETWORK_CACHE_REFRESH_CRON_TIME ?? '*/5 * * * *')
+  @Cron(process.env.NETWORK_CACHE_REFRESH_CRON_TIME ?? '*/10 * * * *')
   async refreshNetworkCache() {
     try {
       this.logger.log('Network Cache Refresh CRON started at ' + new Date().toISOString());
