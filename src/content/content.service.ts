@@ -12,6 +12,7 @@ import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
 import { HttpService } from '@nestjs/axios';
 import { UserService } from '../modules/users/users.service';
+import { AuthService } from '../modules/auth/auth.service';
 const crypto = require('crypto');
 
 interface Job {
@@ -101,6 +102,7 @@ export class ContentService {
 		@InjectRepository(ResponseCache)
 		private readonly responseCacheRepository: Repository<ResponseCache>,
 		private readonly userService: UserService,
+		private readonly authService: AuthService,
 	) {}
 
 	async getJobs(body, req) {
@@ -132,12 +134,7 @@ export class ContentService {
 					user = response.data;
 				}
 				if (user) {
-					userInfo = Object.fromEntries(
-						Object.entries(user).map(([key, value]) => [
-							key,
-							value !== null && value !== undefined ? String(value) : '',
-						]),
-					);
+					userInfo = this.authService.formatUserInfo(user);
 				}
 			}
 
@@ -214,7 +211,6 @@ export class ContentService {
 			createUserDto.email,
 		);
 		if (findUser) {
-			console.log('findUser', findUser);
 			const createOrder = {
 				seeker_id: findUser.id,
 				content_id: createOrderDto.content_id,
@@ -223,7 +219,6 @@ export class ContentService {
 			return this.hasuraService.createOrder(createOrder);
 		}
 		const user = await this.hasuraService.createSeekerUser(createUserDto);
-		console.log('user', user.id);
 		if (user) {
 			const createOrder = {
 				seeker_id: user.id,
@@ -266,7 +261,6 @@ export class ContentService {
 
 		try {
 			const response = await this.proxyService.bapCLientApi2('search', data);
-			console.log(JSON.stringify(response), '================');
 			if (response) {
 				const arrayOfObjects = [];
 				//  console.log(response.responses.length())
@@ -305,14 +299,14 @@ export class ContentService {
 						}
 					}
 				}
-				console.log('arrayOfObjects', arrayOfObjects);
-				console.log('arrayOfObjects length', arrayOfObjects.length);
+				// console.log('arrayOfObjects', arrayOfObjects);
+				// console.log('arrayOfObjects length', arrayOfObjects.length);
 				const uniqueObjects = Array.from(
 					new Set(arrayOfObjects.map((obj) => obj.unique_id)),
 				).map((id) => {
 					return arrayOfObjects.find((obj) => obj.unique_id === id);
 				});
-				console.log('uniqueObjects length', uniqueObjects.length);
+				// console.log('uniqueObjects length', uniqueObjects.length);
 				//return uniqueObjects
 				const insertionResponse =
 					await this.hasuraService.insertCacheData(uniqueObjects);
@@ -472,7 +466,7 @@ export class ContentService {
 		});
 
 		if (body.fields) {
-			console.log('body.fields', body.fields);
+			// console.log('body.fields', body.fields);
 			const keysToKeep = body.fields;
 
 			const result = uniqueObjects.map((obj) => {
@@ -551,7 +545,7 @@ export class ContentService {
 		}
 
 		const totalDataCount = calculateTotalDataCount(data);
-		console.log('Total sum of data_count:', totalDataCount);
+		// console.log('Total sum of data_count:', totalDataCount);
 
 		return {
 			agent: body.agent,
@@ -603,7 +597,7 @@ export class ContentService {
 		//const totalDataCount = calculateTotalDataCount(data);
 
 		const totalDataCount = data.length;
-		console.log('Total sum of data_count:', totalDataCount);
+		// console.log('Total sum of data_count:', totalDataCount);
 
 		const transactionsData = data.map((item) => {
 			item.events.ets = this.convertEts(item.events.ets);
@@ -627,8 +621,8 @@ export class ContentService {
 		// Create a Date object with the parsed date
 		const date = new Date(Date.UTC(year, month, day));
 
-		console.log('date', date);
-		console.log('date.toISOString()', date.toISOString());
+		// console.log('date', date);
+		// console.log('date.toISOString()', date.toISOString());
 
 		//return date.toISOString()
 
@@ -663,7 +657,7 @@ export class ContentService {
 	}
 
 	async selectResponseCache(filters) {
-		console.log('filters', filters);
+		// console.log('filters', filters);
 
 		const query1 = `
       SELECT *
@@ -732,7 +726,7 @@ export class ContentService {
       `;
 
 		const generatedQuery = this.generateQuery(filters);
-		console.log(generatedQuery);
+		// console.log(generatedQuery);
 
 		return await this.responseCacheRepository.query(generatedQuery);
 	}
@@ -1049,7 +1043,10 @@ export class ContentService {
 			}
 
 			const filteredJobs = await this.fetchBenefitDetails(benefitId);
-			const userInfo = await this.fetchUserInfo(userId);
+			let userInfo = await this.fetchUserInfo(userId);
+			if (userInfo) {
+				userInfo = this.authService.formatUserInfo(userInfo);
+			}
 			const eligibilityData = await this.checkEligibility(userInfo, filteredJobs);
 
 			return eligibilityData;
