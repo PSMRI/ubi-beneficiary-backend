@@ -296,6 +296,38 @@ export class AuthService {
     }
   }
 
+  /**
+   * Format user info by converting all values to strings and handling null/undefined values
+   * @param user - User object with any data types
+   * @returns Formatted user object with all values as strings
+   */
+  public formatUserInfo(user: any): Record<string, string> {
+    // Convert main user properties to strings
+    const userInfo = Object.fromEntries(
+      Object.entries(user).map(([key, value]) => [
+        key,
+        value !== null && value !== undefined ? String(value) : '',
+      ]),
+    );
+
+    // Handle custom fields if they exist
+    if (user.customFields && Array.isArray(user.customFields)) {
+      const customFieldsObj = Object.fromEntries(
+        user.customFields.map(field => [
+          field.name,
+          field.value !== null && field.value !== undefined ? String(field.value) : '',
+        ])
+      );
+      
+      return {
+        ...userInfo,
+        ...customFieldsObj
+      };
+    }
+
+    return userInfo;
+  }
+
   private async registerUserInKeycloak(userData, accessToken) {
     const registerUserRes = await this.keycloakService.registerUser(
       userData,
