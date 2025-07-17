@@ -9,6 +9,7 @@ import { CustomFieldsService } from '@modules/customfields/customfields.service'
 import { FieldContext } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { AdminService } from '@modules/admin/admin.service';
+import { Setting } from '@modules/admin/entities/setting.entity';
 
 @Injectable()
 export default class ProfilePopulator {
@@ -48,7 +49,7 @@ export default class ProfilePopulator {
 
     return null;
   }
-  
+
   private romanToInt(roman: string): number {
     const romanMap: { [key: string]: number } = {
       I: 1,
@@ -85,9 +86,7 @@ export default class ProfilePopulator {
       const docType = doc.doc_subtype;
       let docData: any;
       try {
-        console.log(typeof doc.doc_data);
         docData = typeof doc.doc_data === 'string' ? JSON.parse(doc.doc_data) : doc.doc_data;
-        console.log(docData);
         vcs.push({ docType, content: docData });
       } catch (error) {
         const errorMessage = `Invalid JSON format in doc ${doc.doc_id}`;
@@ -100,8 +99,8 @@ export default class ProfilePopulator {
   }
 
   // Get user documents from database
-  private async getUserDocs(user: any) : Promise<UserDoc[]> {
-    const userDocs : UserDoc[] = await this.userDocRepository.find({
+  private async getUserDocs(user: any): Promise<UserDoc[]> {
+    const userDocs: UserDoc[] = await this.userDocRepository.find({
       where: {
         user_id: user.user_id,
       },
@@ -210,6 +209,7 @@ export default class ProfilePopulator {
   // For a field, get its value from given vc
   private async getFieldValueFromVC(vc: any, field: any, fieldConfig: any) {
     // Find the document mapping for this field and document type
+
     const documentMapping = fieldConfig.documentMappings?.find(
       (mapping: any) => mapping.document === vc.docType
     );
@@ -221,7 +221,7 @@ export default class ProfilePopulator {
     let value = this.getValue(vc, pathValue);
 
     // Apply field value normalization if present
-    if (fieldConfig.fieldValueNormalizationMapping && value) {
+    if (fieldConfig.fieldValueNormalizationMapping && Array.isArray(fieldConfig.fieldValueNormalizationMapping) && value) {
       const normalizedMapping = fieldConfig.fieldValueNormalizationMapping.find(
         (mapping: any) => mapping.rawValue.includes(value.toString().toLowerCase())
       );
@@ -234,41 +234,38 @@ export default class ProfilePopulator {
   }
 
   // Build user profile data based on array of fields and available vcs
-  async buildProfile(vcs: any) {
+  async buildProfile(vcs: any[]) {
     const userProfile = {};
     const validationData = {};
 
     // Get profile fields configuration from settings table
-    const configResponse = await this.adminService.getConfig('profileFieldToDocumentFieldMapping');
-    if (!configResponse || configResponse.statusCode !== 200) {
+    const configResponse: Setting = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
+    if (!configResponse) {
       this.logger.error('Failed to get profile field configuration from settings');
       return { userProfile, validationData };
     }
+    const profileFields = configResponse.value;
+    for (const fieldConfig of profileFields) {
+      const fieldName = fieldConfig.fieldName;
+      const docsUsed = [];
+      const documentMappings = fieldConfig.documentMappings || [];
 
-    // Type guard to check if it's a SuccessResponse
-    if ('data' in configResponse) {
-      const profileFields = (configResponse.data as any).value;
-
-      for (const fieldConfig of profileFields) {
-        const fieldName = fieldConfig.fieldName;
-        const docsUsed = [];
-        const documentMappings = fieldConfig.documentMappings || [];
-
-        let value = null;
-        for (const mapping of documentMappings) {
-          const vc = vcs.find((vc: any) => vc.docType === mapping.document);
-          if (vc) {
-            value = await this.getFieldValueFromVC(vc, fieldName, fieldConfig);
-            if (value) {
-              docsUsed.push(vc.docType);
-              break;
-            }
+      let value = null;
+      for (const mapping of documentMappings) {
+        const vc = vcs.find((vc: any) =>
+          vc.docType === mapping.document
+        );
+        if (vc) {
+          value = await this.getFieldValueFromVC(vc, fieldName, fieldConfig);
+          if (value) {
+            docsUsed.push(vc.docType);
+            break;
           }
         }
-
-        userProfile[fieldName] = value;
-        validationData[fieldName] = docsUsed;
       }
+
+      userProfile[fieldName] = value;
+      validationData[fieldName] = docsUsed;
     }
 
     return { userProfile, validationData };
@@ -389,7 +386,7 @@ export default class ProfilePopulator {
       for (const user of users) {
         try {
           // Get documents from database
-          const userDocs : UserDoc[] = await this.getUserDocs(user);
+          const userDocs: UserDoc[] = await this.getUserDocs(user);
           // Build VCs in required format
           const vcs = await this.buildVCs(userDocs);
 

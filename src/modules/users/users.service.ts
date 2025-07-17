@@ -402,7 +402,7 @@ export class UserService {
     return savedDocs;
   }
 
-  async getUserDetails(req: any) {
+  async getUserDetails(req: any): Promise<User> {
     const sso_id = req?.user?.keycloak_id;
     if (!sso_id) {
       throw new UnauthorizedException('Invalid or missing Keycloak ID');
@@ -419,7 +419,7 @@ export class UserService {
     return userDetails;
   }
 
-  async updateProfile(userDetails: any) {
+  async updateProfile(userDetails: User) {
     try {
       // Get all docs
       const allDocs = await this.userDocsRepository.find({
@@ -427,7 +427,7 @@ export class UserService {
       });
 
       // Build VCs
-      const VCs = await this.profilePopulator.buildVCs(allDocs);
+      const VCs: any[] = await this.profilePopulator.buildVCs(allDocs);
 
       // // build profile data
       const { userProfile, validationData } =
