@@ -33,6 +33,7 @@ import { AuthGuard } from '@modules/auth/auth.guard';
 import { RoleGuard } from 'src/common/guards/role.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from 'src/common/enums/roles.enum';
+import { FieldValue } from './entities/field-value.entity';
 
 /**
  * Controller for managing custom fields
@@ -277,16 +278,15 @@ export class CustomFieldsController {
 	/**
 	 * Delete a field definition
 	 * @param fieldId
-	 * @description Deletes a field definition and all associated values
+	 * @description Deletes a field definition and all its associated values
 	 */
 	@Delete(':fieldId')
 	@UseGuards(AuthGuard, RoleGuard)
 	@Roles(UserRole.ADMIN)
-	@HttpCode(HttpStatus.NO_CONTENT)
+	@HttpCode(HttpStatus.OK)
 	@ApiOperation({
 		summary: 'Delete field definition',
-		description:
-			'Deletes a field definition and all associated field values',
+		description: 'Deletes a field definition and all its associated values',
 	})
 	@ApiParam({
 		name: 'fieldId',
@@ -295,8 +295,21 @@ export class CustomFieldsController {
 		description: 'Unique field identifier',
 	})
 	@ApiResponse({
-		status: 204,
+		status: 200,
 		description: 'Field deleted successfully',
+		schema: {
+			type: 'object',
+			properties: {
+				fieldDeleted: {
+					type: 'number',
+					description: 'Number of fields deleted',
+				},
+				valuesDeleted: {
+					type: 'number',
+					description: 'Number of field values deleted',
+				},
+			},
+		},
 	})
 	@ApiResponse({
 		status: 404,
@@ -304,8 +317,8 @@ export class CustomFieldsController {
 	})
 	async deleteField(
 		@Param('fieldId', ParseUUIDPipe) fieldId: string
-	): Promise<void> {
-		await this.customFieldsService.deleteField(fieldId);
+	): Promise<{ fieldDeleted: number; valuesDeleted: number }> {
+		return await this.customFieldsService.deleteField(fieldId);
 	}
 
 	/**
