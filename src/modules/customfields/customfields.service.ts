@@ -4,15 +4,17 @@ import {
 	ConflictException,
 	BadRequestException,
 	Logger,
+	ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, In, DeleteResult, UpdateResult } from 'typeorm';
+import { Repository, FindOptionsWhere, In, DeleteResult, UpdateResult, DataSource } from 'typeorm';
 import { Field, FieldContext } from './entities/field.entity';
 import { FieldValue } from './entities/field-value.entity';
 import { CreateFieldDto } from './dto/create-field.dto';
 import { UpdateFieldDto } from './dto/update-field.dto';
 import { CustomFieldDto, CustomFieldResponseDto } from './dto/custom-field.dto';
 import { QueryFieldsDto } from './dto/query-fields.dto';
+import { AdminService } from '../admin/admin.service';
 
 /**
  * Service for managing custom fields and field values
@@ -27,7 +29,9 @@ export class CustomFieldsService {
 		@InjectRepository(Field)
 		private readonly fieldRepository: Repository<Field>,
 		@InjectRepository(FieldValue)
-		private readonly fieldValueRepository: Repository<FieldValue>
+		private readonly fieldValueRepository: Repository<FieldValue>,
+		private readonly dataSource: DataSource,
+		private readonly adminService: AdminService
 	) { }
 
 	/**
@@ -156,22 +160,63 @@ export class CustomFieldsService {
 	/**
 	 * Delete a field and all its values
 	 * @param fieldId Field ID
-	 * @returns Delete result
+	 * @returns Delete result with counts
 	 */
-	async deleteField(fieldId: string): Promise<DeleteResult> {
+	async deleteField(fieldId: string): Promise<{ fieldDeleted: number; valuesDeleted: number }> {
 		this.logger.debug(`Deleting field: ${fieldId}`);
 
-		// Check if field exists
-		await this.findFieldById(fieldId);
+		// Check if field is mapped in settings before proceeding
+		try {
+			const mappingConfig = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
+			
+			if (mappingConfig?.value) {
+				const mappings = Array.isArray(mappingConfig.value) ? mappingConfig.value : [];
+				const fieldMapping = mappings.find((mapping: any) => mapping.fieldId === fieldId);
+				
+				if (fieldMapping) {
+					throw new ForbiddenException(
+						`Field "${fieldMapping.fieldName}" (ID: ${fieldId}) is mapped to document fields. Please remove the mapping from settings before deleting this field.`
+					);
+				}
+			}
+		} catch (error) {
+			// If error is ForbiddenException, re-throw it
+			if (error instanceof ForbiddenException) {
+				throw error;
+			}
+			
+			// Log other errors but continue with deletion
+			this.logger.warn(`Error checking field mappings: ${error.message}`);
+		}
 
-		// Delete all field values first
-		await this.fieldValueRepository.delete({ fieldId });
+		// Use transaction to ensure data consistency
+		return await this.dataSource.transaction(async (manager) => {
+			// Check if field exists
+			const field = await manager.findOne(Field, {
+				where: { fieldId },
+			});
 
-		// Delete the field
-		const result = await this.fieldRepository.delete({ fieldId });
+			if (!field) {
+				throw new NotFoundException(
+					`Field with ID ${fieldId} not found`
+				);
+			}
 
-		this.logger.log(`Field deleted successfully: ${fieldId}`);
-		return result;
+			// Delete all field values for this field
+			const valuesDeleteResult = await manager.delete(FieldValue, { fieldId });
+
+			// Delete the field
+			const fieldDeleteResult = await manager.delete(Field, { fieldId });
+
+			this.logger.log(
+				`Field deleted successfully: ${fieldId}. Deleted ${fieldDeleteResult.affected} field and ${valuesDeleteResult.affected} field values`
+			);
+
+			return {
+				fieldDeleted: fieldDeleteResult.affected || 0,
+				valuesDeleted: valuesDeleteResult.affected || 0,
+			};
+		});
 	}
 
 	/**

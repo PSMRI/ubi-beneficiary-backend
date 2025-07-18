@@ -223,13 +223,12 @@ export default class ProfilePopulator {
     // Apply field value normalization if present
     if (fieldConfig.fieldValueNormalizationMapping && Array.isArray(fieldConfig.fieldValueNormalizationMapping) && value) {
       const normalizedMapping = fieldConfig.fieldValueNormalizationMapping.find(
-        (mapping: any) => mapping.rawValue.includes(value.toString().toLowerCase())
+        (mapping: any) => mapping.rawValue.includes(value.toString())
       );
       if (normalizedMapping) {
         value = normalizedMapping.transformedValue;
       }
     }
-
     return value;
   }
 

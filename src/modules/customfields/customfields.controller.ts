@@ -277,16 +277,15 @@ export class CustomFieldsController {
 	/**
 	 * Delete a field definition
 	 * @param fieldId
-	 * @description Deletes a field definition and all associated values
+	 * @description Deletes a field definition and all its associated values
 	 */
 	@Delete(':fieldId')
 	@UseGuards(AuthGuard, RoleGuard)
 	@Roles(UserRole.ADMIN)
-	@HttpCode(HttpStatus.NO_CONTENT)
+	@HttpCode(HttpStatus.OK)
 	@ApiOperation({
 		summary: 'Delete field definition',
-		description:
-			'Deletes a field definition and all associated field values',
+		description: 'Deletes a field definition and all its associated values. Checks if field is mapped to document fields or entities before deletion.',
 	})
 	@ApiParam({
 		name: 'fieldId',
@@ -295,17 +294,34 @@ export class CustomFieldsController {
 		description: 'Unique field identifier',
 	})
 	@ApiResponse({
-		status: 204,
+		status: 200,
 		description: 'Field deleted successfully',
+		schema: {
+			type: 'object',
+			properties: {
+				fieldDeleted: {
+					type: 'number',
+					description: 'Number of fields deleted',
+				},
+				valuesDeleted: {
+					type: 'number',
+					description: 'Number of field values deleted',
+				},
+			},
+		},
 	})
 	@ApiResponse({
 		status: 404,
 		description: 'Field not found',
 	})
+	@ApiResponse({
+		status: 403,
+		description: 'Field is mapped to document fields or entities and cannot be deleted',
+	})
 	async deleteField(
 		@Param('fieldId', ParseUUIDPipe) fieldId: string
-	): Promise<void> {
-		await this.customFieldsService.deleteField(fieldId);
+	): Promise<{ fieldDeleted: number; valuesDeleted: number }> {
+		return await this.customFieldsService.deleteField(fieldId);
 	}
 
 	/**
