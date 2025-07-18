@@ -202,17 +202,6 @@ export class CustomFieldsService {
 				);
 			}
 
-			// Check if field is mapped to any entity
-			const fieldValues = await manager.find(FieldValue, {
-				where: { fieldId },
-			});
-
-			if (fieldValues.length > 0) {
-				throw new ForbiddenException(
-					`Field with ID ${fieldId} is mapped to ${fieldValues.length} entities. Cannot delete.`
-				);
-			}
-
 			// Delete all field values for this field
 			const valuesDeleteResult = await manager.delete(FieldValue, { fieldId });
 
