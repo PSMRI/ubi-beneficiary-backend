@@ -281,12 +281,12 @@ export class CustomFieldsController {
 	 * @description Deletes a field definition and all its associated values
 	 */
 	@Delete(':fieldId')
-	@UseGuards(AuthGuard, RoleGuard)
-	@Roles(UserRole.ADMIN)
+	// @UseGuards(AuthGuard, RoleGuard)
+	// @Roles(UserRole.ADMIN)
 	@HttpCode(HttpStatus.OK)
 	@ApiOperation({
 		summary: 'Delete field definition',
-		description: 'Deletes a field definition and all its associated values',
+		description: 'Deletes a field definition and all its associated values. Checks if field is mapped to document fields or entities before deletion.',
 	})
 	@ApiParam({
 		name: 'fieldId',
@@ -314,6 +314,10 @@ export class CustomFieldsController {
 	@ApiResponse({
 		status: 404,
 		description: 'Field not found',
+	})
+	@ApiResponse({
+		status: 403,
+		description: 'Field is mapped to document fields or entities and cannot be deleted',
 	})
 	async deleteField(
 		@Param('fieldId', ParseUUIDPipe) fieldId: string

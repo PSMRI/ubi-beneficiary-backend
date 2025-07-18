@@ -4,6 +4,7 @@ import {
 	ConflictException,
 	BadRequestException,
 	Logger,
+	ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, FindOptionsWhere, In, DeleteResult, UpdateResult, DataSource } from 'typeorm';
@@ -13,6 +14,7 @@ import { CreateFieldDto } from './dto/create-field.dto';
 import { UpdateFieldDto } from './dto/update-field.dto';
 import { CustomFieldDto, CustomFieldResponseDto } from './dto/custom-field.dto';
 import { QueryFieldsDto } from './dto/query-fields.dto';
+import { AdminService } from '../admin/admin.service';
 
 /**
  * Service for managing custom fields and field values
@@ -28,7 +30,8 @@ export class CustomFieldsService {
 		private readonly fieldRepository: Repository<Field>,
 		@InjectRepository(FieldValue)
 		private readonly fieldValueRepository: Repository<FieldValue>,
-		private readonly dataSource: DataSource
+		private readonly dataSource: DataSource,
+		private readonly adminService: AdminService
 	) { }
 
 	/**
@@ -162,6 +165,30 @@ export class CustomFieldsService {
 	async deleteField(fieldId: string): Promise<{ fieldDeleted: number; valuesDeleted: number }> {
 		this.logger.debug(`Deleting field: ${fieldId}`);
 
+		// Check if field is mapped in settings before proceeding
+		try {
+			const mappingConfig = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
+			
+			if (mappingConfig?.value) {
+				const mappings = Array.isArray(mappingConfig.value) ? mappingConfig.value : [];
+				const fieldMapping = mappings.find((mapping: any) => mapping.fieldId === fieldId);
+				
+				if (fieldMapping) {
+					throw new ForbiddenException(
+						`Field "${fieldMapping.fieldName}" (ID: ${fieldId}) is mapped to document fields. Please remove the mapping from settings before deleting this field.`
+					);
+				}
+			}
+		} catch (error) {
+			// If error is ForbiddenException, re-throw it
+			if (error instanceof ForbiddenException) {
+				throw error;
+			}
+			
+			// Log other errors but continue with deletion
+			this.logger.warn(`Error checking field mappings: ${error.message}`);
+		}
+
 		// Use transaction to ensure data consistency
 		return await this.dataSource.transaction(async (manager) => {
 			// Check if field exists
@@ -172,6 +199,17 @@ export class CustomFieldsService {
 			if (!field) {
 				throw new NotFoundException(
 					`Field with ID ${fieldId} not found`
+				);
+			}
+
+			// Check if field is mapped to any entity
+			const fieldValues = await manager.find(FieldValue, {
+				where: { fieldId },
+			});
+
+			if (fieldValues.length > 0) {
+				throw new ForbiddenException(
+					`Field with ID ${fieldId} is mapped to ${fieldValues.length} entities. Cannot delete.`
 				);
 			}
 
