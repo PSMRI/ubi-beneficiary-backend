@@ -33,7 +33,6 @@ import { AuthGuard } from '@modules/auth/auth.guard';
 import { RoleGuard } from 'src/common/guards/role.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from 'src/common/enums/roles.enum';
-import { FieldValue } from './entities/field-value.entity';
 
 /**
  * Controller for managing custom fields
@@ -281,8 +280,8 @@ export class CustomFieldsController {
 	 * @description Deletes a field definition and all its associated values
 	 */
 	@Delete(':fieldId')
-	// @UseGuards(AuthGuard, RoleGuard)
-	// @Roles(UserRole.ADMIN)
+	@UseGuards(AuthGuard, RoleGuard)
+	@Roles(UserRole.ADMIN)
 	@HttpCode(HttpStatus.OK)
 	@ApiOperation({
 		summary: 'Delete field definition',
