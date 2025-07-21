@@ -261,12 +261,15 @@ export class ContentService {
 
 		try {
 			const response = await this.proxyService.bapCLientApi2('search', data);
+			
 			if (response) {
 				const arrayOfObjects = [];
-				//  console.log(response.responses.length())
+				console.log('Response responses length:', response.responses?.length);
 				for (const responses of response.responses) {
+				
 					if (responses.message.catalog.providers) {
 						for (const provider of responses.message.catalog.providers) {
+							console.log('Provider:', provider.id, 'Items count:', provider.items?.length);
 							for (const [index, item] of provider.items.entries()) {
 								const obj = {
 									unique_id: this.generateFixedId(
