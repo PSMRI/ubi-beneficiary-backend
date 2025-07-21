@@ -62,7 +62,7 @@ export class NetworkCacheRefreshCron {
     try {
       this.logger.log('Network Cache Refresh CRON started at ' + new Date().toISOString());
       // Use ContentService to process and insert jobs
-      const result = await this.contentService.jobsApiCall();
+      await this.contentService.jobsApiCall();
       
       this.logger.log(`Network Cache Refresh CRON completed successfully at ` + new Date().toISOString());
     } catch (error) {

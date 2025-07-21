@@ -300,12 +300,7 @@ export class HasuraService {
       try {  
         // First check if item exists and delete it
         if (item.item_id) {
-          try {
-            await this.deleteItemByItemId(item.item_id);
-           
-          } catch (deleteError) {
-            this.logger.log(`No existing item found for item_id: ${item.item_id}`);
-          }
+          await this.deleteItemByItemId(item.item_id);
         }
         
         // Then insert the new item
