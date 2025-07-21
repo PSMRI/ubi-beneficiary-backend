@@ -326,23 +326,6 @@ export class HasuraService {
     return insertApiRes;
   }
 
-  async getExistingItemIds(): Promise<string[]> {
-    const query = `query MyQuery {
-      ${this.cache_db} {
-        item_id
-      }
-    }`;
-
-    try {
-      const response = await this.queryDb(query);
-      const items = response.data[this.cache_db] || [];
-      return items.map(item => item.item_id);
-    } catch (error) {
-      console.log('Error fetching existing item IDs:', error);
-      return [];
-    }
-  }
-
   async deleteItemByItemId(itemId: string): Promise<any> {
     const query = `mutation MyMutation($itemId: String!) {
       delete_${this.cache_db}(where: {item_id: {_eq: $itemId}}) {
