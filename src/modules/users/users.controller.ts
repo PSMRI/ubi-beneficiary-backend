@@ -215,4 +215,25 @@ export class UserController {
   async fetchVcJson(@Body() fetchVcUrlDto: FetchVcUrlDto) {
     return await this.userService.fetchVcJsonFromUrl(fetchVcUrlDto.url);
   }
+
+  @UseGuards(AuthGuard)
+  @Post('/applications/update-status')
+  @ApiBasicAuth('access-token')
+  @ApiOperation({ summary: 'Update application status for the authenticated user' })
+  @ApiResponse({ status: 200, description: 'Application status updated successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async updateApplicationStatus(
+    @Req() req: Request,
+  ) {
+    try {
+      return await this.userService.processApplicationStatusUpdatesForAuthenticatedUser(req);
+    } catch (error) {
+      Logger.error('Failed to update application status:', error);
+      throw new InternalServerErrorException(
+        'An error occurred while updating application status'
+      );
+    }
+  }
 }
