@@ -1,11 +1,11 @@
 import {
-  HttpStatus,
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-  InternalServerErrorException,
-  Logger,
-  BadRequestException,
+	HttpStatus,
+	Injectable,
+	NotFoundException,
+	UnauthorizedException,
+	InternalServerErrorException,
+	Logger,
+	BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
@@ -33,234 +33,234 @@ import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class UserService {
-  constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(UserDoc)
-    private readonly userDocsRepository: Repository<UserDoc>,
-    @InjectRepository(UserInfo)
-    private readonly userInfoRepository: Repository<UserInfo>,
-    @InjectRepository(Consent)
-    private readonly consentRepository: Repository<Consent>,
-    @InjectRepository(UserApplication)
-    private readonly userApplicationRepository: Repository<UserApplication>,
-    private readonly keycloakService: KeycloakService,
-    private readonly profilePopulator: ProfilePopulator,
-    private readonly configService: ConfigService,
-    private readonly proxyService: ProxyService,
-  ) { }
+	constructor(
+		@InjectRepository(User)
+		private readonly userRepository: Repository<User>,
+		@InjectRepository(UserDoc)
+		private readonly userDocsRepository: Repository<UserDoc>,
+		@InjectRepository(UserInfo)
+		private readonly userInfoRepository: Repository<UserInfo>,
+		@InjectRepository(Consent)
+		private readonly consentRepository: Repository<Consent>,
+		@InjectRepository(UserApplication)
+		private readonly userApplicationRepository: Repository<UserApplication>,
+		private readonly keycloakService: KeycloakService,
+		private readonly profilePopulator: ProfilePopulator,
+		private readonly configService: ConfigService,
+		private readonly proxyService: ProxyService,
+	) {}
 
-  async create(createUserDto: CreateUserDto) {
-    const user = this.userRepository.create(createUserDto);
-    try {
-      const savedUser = await this.userRepository.save(user);
+	async create(createUserDto: CreateUserDto) {
+		const user = this.userRepository.create(createUserDto);
+		try {
+			const savedUser = await this.userRepository.save(user);
 
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK, // Created
-        message: 'User created successfully.',
-        data: savedUser,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
-        errorMessage: error.message,
-      });
-    }
-  }
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK, // Created
+				message: 'User created successfully.',
+				data: savedUser,
+			});
+		} catch (error) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
+				errorMessage: error.message,
+			});
+		}
+	}
 
-  async update(userId: string, updateUserDto: any) {
-    // Destructure userInfo from the payload
-    const { userInfo, ...userData } = updateUserDto;
+	async update(userId: string, updateUserDto: any) {
+		// Destructure userInfo from the payload
+		const { userInfo, ...userData } = updateUserDto;
 
-    // Check for existing user in the user table
-    const existingUser = await this.userRepository.findOne({
-      where: { user_id: userId },
-    });
+		// Check for existing user in the user table
+		const existingUser = await this.userRepository.findOne({
+			where: { user_id: userId },
+		});
 
-    if (!existingUser) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.NOT_FOUND,
-        errorMessage: `User with ID '${userId}' not found`,
-      });
-    }
+		if (!existingUser) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.NOT_FOUND,
+				errorMessage: `User with ID '${userId}' not found`,
+			});
+		}
 
-    // Update the user information in userRepository
-    Object.assign(existingUser, userData);
+		// Update the user information in userRepository
+		Object.assign(existingUser, userData);
 
-    try {
-      const updatedUser = await this.userRepository.save(existingUser);
+		try {
+			const updatedUser = await this.userRepository.save(existingUser);
 
-      // Check for existing user info in userInfoRepository
-      const existingUserInfo = await this.userInfoRepository.findOne({
-        where: { user_id: userId },
-      });
+			// Check for existing user info in userInfoRepository
+			const existingUserInfo = await this.userInfoRepository.findOne({
+				where: { user_id: userId },
+			});
 
-      if (existingUserInfo) {
-        // Update user info if it exists
-        Object.assign(existingUserInfo, userInfo);
-        await this.userInfoRepository.save(existingUserInfo);
-      } else if (userInfo) {
-        // Create a new user info if it doesn't exist and userInfo is provided
-        const newUserInfo = this.userInfoRepository.create({
-          user_id: userId,
-          ...userInfo,
-        });
-        await this.userInfoRepository.save(newUserInfo);
-      }
+			if (existingUserInfo) {
+				// Update user info if it exists
+				Object.assign(existingUserInfo, userInfo);
+				await this.userInfoRepository.save(existingUserInfo);
+			} else if (userInfo) {
+				// Create a new user info if it doesn't exist and userInfo is provided
+				const newUserInfo = this.userInfoRepository.create({
+					user_id: userId,
+					...userInfo,
+				});
+				await this.userInfoRepository.save(newUserInfo);
+			}
 
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User and associated info updated successfully',
-        data: {
-          ...updatedUser,
-          userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
-        },
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message ?? 'An error occurred while updating user',
-      });
-    }
-  }
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'User and associated info updated successfully',
+				data: {
+					...updatedUser,
+					userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
+				},
+			});
+		} catch (error) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message ?? 'An error occurred while updating user',
+			});
+		}
+	}
 
-  async findOne(req: any, decryptData?: boolean) {
-    try {
-      const sso_id = req?.user?.keycloak_id;
-      if (!sso_id) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'Invalid or missing Keycloak ID',
-        });
-      }
+	async findOne(req: any, decryptData?: boolean) {
+		try {
+			const sso_id = req?.user?.keycloak_id;
+			if (!sso_id) {
+				return new ErrorResponse({
+					statusCode: HttpStatus.UNAUTHORIZED,
+					errorMessage: 'Invalid or missing Keycloak ID',
+				});
+			}
 
-      const userDetails = await this.userRepository.findOne({
-        where: { sso_id },
-      });
+			const userDetails = await this.userRepository.findOne({
+				where: { sso_id },
+			});
 
-      if (!userDetails) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `User with ID '${sso_id}' not found`,
-        });
-      }
+			if (!userDetails) {
+				return new ErrorResponse({
+					statusCode: HttpStatus.NOT_FOUND,
+					errorMessage: `User with ID '${sso_id}' not found`,
+				});
+			}
 
-      const user = await this.findOneUser(userDetails.user_id);
-      const userInfo = await this.findOneUserInfo(
-        userDetails.user_id,
-        decryptData,
-      );
-      const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
+			const user = await this.findOneUser(userDetails.user_id);
+			const userInfo = await this.findOneUserInfo(
+				userDetails.user_id,
+				decryptData,
+			);
+			const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
 
-      const final = {
-        ...user,
-        ...userInfo,
-        docs: userDoc || [],
-      };
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User retrieved successfully.',
-        data: final,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message,
-      });
-    }
-  }
+			const final = {
+				...user,
+				...userInfo,
+				docs: userDoc || [],
+			};
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'User retrieved successfully.',
+				data: final,
+			});
+		} catch (error) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message,
+			});
+		}
+	}
 
-  async findConsentByUser(req: any) {
-    try {
-      const sso_id = req?.user?.keycloak_id;
-      if (!sso_id) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'Invalid or missing Keycloak ID',
-        });
-      }
+	async findConsentByUser(req: any) {
+		try {
+			const sso_id = req?.user?.keycloak_id;
+			if (!sso_id) {
+				return new ErrorResponse({
+					statusCode: HttpStatus.UNAUTHORIZED,
+					errorMessage: 'Invalid or missing Keycloak ID',
+				});
+			}
 
-      const userDetails = await this.userRepository.findOne({
-        where: { sso_id },
-      });
+			const userDetails = await this.userRepository.findOne({
+				where: { sso_id },
+			});
 
-      if (!userDetails) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `User with ID '${sso_id}' not found`,
-        });
-      }
+			if (!userDetails) {
+				return new ErrorResponse({
+					statusCode: HttpStatus.NOT_FOUND,
+					errorMessage: `User with ID '${sso_id}' not found`,
+				});
+			}
 
-      const consent = await this.findUserConsent(userDetails.user_id);
+			const consent = await this.findUserConsent(userDetails.user_id);
 
-      const final = {
-        ...consent,
-      };
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User consent retrieved successfully.',
-        data: final,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message,
-      });
-    }
-  }
+			const final = {
+				...consent,
+			};
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'User consent retrieved successfully.',
+				data: final,
+			});
+		} catch (error) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message,
+			});
+		}
+	}
 
-  async findOneUser(user_id: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-      where: { user_id },
-    });
+	async findOneUser(user_id: string): Promise<User> {
+		const user = await this.userRepository.findOne({
+			where: { user_id },
+		});
 
-    return user;
-  }
+		return user;
+	}
 
-  async findOneUserInfo(
-    user_id: string,
-    decryptData: boolean,
-  ): Promise<UserInfo> {
-    const userInfo = await this.userInfoRepository.findOne({
-      where: { user_id },
-    });
+	async findOneUserInfo(
+		user_id: string,
+		decryptData: boolean,
+	): Promise<UserInfo> {
+		const userInfo = await this.userInfoRepository.findOne({
+			where: { user_id },
+		});
 
-    return userInfo;
-  }
+		return userInfo;
+	}
 
-  async findUserDocs(user_id: string, decryptData: boolean) {
-    const userDocs = await this.userDocsRepository.find({ where: { user_id } });
+	async findUserDocs(user_id: string, decryptData: boolean) {
+		const userDocs = await this.userDocsRepository.find({ where: { user_id } });
 
-    // Retrieve the document subtypes set from the DocumentListProvider
-    const documentTypes = DocumentListProvider.getDocumentSubTypesSet();
+		// Retrieve the document subtypes set from the DocumentListProvider
+		const documentTypes = DocumentListProvider.getDocumentSubTypesSet();
 
-    return userDocs.map((doc) => ({
-      ...doc,
-      is_uploaded: documentTypes.has(doc.doc_subtype),
-    }));
-  }
+		return userDocs.map((doc) => ({
+			...doc,
+			is_uploaded: documentTypes.has(doc.doc_subtype),
+		}));
+	}
 
-  async findUserConsent(user_id: string): Promise<any> {
-    const consents = await this.consentRepository.find({
-      where: { user_id },
-    });
+	async findUserConsent(user_id: string): Promise<any> {
+		const consents = await this.consentRepository.find({
+			where: { user_id },
+		});
 
-    // Format the response
-    return {
-      statusCode: 200,
-      message: 'User consent retrieved successfully.',
-      data: consents.map((consent) => ({
-        id: consent.id,
-        user_id: consent.user_id,
-        purpose: consent.purpose,
-        purpose_text: consent.purpose_text,
-        accepted: consent.accepted,
-        consent_date: consent.consent_date,
-      })),
-    };
-  }
+		// Format the response
+		return {
+			statusCode: 200,
+			message: 'User consent retrieved successfully.',
+			data: consents.map((consent) => ({
+				id: consent.id,
+				user_id: consent.user_id,
+				purpose: consent.purpose,
+				purpose_text: consent.purpose_text,
+				accepted: consent.accepted,
+				consent_date: consent.consent_date,
+			})),
+		};
+	}
 
-  /*async remove(user_id: string): Promise<void> {
+	/*async remove(user_id: string): Promise<void> {
     const userWithInfo = await this.findOne(user_id);
 
     const user = userWithInfo.user;
@@ -268,968 +268,989 @@ export class UserService {
     await this.userRepository.remove(user);
   }*/
 
-  // Method to check if mobile number exists
-  async findByMobile(mobile: string): Promise<User | undefined> {
-    return await this.userRepository.findOne({
-      where: { phoneNumber: mobile },
-    });
-  }
-
-  async findBySsoId(ssoId: string): Promise<User | undefined> {
-    console.log('Finding user by username:', ssoId);
-    return await this.userRepository.findOne({
-      where: { sso_id: ssoId }
-    });
-  }
-
-  async createKeycloakData(body: any): Promise<User> {
-    const user = this.userRepository.create({
-      firstName: body.firstName,
-      lastName: body.lastName,
-      email: body.email ?? '',
-      phoneNumber: body.phoneNumber ?? '',
-      sso_provider: 'keycloak',
-      sso_id: body.keycloak_id,
-      walletToken: body.walletToken ?? null,
-      created_at: new Date(),
-    });
-    return await this.userRepository.save(user);
-  }
-  private preprocessDocData(doc_data: any): any {
-    if (typeof doc_data === 'object') {
-      try {
-        return JSON.stringify(doc_data);
-      } catch (error) {
-        Logger.error('Error stringifying doc_data:', error);
-        throw new BadRequestException('Invalid doc_data format: Unable to stringify JSON');
-      }
-    }
-    return doc_data;
-  }
-
-  // User docs save
-  async createUserDoc(createUserDocDto: CreateUserDocDTO) {
-    try {
-      // Stringify the JSON doc_data before encryption
-      const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
-
-      const newUserDoc = this.userDocsRepository.create({
-        ...createUserDocDto,
-        doc_data: stringifiedDocData,
-      });
-
-      const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User docs added to DB successfully.',
-        data: savedUserDoc,
-      });
-    } catch (error) {
-      if (error.code == '23505') {
-        return new ErrorResponse({
-          statusCode: HttpStatus.BAD_REQUEST,
-          errorMessage: error.detail,
-        });
-      }
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error,
-      });
-    }
-  }
-
-  async getDoc(createUserDocDto: CreateUserDocDTO) {
-    const existingDoc = await this.userDocsRepository.findOne({
-      where: {
-        user_id: createUserDocDto.user_id,
-        doc_type: createUserDocDto.doc_type,
-        doc_subtype: createUserDocDto.doc_subtype,
-      },
-    });
-
-    return existingDoc;
-  }
-
-  async saveDoc(createUserDocDto: CreateUserDocDTO) {
-    // Stringify the JSON doc_data before saving (encryption happens via entity transformer)
-    const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
-
-    const newUserDoc = this.userDocsRepository.create({
-      ...createUserDocDto,
-      doc_data: stringifiedDocData,
-    });
-
-    // Save to the database
-    const savedDoc = await this.userDocsRepository.save(newUserDoc);
-    return savedDoc;
-  }
-
-  async writeToFile(
-    createUserDocDto: CreateUserDocDTO,
-    userFilePath: any,
-    savedDoc: any,
-  ) {
-    try {
-      // Initialize the file with empty array if it doesn't exist
-      let currentData = [];
-      if (fs.existsSync(userFilePath)) {
-        try {
-          currentData = JSON.parse(fs.readFileSync(userFilePath, 'utf-8'));
-        } catch (err) {
-          console.error('Error reading/parsing file, reinitializing:', err);
-        }
-      }
-
-      currentData.push(savedDoc);
-
-      // Write the updated data to the file
-      fs.writeFileSync(userFilePath, JSON.stringify(currentData, null, 2));
-      console.log(
-        `File written successfully for user_id: ${createUserDocDto.user_id}`,
-      );
-    } catch (err) {
-      console.error('Error writing to file:', err);
-    }
-  }
-
-  async getSavedAndExistingDocs(
-    createUserDocsDto: CreateUserDocDTO[],
-    baseFolder: any,
-  ) {
-    const savedDocs: UserDoc[] = [];
-    const existingDocs: UserDoc[] = [];
-
-    for (const createUserDocDto of createUserDocsDto) {
-      const userFilePath = path.join(
-        baseFolder,
-        `${createUserDocDto.user_id}.json`,
-      );
-
-      // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
-      const existingDoc = await this.getDoc(createUserDocDto);
-
-      if (existingDoc) {
-        existingDocs.push(existingDoc);
-        console.log(
-          `Document already exists for user_id: ${createUserDocDto.user_id}, doc_type: ${createUserDocDto.doc_type}, doc_subtype: ${createUserDocDto.doc_subtype}`,
-        );
-      } else {
-
-        // Create the new document entity for the database
-        const savedDoc = await this.saveDoc(createUserDocDto);
-        savedDocs.push(savedDoc);
-
-        await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
-      }
-    }
-
-    return { savedDocs, existingDocs };
-  }
-
-  async createUserDocs(
-    createUserDocsDto: CreateUserDocDTO[],
-  ): Promise<UserDoc[]> {
-    const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
-
-    // Ensure the `userData` folder exists
-    if (!fs.existsSync(baseFolder)) {
-      fs.mkdirSync(baseFolder, { recursive: true });
-    }
-
-    const { savedDocs, existingDocs } = await this.getSavedAndExistingDocs(
-      createUserDocsDto,
-      baseFolder,
-    );
-
-    if (existingDocs.length > 0) return existingDocs;
-
-    return savedDocs;
-  }
-
-  async getUserDetails(req: any) {
-    const sso_id = req?.user?.keycloak_id;
-    if (!sso_id) {
-      throw new UnauthorizedException('Invalid or missing Keycloak ID');
-    }
-
-    const userDetails = await this.userRepository.findOne({
-      where: { sso_id },
-    });
-
-    if (!userDetails) {
-      throw new NotFoundException(`User with ID '${sso_id}' not found`);
-    }
-
-    return userDetails;
-  }
-
-  async updateProfile(userDetails: any) {
-    try {
-      // Get all docs
-      const allDocs = await this.userDocsRepository.find({
-        where: { user_id: userDetails.user_id },
-      });
-
-      // Build VCs
-      const VCs = await this.profilePopulator.buildVCs(allDocs);
-
-      // // build profile data
-      const { userProfile, validationData } =
-        await this.profilePopulator.buildProfile(VCs);
-
-      const adminResultData = await this.keycloakService.getAdminKeycloakToken();
-
-      // Update database entries
-      await this.profilePopulator.updateDatabase(
-        userProfile,
-        validationData,
-        userDetails,
-        adminResultData
-      );
-    } catch (error) {
-      Logger.error('Error in updating fields: ', error);
-      throw new InternalServerErrorException(
-        'An unexpected error occurred while updating profile.',
-      );
-    }
-  }
-
-  async deleteDoc(doc: UserDoc) {
-    const queryRunner =
-      this.userDocsRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    try {
-      await queryRunner.startTransaction();
-      await queryRunner.manager.remove(doc);
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      Logger.error('Error while deleting the document: ', error);
-      await queryRunner.rollbackTransaction();
-      throw new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: `Error while deleting the document: ${error}`,
-      });
-    } finally {
-      await queryRunner.release();
-    }
-  }
-
-  async createUserDocsNew(
-    req,
-    createUserDocsDto: CreateUserDocDTO[],
-  ): Promise<UserDoc[]> {
-    const userDetails = await this.getUserDetails(req);
-    const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
-    const savedDocs: UserDoc[] = [];
-
-    // Ensure the `userData` folder exists
-    if (!fs.existsSync(baseFolder)) {
-      fs.mkdirSync(baseFolder, { recursive: true });
-    }
-
-    for (const createUserDocDto of createUserDocsDto) {
-      try {
-        const savedDoc = await this.processSingleUserDoc(
-          createUserDocDto,
-          userDetails,
-          baseFolder
-        );
-        if (savedDoc) {
-          savedDocs.push(savedDoc);
-        }
-      } catch (error) {
-        Logger.error('Error processing document:', error);
-        throw error;
-      }
-    }
-
-    // Update profile based on documents
-    try {
-      await this.updateProfile(userDetails);
-    } catch (error) {
-      Logger.error('Profile update failed:', error);
-      }
-
-    return savedDocs;
-  }
-
-  private async processSingleUserDoc(
-    createUserDocDto: CreateUserDocDTO,
-    userDetails: any,
-    baseFolder: string
-  ): Promise<UserDoc | null> {
-    // Call the verification method before further processing
-    let verificationResult;
-    try {
-      verificationResult = await this.verifyVcWithApi(createUserDocDto.doc_data);
-    } catch (error) {
-      // Extract a user-friendly message
-      let message =
-        (error?.response?.data?.message ??
-        error?.message) ??
-        'VC Verification failed';
-      throw new BadRequestException({
-        message: message,
-        error: 'Bad Request',
-        statusCode: 400
-      });
-    }
-
-    if (!verificationResult.success) {
-      throw new BadRequestException({
-        message: verificationResult.message ?? 'VC Verification failed',
-        errors: verificationResult.errors ?? [],
-        statusCode: 400,
-        error: 'Bad Request',
-      });
-    }
-
-    const userFilePath = path.join(
-      baseFolder,
-      `${createUserDocDto.user_id}.json`,
-    );
-
-    // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
-    const existingDoc = await this.userDocsRepository.findOne({
-      where: {
-        user_id: userDetails.user_id,
-        doc_type: createUserDocDto.doc_type,
-        doc_subtype: createUserDocDto.doc_subtype,
-      },
-    });
-
-    if (existingDoc) await this.deleteDoc(existingDoc);
-
-
-
-    if (!createUserDocDto?.user_id) {
-      createUserDocDto.user_id = userDetails?.user_id;
-    }
-
-    // Create the new document entity for the database
-    try {
-      const savedDoc = await this.saveDoc(createUserDocDto);
-      await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
-      return savedDoc;
-    } catch (error) {
-      Logger.error('Error processing document:', error);
-      return null;
-    }
-  }
-  // User info
-  async createUserInfo(
-    createUserInfoDto: CreateUserInfoDto,
-  ): Promise<UserInfo | null> {
-    try {
-      // Ensure you await the result of registerUserWithUsername
-      const userData = await this.registerUserWithUsername(createUserInfoDto);
-
-      // Check if userData and userData.user exist
-      if (userData?.user?.user_id) {
-        // Assign the user_id from userData to createUserInfoDto
-        createUserInfoDto.user_id = userData.user.user_id;
-
-        // Create and save the new UserInfo record
-        const userInfo = this.userInfoRepository.create(createUserInfoDto);
-        return await this.userInfoRepository.save(userInfo);
-      } else {
-        // Handle the case where userData or userData.user is null
-        console.error('User registration failed or returned invalid data.');
-        return null;
-      }
-    } catch (error) {
-      console.error('Error while creating user info:', error);
-      throw new Error('Could not create user info');
-    }
-  }
-
-  async updateUserInfo(
-    user_id: string,
-    updateUserInfoDto: CreateUserInfoDto,
-  ): Promise<UserInfo> {
-    const userInfo = await this.userInfoRepository.findOne({
-      where: { user_id },
-    });
-
-    Object.assign(userInfo, updateUserInfoDto);
-    console.log('userInfo--->>', userInfo);
-    return this.userInfoRepository.save(userInfo);
-  }
-  // Create a new consent record
-  async createUserConsent(
-    createConsentDto: CreateConsentDto,
-  ): Promise<Consent> {
-    const consent = this.consentRepository.create(createConsentDto);
-    return await this.consentRepository.save(consent);
-  }
-  async createUserApplication(
-    createUserApplicationDto: CreateUserApplicationDto,
-  ) {
-  
-
-    try {
-      // Check if an application already exists for the given benefit_id and user_id
-      const existingApplication = await this.userApplicationRepository.findOne({
-        where: {
-          benefit_id: createUserApplicationDto.benefit_id,
-          user_id: createUserApplicationDto.user_id,
-        },
-      });
-
-      if (existingApplication) {
-        // Update the existing application with new values from the DTO
-        Object.assign(existingApplication, createUserApplicationDto);
-        const updated = await this.userApplicationRepository.save(existingApplication);
-        return new SuccessResponse({
-          statusCode: HttpStatus.OK,
-          message: 'User application resubmitted successfully.',
-          data: updated,
-        });
-      } else {
-        // Create a new application
-        const userApplication = this.userApplicationRepository.create(
-          createUserApplicationDto,
-        );
-        const response = await this.userApplicationRepository.save(
-          userApplication,
-        );
-        return new SuccessResponse({
-          statusCode: HttpStatus.OK,
-          message: 'User application submitted successfully.',
-          data: response,
-        });
-      }
-    } catch (error) {
-      console.error('Error while creating/updating user application:', error);
-      throw new InternalServerErrorException('Failed to create or update user application');
-    }
-  }
-
-  async findOneUserApplication(internal_application_id: string) {
-    const userApplication = await this.userApplicationRepository.findOne({
-      where: { internal_application_id },
-    });
-    if (!userApplication) {
-      throw new NotFoundException(
-        `Application with ID '${internal_application_id}' not found`,
-      );
-    }
-    return new SuccessResponse({
-      statusCode: HttpStatus.OK,
-      message: 'User application retrieved successfully.',
-      data: userApplication,
-    });
-  }
-
-  async findAllApplicationsByUserId(requestBody: {
-    filters?: any;
-    search?: string;
-    page?: number;
-    limit?: number;
-  }) {
-    const whereClause = {};
-    try {
-      const filterKeys = this.userApplicationRepository.metadata.columns.map(
-        (column) => column.propertyName,
-      );
-      const { filters = {}, search, page = 1, limit = 10 } = requestBody;
-
-      // Handle filters
-      if (filters && Object.keys(filters).length > 0) {
-        for (const [key, value] of Object.entries(filters)) {
-          if (
-            filterKeys.includes(key) &&
-            value !== null &&
-            value !== undefined
-          ) {
-            whereClause[key] = value;
-          }
-        }
-      }
-
-      // Handle search for `application_name`
-      if (search && search.trim().length > 0) {
-        const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
-        whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
-      }
-
-      // Fetch data with pagination
-      const [userApplication, total] =
-        await this.userApplicationRepository.findAndCount({
-          where: whereClause,
-          skip: (page - 1) * limit,
-          take: limit,
-        });
-
-
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User applications list retrieved successfully.',
-        data: { applications: userApplication, total },
-      });
-    } catch (error) {
-      console.error('Error while fetching user applications:', error);
-      throw new InternalServerErrorException('Failed to fetch user applications');
-    }
-  }
-
-  public async registerUserWithUsername(body) {
-    // Replace spaces with underscores in first name and last name
-    const firstPartOfFirstName = body?.firstName
-      ?.split(' ')[0]
-      ?.replace(/\s+/g, '_');
-    const lastNameWithUnderscore = body?.lastName?.replace(/\s+/g, '_');
-
-    // Extract the last 2 digits of Aadhar
-    const lastTwoDigits = body?.aadhaar?.slice(-2);
-
-    // Concatenate the processed first name, last name, and last 2 digits of Aadhar
-    const username =
-      firstPartOfFirstName?.toLowerCase() +
-      '_' +
-      lastNameWithUnderscore?.toLowerCase() +
-      lastTwoDigits;
-
-    const data_to_create_user = {
-      enabled: 'true',
-      firstName: body?.firstName,
-      lastName: body?.lastName,
-      username: username,
-      credentials: [
-        {
-          type: 'password',
-          value: body?.password,
-          temporary: false,
-        },
-      ],
-    };
-
-    // Step 3: Get Keycloak admin token
-    const token = await this.keycloakService.getAdminKeycloakToken();
-
-    try {
-      // Step 4: Register user in Keycloak
-      const registerUserRes = await this.keycloakService.registerUser(
-        data_to_create_user,
-        token.access_token,
-      );
-
-      if (registerUserRes.error) {
-        if (
-          registerUserRes.error.message == 'Request failed with status code 409'
-        ) {
-          console.log('User already exists!');
-        } else {
-          console.log(registerUserRes.error.message);
-        }
-      } else if (registerUserRes.headers.location) {
-        const split = registerUserRes.headers.location.split('/');
-        const keycloak_id = split[split.length - 1];
-        body.keycloak_id = keycloak_id;
-        body.username = data_to_create_user.username;
-
-        // Step 5: Try to create user in PostgreSQL
-        const result = await this.createKeycloakData(body);
-
-        // If successful, return success response
-        const userResponse = {
-          user: result,
-          keycloak_id: keycloak_id,
-          username: data_to_create_user.username,
-        };
-        return userResponse;
-      } else {
-        console.log('Unable to create user in Keycloak');
-      }
-    } catch (error) {
-      console.error('Error during user registration:', error);
-
-      // Step 6: Rollback - delete user from Keycloak if PostgreSQL insertion fails
-      if (body?.keycloak_id) {
-        await this.keycloakService.deleteUser(body.keycloak_id);
-        console.log(
-          'Keycloak user deleted due to failure in PostgreSQL creation',
-        );
-      }
-    }
-  }
-
-  async resetInUsers(
-    field: string,
-    existingDoc: UserDoc,
-    queryRunner: QueryRunner,
-  ) {
-    await queryRunner.manager
-      .getRepository(User)
-      .createQueryBuilder()
-      .update(User)
-      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
-      .where('user_id = :id', { id: existingDoc.user_id })
-      .execute();
-  }
-
-  async resetInUserInfo(
-    field: string,
-    existingDoc: UserDoc,
-    queryRunner: QueryRunner,
-  ) {
-    await queryRunner.manager
-      .getRepository(UserInfo)
-      .createQueryBuilder()
-      .update(UserInfo)
-      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
-      .where('user_id = :id', { id: existingDoc.user_id })
-      .execute();
-  }
-
-  async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
-    const fieldsArray = {
-      aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
-      casteCertificate: ['caste'],
-      enrollmentCertificate: ['class', 'studentType'],
-      incomeCertificate: ['annualIncome'],
-      janAadharCertificate: ['state'],
-      marksheet: ['previousYearMarks'],
-    };
-
-    const fields = fieldsArray[existingDoc.doc_subtype] ?? [];
-
-    for (const field of fields) {
-      if (field === 'middleName')
-        await this.resetInUsers(field, existingDoc, queryRunner);
-      else await this.resetInUserInfo(field, existingDoc, queryRunner);
-    }
-  }
-
-  async delete(req: any, doc_id: string) {
-    const IsValidUser = req?.user;
-    if (!IsValidUser) {
-      throw new UnauthorizedException('User is not authenticated');
-    }
-    const sso_id = IsValidUser.keycloak_id;
-
-    // Get user_id of logged in user
-    const user = await this.userRepository.findOne({
-      where: { sso_id: sso_id },
-    });
-
-    if (!user)
-      return new ErrorResponse({
-        statusCode: HttpStatus.NOT_FOUND,
-        errorMessage: 'User with given sso_id not found',
-      });
-
-    const user_id = user.user_id;
-
-    // Check if document exists or not, if not then send erorr response
-    const existingDoc = await this.userDocsRepository.findOne({
-      where: {
-        doc_id: doc_id,
-      },
-    });
-
-    if (!existingDoc) {
-      Logger.error(`Document with id ${doc_id} does not exists`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: `Document with id ${doc_id} does not exists`,
-      });
-    }
-
-    // Check if logged in user is allowed to delete this document or not
-    if (existingDoc.user_id !== user_id)
-      return new ErrorResponse({
-        statusCode: HttpStatus.UNAUTHORIZED,
-        errorMessage:
-          'You are not authorized to modify or delete this resourse',
-      });
-
-    // Delete the document
-    const queryRunner =
-      this.userDocsRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    try {
-      await queryRunner.startTransaction();
-      await queryRunner.manager.remove(existingDoc);
-      // Reset the field along with deleting the document
-      await this.resetField(existingDoc, queryRunner);
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      Logger.error('Error while deleting the document: ', error);
-      await queryRunner.release();
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: `Error while deleting the document: ${error}`,
-      });
-    } finally {
-      await queryRunner.release();
-    }
-
-    return new SuccessResponse({
-      statusCode: HttpStatus.OK,
-      message: 'Document deleted successfully',
-    });
-  }
-
-  /**
-   * Fetches a Verifiable Credential JSON from a given URL.
-   * Handles both dway.io and haqdarshak.com style URLs.
-   * Follows redirects and appends .vc if needed.
-   * @param url The URL from the QR code
-   */
-  async fetchVcJsonFromUrl(url: string): Promise<any> {
-    try {
-      // 1. Follow redirects to get the final URL
-      const response = await axios.get(url, {
-        maxRedirects: 5,
-        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
-      });
-      let finalUrl = response.request?.res?.responseUrl ?? url;
-
-      // 2. If not already ending with .vc, append .vc
-      if (!finalUrl.endsWith('.vc')) {
-        finalUrl = `${finalUrl}.vc`;
-      }
-
-      // 3. Fetch the VC JSON
-      const vcResponse = await axios.get(finalUrl, { headers: { Accept: 'application/json' } });
-
-      return vcResponse.data;
-    }
-    catch (error) {
-      // Handle errors and return a meaningful message
-      if (axios.isAxiosError(error)) {
-        return {
-          error: true,
-          message: error.response?.data ?? error.message,
-          status: error.response?.status ?? 500,
-        };
-      }
-      return {
-        error: true,
-        message: 'Unknown error occurred',
-        status: 500,
-      };
-    }
-  }
-
-  private async verifyVcWithApi(vcData: any): Promise<{ success: boolean; message?: string; errors?: any[] }> {
-    try {
-      const verificationPayload = {
-        credential: vcData,
-        config: {
-          method: 'online',
-          issuerName: process.env.VC_DEFAULT_ISSUER_NAME ?? 'dhiway',
-        },
-      };
-
-      const verificationUrl = process.env.VC_VERIFICATION_SERVICE_URL;
-      if (!verificationUrl) {
-        return {
-          success: false,
-          message: 'VC_VERIFICATION_SERVICE_URL env variable not set',
-          errors: [],
-        };
-      }
-
-      const response = await axios.post(verificationUrl, verificationPayload, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 8000,
-      });
-
-      // Use the API's response format directly
-      return {
-        success: response.data?.success,
-        message: response.data?.message,
-        errors: response.data?.errors,
-      };
-    } catch (error) {
-      Logger.error('VC Verification error:', error?.response?.data ?? error.message);
-      return {
-        success: false,
-        message:
-          error?.response?.data?.message ??
-          error.message ??
-          'VC Verification failed',
-        errors: error?.response?.data?.errors,
-      };
-    }
-  }
-
-  async deleteUser(userId: string): Promise<void> {
-    const user = await this.userRepository.findOne({
-      where: { user_id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User with ID '${userId}' not found`);
-    }
-
-    await this.userRepository.delete(userId);
-  }
-
-  // Application Status Update Methods (extracted from cron)
-  async getApplications(userId?: string) {
-    try {
-      const whereCondition = {
-        status: Not(In(['amount received', 'rejected', 'disbursed'])),
-        ...(userId && { user_id: userId }), // Add user filter when userId provided
-      };
-
-      const applications = await this.userApplicationRepository.find({
-        where: whereCondition,
-      });
-
-      return applications;
-    } catch (error) {
-      Logger.error(`Error while getting user applications: ${error}`);
-      return [];
-    }
-  }
-
-  async updateStatus(
-    application: any,
-    statusData: { status: string; comment: string },
-  ) {
-    try {
-      if (!statusData?.status) return;
-
-      application.status = statusData.status.toLowerCase(); // e.g., "approved"
-      application.remark = statusData.comment || ''; // Save the comment
-
-      const queryRunner =
-        this.userApplicationRepository.manager.connection.createQueryRunner();
-      await queryRunner.connect();
-      try {
-        await queryRunner.startTransaction();
-        await queryRunner.manager.save(application);
-        await queryRunner.commitTransaction();
-      } catch (error) {
-        await queryRunner.rollbackTransaction();
-        Logger.error(`Error in query runner: ${error}`);
-      } finally {
-        await queryRunner.release();
-      }
-    } catch (error) {
-      Logger.error(`Error while updating application status: ${error}`);
-    }
-  }
-
-  async getStatus(orderId: string) {
-    const body = {
-      context: {
-        domain: 'onest:financial-support',
-        action: 'status',
-        timestamp: new Date().toISOString(),
-        ttl: 'PT10M',
-        version: '1.1.0',
-        bap_id: this.configService.get<string>('BAP_ID'),
-        bap_uri: this.configService.get<string>('BAP_URI'),
-        bpp_id: this.configService.get<string>('BPP_ID'),
-        bpp_uri: this.configService.get<string>('BPP_URI'),
-        transaction_id: uuidv4(),
-        message_id: uuidv4(),
-      },
-      message: {
-        order_id: orderId,
-      },
-    };
-
-    const response = await this.proxyService.bapCLientApi2('status', body);
-
-    try {
-      const rawStatus =
-        response?.responses[0]?.message?.order?.fulfillments[0]?.state
-          ?.descriptor?.name;
-
-      if (!rawStatus) return null;
-
-      // Parse status stringified JSON
-      const parsedStatus = JSON.parse(rawStatus);
-      return parsedStatus; // { status: '...', comment: '...' }
-    } catch (error) {
-      console.error(`Error while getting status from response: ${error}`);
-      throw new Error('Error while getting status from response');
-    }
-  }
-
-  async processApplications(applications: any) {
-    try {
-      await Promise.all(
-        applications.map(async (application: any) => {
-          const statusData = await this.getStatus(
-            application.external_application_id,
-          );
-          await this.updateStatus(application, statusData);
-        }),
-      );
-    } catch (error) {
-      Logger.error(`Error while processing applications: ${error}`);
-    }
-  }
-
-  async processApplicationStatusUpdates(userId?: string) {
-    try {
-      Logger.log(`Starting processApplicationStatusUpdates${userId ? ` for user ${userId}` : ' for all applications'}`);
-      
-      // Get user application records from database
-      const applications = await this.getApplications(userId);
-      Logger.log(`Found ${applications.length} applications to process`);
-
-      if (applications.length === 0) {
-        Logger.log('No applications found matching criteria');
-        return new SuccessResponse({
-          statusCode: HttpStatus.OK,
-          message: userId 
-            ? `No applications found for user ${userId}` 
-            : 'No applications found matching criteria',
-          data: { processedCount: 0 },
-        });
-      }
-
-      // Update status of each application
-      await this.processApplications(applications);
-      Logger.log(`Successfully processed ${applications.length} applications`);
-
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: userId 
-          ? `Application status updated successfully for user ${userId}` 
-          : 'Application status updated successfully for all eligible applications',
-        data: { processedCount: applications.length },
-      });
-    } catch (error) {
-      Logger.error(`Error in 'processApplicationStatusUpdates': ${error}`);
-      throw new InternalServerErrorException('Failed to update application status');
-    }
-  }
-
-  async processApplicationStatusUpdatesForAuthenticatedUser(req: any) {
-    try {
-      const sso_id = req?.user?.keycloak_id;
-      if (!sso_id) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'Invalid or missing Keycloak ID',
-        });
-      }
-
-      const userDetails = await this.userRepository.findOne({
-        where: { sso_id },
-      });
-
-      if (!userDetails) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `User with ID '${sso_id}' not found`,
-        });
-      }
-
-      // Call the existing method with the user_id from the token
-      return await this.processApplicationStatusUpdates(userDetails.user_id);
-    } catch (error) {
-      Logger.error(`Error in 'processApplicationStatusUpdatesForAuthenticatedUser': ${error}`);
-      throw new InternalServerErrorException('Failed to update application status');
-    }
-  }
+	// Method to check if mobile number exists
+	async findByMobile(mobile: string): Promise<User | undefined> {
+		return await this.userRepository.findOne({
+			where: { phoneNumber: mobile },
+		});
+	}
+
+	async findBySsoId(ssoId: string): Promise<User | undefined> {
+		console.log('Finding user by username:', ssoId);
+		return await this.userRepository.findOne({
+			where: { sso_id: ssoId },
+		});
+	}
+
+	async createKeycloakData(body: any): Promise<User> {
+		const user = this.userRepository.create({
+			firstName: body.firstName,
+			lastName: body.lastName,
+			email: body.email ?? '',
+			phoneNumber: body.phoneNumber ?? '',
+			sso_provider: 'keycloak',
+			sso_id: body.keycloak_id,
+			walletToken: body.walletToken ?? null,
+			created_at: new Date(),
+		});
+		return await this.userRepository.save(user);
+	}
+	private preprocessDocData(doc_data: any): any {
+		if (typeof doc_data === 'object') {
+			try {
+				return JSON.stringify(doc_data);
+			} catch (error) {
+				Logger.error('Error stringifying doc_data:', error);
+				throw new BadRequestException(
+					'Invalid doc_data format: Unable to stringify JSON',
+				);
+			}
+		}
+		return doc_data;
+	}
+
+	// User docs save
+	async createUserDoc(createUserDocDto: CreateUserDocDTO) {
+		try {
+			// Stringify the JSON doc_data before encryption
+			const stringifiedDocData = this.preprocessDocData(
+				createUserDocDto.doc_data,
+			);
+
+			const newUserDoc = this.userDocsRepository.create({
+				...createUserDocDto,
+				doc_data: stringifiedDocData,
+			});
+
+			const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'User docs added to DB successfully.',
+				data: savedUserDoc,
+			});
+		} catch (error) {
+			if (error.code == '23505') {
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage: error.detail,
+				});
+			}
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error,
+			});
+		}
+	}
+
+	async getDoc(createUserDocDto: CreateUserDocDTO) {
+		const existingDoc = await this.userDocsRepository.findOne({
+			where: {
+				user_id: createUserDocDto.user_id,
+				doc_type: createUserDocDto.doc_type,
+				doc_subtype: createUserDocDto.doc_subtype,
+			},
+		});
+
+		return existingDoc;
+	}
+
+	async saveDoc(createUserDocDto: CreateUserDocDTO) {
+		// Stringify the JSON doc_data before saving (encryption happens via entity transformer)
+		const stringifiedDocData = this.preprocessDocData(
+			createUserDocDto.doc_data,
+		);
+
+		const newUserDoc = this.userDocsRepository.create({
+			...createUserDocDto,
+			doc_data: stringifiedDocData,
+		});
+
+		// Save to the database
+		const savedDoc = await this.userDocsRepository.save(newUserDoc);
+		return savedDoc;
+	}
+
+	async writeToFile(
+		createUserDocDto: CreateUserDocDTO,
+		userFilePath: any,
+		savedDoc: any,
+	) {
+		try {
+			// Initialize the file with empty array if it doesn't exist
+			let currentData = [];
+			if (fs.existsSync(userFilePath)) {
+				try {
+					currentData = JSON.parse(fs.readFileSync(userFilePath, 'utf-8'));
+				} catch (err) {
+					console.error('Error reading/parsing file, reinitializing:', err);
+				}
+			}
+
+			currentData.push(savedDoc);
+
+			// Write the updated data to the file
+			fs.writeFileSync(userFilePath, JSON.stringify(currentData, null, 2));
+			console.log(
+				`File written successfully for user_id: ${createUserDocDto.user_id}`,
+			);
+		} catch (err) {
+			console.error('Error writing to file:', err);
+		}
+	}
+
+	async getSavedAndExistingDocs(
+		createUserDocsDto: CreateUserDocDTO[],
+		baseFolder: any,
+	) {
+		const savedDocs: UserDoc[] = [];
+		const existingDocs: UserDoc[] = [];
+
+		for (const createUserDocDto of createUserDocsDto) {
+			const userFilePath = path.join(
+				baseFolder,
+				`${createUserDocDto.user_id}.json`,
+			);
+
+			// Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
+			const existingDoc = await this.getDoc(createUserDocDto);
+
+			if (existingDoc) {
+				existingDocs.push(existingDoc);
+				console.log(
+					`Document already exists for user_id: ${createUserDocDto.user_id}, doc_type: ${createUserDocDto.doc_type}, doc_subtype: ${createUserDocDto.doc_subtype}`,
+				);
+			} else {
+				// Create the new document entity for the database
+				const savedDoc = await this.saveDoc(createUserDocDto);
+				savedDocs.push(savedDoc);
+
+				await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+			}
+		}
+
+		return { savedDocs, existingDocs };
+	}
+
+	async createUserDocs(
+		createUserDocsDto: CreateUserDocDTO[],
+	): Promise<UserDoc[]> {
+		const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
+
+		// Ensure the `userData` folder exists
+		if (!fs.existsSync(baseFolder)) {
+			fs.mkdirSync(baseFolder, { recursive: true });
+		}
+
+		const { savedDocs, existingDocs } = await this.getSavedAndExistingDocs(
+			createUserDocsDto,
+			baseFolder,
+		);
+
+		if (existingDocs.length > 0) return existingDocs;
+
+		return savedDocs;
+	}
+
+	async getUserDetails(req: any) {
+		const sso_id = req?.user?.keycloak_id;
+		if (!sso_id) {
+			throw new UnauthorizedException('Invalid or missing Keycloak ID');
+		}
+
+		const userDetails = await this.userRepository.findOne({
+			where: { sso_id },
+		});
+
+		if (!userDetails) {
+			throw new NotFoundException(`User with ID '${sso_id}' not found`);
+		}
+
+		return userDetails;
+	}
+
+	async updateProfile(userDetails: any) {
+		try {
+			// Get all docs
+			const allDocs = await this.userDocsRepository.find({
+				where: { user_id: userDetails.user_id },
+			});
+
+			// Build VCs
+			const VCs = await this.profilePopulator.buildVCs(allDocs);
+
+			// // build profile data
+			const { userProfile, validationData } =
+				await this.profilePopulator.buildProfile(VCs);
+
+			const adminResultData =
+				await this.keycloakService.getAdminKeycloakToken();
+
+			// Update database entries
+			await this.profilePopulator.updateDatabase(
+				userProfile,
+				validationData,
+				userDetails,
+				adminResultData,
+			);
+		} catch (error) {
+			Logger.error('Error in updating fields: ', error);
+			throw new InternalServerErrorException(
+				'An unexpected error occurred while updating profile.',
+			);
+		}
+	}
+
+	async deleteDoc(doc: UserDoc) {
+		const queryRunner =
+			this.userDocsRepository.manager.connection.createQueryRunner();
+		await queryRunner.connect();
+		try {
+			await queryRunner.startTransaction();
+			await queryRunner.manager.remove(doc);
+			await queryRunner.commitTransaction();
+		} catch (error) {
+			Logger.error('Error while deleting the document: ', error);
+			await queryRunner.rollbackTransaction();
+			throw new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: `Error while deleting the document: ${error}`,
+			});
+		} finally {
+			await queryRunner.release();
+		}
+	}
+
+	async createUserDocsNew(
+		req,
+		createUserDocsDto: CreateUserDocDTO[],
+	): Promise<UserDoc[]> {
+		const userDetails = await this.getUserDetails(req);
+		const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
+		const savedDocs: UserDoc[] = [];
+
+		// Ensure the `userData` folder exists
+		if (!fs.existsSync(baseFolder)) {
+			fs.mkdirSync(baseFolder, { recursive: true });
+		}
+
+		for (const createUserDocDto of createUserDocsDto) {
+			try {
+				const savedDoc = await this.processSingleUserDoc(
+					createUserDocDto,
+					userDetails,
+					baseFolder,
+				);
+				if (savedDoc) {
+					savedDocs.push(savedDoc);
+				}
+			} catch (error) {
+				Logger.error('Error processing document:', error);
+				throw error;
+			}
+		}
+
+		// Update profile based on documents
+		try {
+			await this.updateProfile(userDetails);
+		} catch (error) {
+			Logger.error('Profile update failed:', error);
+		}
+
+		return savedDocs;
+	}
+
+	private async processSingleUserDoc(
+		createUserDocDto: CreateUserDocDTO,
+		userDetails: any,
+		baseFolder: string,
+	): Promise<UserDoc | null> {
+		// Call the verification method before further processing
+		let verificationResult;
+		try {
+			verificationResult = await this.verifyVcWithApi(
+				createUserDocDto.doc_data,
+			);
+		} catch (error) {
+			// Extract a user-friendly message
+			let message =
+				error?.response?.data?.message ??
+				error?.message ??
+				'VC Verification failed';
+			throw new BadRequestException({
+				message: message,
+				error: 'Bad Request',
+				statusCode: 400,
+			});
+		}
+
+		if (!verificationResult.success) {
+			throw new BadRequestException({
+				message: verificationResult.message ?? 'VC Verification failed',
+				errors: verificationResult.errors ?? [],
+				statusCode: 400,
+				error: 'Bad Request',
+			});
+		}
+
+		const userFilePath = path.join(
+			baseFolder,
+			`${createUserDocDto.user_id}.json`,
+		);
+
+		// Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
+		const existingDoc = await this.userDocsRepository.findOne({
+			where: {
+				user_id: userDetails.user_id,
+				doc_type: createUserDocDto.doc_type,
+				doc_subtype: createUserDocDto.doc_subtype,
+			},
+		});
+
+		if (existingDoc) await this.deleteDoc(existingDoc);
+
+		if (!createUserDocDto?.user_id) {
+			createUserDocDto.user_id = userDetails?.user_id;
+		}
+
+		// Create the new document entity for the database
+		try {
+			const savedDoc = await this.saveDoc(createUserDocDto);
+			await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+			return savedDoc;
+		} catch (error) {
+			Logger.error('Error processing document:', error);
+			return null;
+		}
+	}
+	// User info
+	async createUserInfo(
+		createUserInfoDto: CreateUserInfoDto,
+	): Promise<UserInfo | null> {
+		try {
+			// Ensure you await the result of registerUserWithUsername
+			const userData = await this.registerUserWithUsername(createUserInfoDto);
+
+			// Check if userData and userData.user exist
+			if (userData?.user?.user_id) {
+				// Assign the user_id from userData to createUserInfoDto
+				createUserInfoDto.user_id = userData.user.user_id;
+
+				// Create and save the new UserInfo record
+				const userInfo = this.userInfoRepository.create(createUserInfoDto);
+				return await this.userInfoRepository.save(userInfo);
+			} else {
+				// Handle the case where userData or userData.user is null
+				console.error('User registration failed or returned invalid data.');
+				return null;
+			}
+		} catch (error) {
+			console.error('Error while creating user info:', error);
+			throw new Error('Could not create user info');
+		}
+	}
+
+	async updateUserInfo(
+		user_id: string,
+		updateUserInfoDto: CreateUserInfoDto,
+	): Promise<UserInfo> {
+		const userInfo = await this.userInfoRepository.findOne({
+			where: { user_id },
+		});
+
+		Object.assign(userInfo, updateUserInfoDto);
+		console.log('userInfo--->>', userInfo);
+		return this.userInfoRepository.save(userInfo);
+	}
+	// Create a new consent record
+	async createUserConsent(
+		createConsentDto: CreateConsentDto,
+	): Promise<Consent> {
+		const consent = this.consentRepository.create(createConsentDto);
+		return await this.consentRepository.save(consent);
+	}
+	async createUserApplication(
+		createUserApplicationDto: CreateUserApplicationDto,
+	) {
+		try {
+			// Check if an application already exists for the given benefit_id and user_id
+			const existingApplication = await this.userApplicationRepository.findOne({
+				where: {
+					benefit_id: createUserApplicationDto.benefit_id,
+					user_id: createUserApplicationDto.user_id,
+				},
+			});
+
+			if (existingApplication) {
+				// Update the existing application with new values from the DTO
+				Object.assign(existingApplication, createUserApplicationDto);
+				const updated =
+					await this.userApplicationRepository.save(existingApplication);
+				return new SuccessResponse({
+					statusCode: HttpStatus.OK,
+					message: 'User application resubmitted successfully.',
+					data: updated,
+				});
+			} else {
+				// Create a new application
+				const userApplication = this.userApplicationRepository.create(
+					createUserApplicationDto,
+				);
+				const response =
+					await this.userApplicationRepository.save(userApplication);
+				return new SuccessResponse({
+					statusCode: HttpStatus.OK,
+					message: 'User application submitted successfully.',
+					data: response,
+				});
+			}
+		} catch (error) {
+			console.error('Error while creating/updating user application:', error);
+			throw new InternalServerErrorException(
+				'Failed to create or update user application',
+			);
+		}
+	}
+
+	async findOneUserApplication(internal_application_id: string) {
+		const userApplication = await this.userApplicationRepository.findOne({
+			where: { internal_application_id },
+		});
+		if (!userApplication) {
+			throw new NotFoundException(
+				`Application with ID '${internal_application_id}' not found`,
+			);
+		}
+		return new SuccessResponse({
+			statusCode: HttpStatus.OK,
+			message: 'User application retrieved successfully.',
+			data: userApplication,
+		});
+	}
+
+	async findAllApplicationsByUserId(requestBody: {
+		filters?: any;
+		search?: string;
+		page?: number;
+		limit?: number;
+	}) {
+		const whereClause = {};
+		try {
+			const filterKeys = this.userApplicationRepository.metadata.columns.map(
+				(column) => column.propertyName,
+			);
+			const { filters = {}, search, page = 1, limit = 10 } = requestBody;
+
+			// Handle filters
+			if (filters && Object.keys(filters).length > 0) {
+				for (const [key, value] of Object.entries(filters)) {
+					if (
+						filterKeys.includes(key) &&
+						value !== null &&
+						value !== undefined
+					) {
+						whereClause[key] = value;
+					}
+				}
+			}
+
+			// Handle search for `application_name`
+			if (search && search.trim().length > 0) {
+				const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
+				whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
+			}
+
+			// Fetch data with pagination
+			const [userApplication, total] =
+				await this.userApplicationRepository.findAndCount({
+					where: whereClause,
+					skip: (page - 1) * limit,
+					take: limit,
+				});
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'User applications list retrieved successfully.',
+				data: { applications: userApplication, total },
+			});
+		} catch (error) {
+			console.error('Error while fetching user applications:', error);
+			throw new InternalServerErrorException(
+				'Failed to fetch user applications',
+			);
+		}
+	}
+
+	public async registerUserWithUsername(body) {
+		// Replace spaces with underscores in first name and last name
+		const firstPartOfFirstName = body?.firstName
+			?.split(' ')[0]
+			?.replace(/\s+/g, '_');
+		const lastNameWithUnderscore = body?.lastName?.replace(/\s+/g, '_');
+
+		// Extract the last 2 digits of Aadhar
+		const lastTwoDigits = body?.aadhaar?.slice(-2);
+
+		// Concatenate the processed first name, last name, and last 2 digits of Aadhar
+		const username =
+			firstPartOfFirstName?.toLowerCase() +
+			'_' +
+			lastNameWithUnderscore?.toLowerCase() +
+			lastTwoDigits;
+
+		const data_to_create_user = {
+			enabled: 'true',
+			firstName: body?.firstName,
+			lastName: body?.lastName,
+			username: username,
+			credentials: [
+				{
+					type: 'password',
+					value: body?.password,
+					temporary: false,
+				},
+			],
+		};
+
+		// Step 3: Get Keycloak admin token
+		const token = await this.keycloakService.getAdminKeycloakToken();
+
+		try {
+			// Step 4: Register user in Keycloak
+			const registerUserRes = await this.keycloakService.registerUser(
+				data_to_create_user,
+				token.access_token,
+			);
+
+			if (registerUserRes.error) {
+				if (
+					registerUserRes.error.message == 'Request failed with status code 409'
+				) {
+					console.log('User already exists!');
+				} else {
+					console.log(registerUserRes.error.message);
+				}
+			} else if (registerUserRes.headers.location) {
+				const split = registerUserRes.headers.location.split('/');
+				const keycloak_id = split[split.length - 1];
+				body.keycloak_id = keycloak_id;
+				body.username = data_to_create_user.username;
+
+				// Step 5: Try to create user in PostgreSQL
+				const result = await this.createKeycloakData(body);
+
+				// If successful, return success response
+				const userResponse = {
+					user: result,
+					keycloak_id: keycloak_id,
+					username: data_to_create_user.username,
+				};
+				return userResponse;
+			} else {
+				console.log('Unable to create user in Keycloak');
+			}
+		} catch (error) {
+			console.error('Error during user registration:', error);
+
+			// Step 6: Rollback - delete user from Keycloak if PostgreSQL insertion fails
+			if (body?.keycloak_id) {
+				await this.keycloakService.deleteUser(body.keycloak_id);
+				console.log(
+					'Keycloak user deleted due to failure in PostgreSQL creation',
+				);
+			}
+		}
+	}
+
+	async resetInUsers(
+		field: string,
+		existingDoc: UserDoc,
+		queryRunner: QueryRunner,
+	) {
+		await queryRunner.manager
+			.getRepository(User)
+			.createQueryBuilder()
+			.update(User)
+			.set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
+			.where('user_id = :id', { id: existingDoc.user_id })
+			.execute();
+	}
+
+	async resetInUserInfo(
+		field: string,
+		existingDoc: UserDoc,
+		queryRunner: QueryRunner,
+	) {
+		await queryRunner.manager
+			.getRepository(UserInfo)
+			.createQueryBuilder()
+			.update(UserInfo)
+			.set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
+			.where('user_id = :id', { id: existingDoc.user_id })
+			.execute();
+	}
+
+	async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
+		const fieldsArray = {
+			aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
+			casteCertificate: ['caste'],
+			enrollmentCertificate: ['class', 'studentType'],
+			incomeCertificate: ['annualIncome'],
+			janAadharCertificate: ['state'],
+			marksheet: ['previousYearMarks'],
+		};
+
+		const fields = fieldsArray[existingDoc.doc_subtype] ?? [];
+
+		for (const field of fields) {
+			if (field === 'middleName')
+				await this.resetInUsers(field, existingDoc, queryRunner);
+			else await this.resetInUserInfo(field, existingDoc, queryRunner);
+		}
+	}
+
+	async delete(req: any, doc_id: string) {
+		const IsValidUser = req?.user;
+		if (!IsValidUser) {
+			throw new UnauthorizedException('User is not authenticated');
+		}
+		const sso_id = IsValidUser.keycloak_id;
+
+		// Get user_id of logged in user
+		const user = await this.userRepository.findOne({
+			where: { sso_id: sso_id },
+		});
+
+		if (!user)
+			return new ErrorResponse({
+				statusCode: HttpStatus.NOT_FOUND,
+				errorMessage: 'User with given sso_id not found',
+			});
+
+		const user_id = user.user_id;
+
+		// Check if document exists or not, if not then send erorr response
+		const existingDoc = await this.userDocsRepository.findOne({
+			where: {
+				doc_id: doc_id,
+			},
+		});
+
+		if (!existingDoc) {
+			Logger.error(`Document with id ${doc_id} does not exists`);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage: `Document with id ${doc_id} does not exists`,
+			});
+		}
+
+		// Check if logged in user is allowed to delete this document or not
+		if (existingDoc.user_id !== user_id)
+			return new ErrorResponse({
+				statusCode: HttpStatus.UNAUTHORIZED,
+				errorMessage:
+					'You are not authorized to modify or delete this resourse',
+			});
+
+		// Delete the document
+		const queryRunner =
+			this.userDocsRepository.manager.connection.createQueryRunner();
+		await queryRunner.connect();
+		try {
+			await queryRunner.startTransaction();
+			await queryRunner.manager.remove(existingDoc);
+			// Reset the field along with deleting the document
+			await this.resetField(existingDoc, queryRunner);
+			await queryRunner.commitTransaction();
+		} catch (error) {
+			Logger.error('Error while deleting the document: ', error);
+			await queryRunner.release();
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: `Error while deleting the document: ${error}`,
+			});
+		} finally {
+			await queryRunner.release();
+		}
+
+		return new SuccessResponse({
+			statusCode: HttpStatus.OK,
+			message: 'Document deleted successfully',
+		});
+	}
+
+	/**
+	 * Fetches a Verifiable Credential JSON from a given URL.
+	 * Handles both dway.io and haqdarshak.com style URLs.
+	 * Follows redirects and appends .vc if needed.
+	 * @param url The URL from the QR code
+	 */
+	async fetchVcJsonFromUrl(url: string): Promise<any> {
+		try {
+			// 1. Follow redirects to get the final URL
+			const response = await axios.get(url, {
+				maxRedirects: 5,
+				validateStatus: (status) => status >= 200 && status < 400, // allow redirects
+			});
+			let finalUrl = response.request?.res?.responseUrl ?? url;
+
+			// 2. If not already ending with .vc, append .vc
+			if (!finalUrl.endsWith('.vc')) {
+				finalUrl = `${finalUrl}.vc`;
+			}
+
+			// 3. Fetch the VC JSON
+			const vcResponse = await axios.get(finalUrl, {
+				headers: { Accept: 'application/json' },
+			});
+
+			return vcResponse.data;
+		} catch (error) {
+			// Handle errors and return a meaningful message
+			if (axios.isAxiosError(error)) {
+				return {
+					error: true,
+					message: error.response?.data ?? error.message,
+					status: error.response?.status ?? 500,
+				};
+			}
+			return {
+				error: true,
+				message: 'Unknown error occurred',
+				status: 500,
+			};
+		}
+	}
+
+	private async verifyVcWithApi(
+		vcData: any,
+	): Promise<{ success: boolean; message?: string; errors?: any[] }> {
+		try {
+			const verificationPayload = {
+				credential: vcData,
+				config: {
+					method: 'online',
+					issuerName: process.env.VC_DEFAULT_ISSUER_NAME ?? 'dhiway',
+				},
+			};
+
+			const verificationUrl = process.env.VC_VERIFICATION_SERVICE_URL;
+			if (!verificationUrl) {
+				return {
+					success: false,
+					message: 'VC_VERIFICATION_SERVICE_URL env variable not set',
+					errors: [],
+				};
+			}
+
+			const response = await axios.post(verificationUrl, verificationPayload, {
+				headers: { 'Content-Type': 'application/json' },
+				timeout: 8000,
+			});
+
+			// Use the API's response format directly
+			return {
+				success: response.data?.success,
+				message: response.data?.message,
+				errors: response.data?.errors,
+			};
+		} catch (error) {
+			Logger.error(
+				'VC Verification error:',
+				error?.response?.data ?? error.message,
+			);
+			return {
+				success: false,
+				message:
+					error?.response?.data?.message ??
+					error.message ??
+					'VC Verification failed',
+				errors: error?.response?.data?.errors,
+			};
+		}
+	}
+
+	async deleteUser(userId: string): Promise<void> {
+		const user = await this.userRepository.findOne({
+			where: { user_id: userId },
+		});
+
+		if (!user) {
+			throw new NotFoundException(`User with ID '${userId}' not found`);
+		}
+
+		await this.userRepository.delete(userId);
+	}
+
+	// Application Status Update Methods (extracted from cron)
+	async getApplications(userId?: string) {
+		try {
+			const whereCondition = {
+				status: Not(In(['amount received', 'rejected', 'disbursed'])),
+				...(userId && { user_id: userId }), // Add user filter when userId provided
+			};
+
+			const applications = await this.userApplicationRepository.find({
+				where: whereCondition,
+			});
+
+			return applications;
+		} catch (error) {
+			Logger.error(`Error while getting user applications: ${error}`);
+			return [];
+		}
+	}
+
+	async updateStatus(
+		application: any,
+		statusData: { status: string; comment: string },
+	) {
+		try {
+			if (!statusData?.status) return;
+
+			application.status = statusData.status.toLowerCase(); // e.g., "approved"
+			application.remark = statusData.comment || ''; // Save the comment
+
+			const queryRunner =
+				this.userApplicationRepository.manager.connection.createQueryRunner();
+			await queryRunner.connect();
+			try {
+				await queryRunner.startTransaction();
+				await queryRunner.manager.save(application);
+				await queryRunner.commitTransaction();
+			} catch (error) {
+				await queryRunner.rollbackTransaction();
+				Logger.error(`Error in query runner: ${error}`);
+			} finally {
+				await queryRunner.release();
+			}
+		} catch (error) {
+			Logger.error(`Error while updating application status: ${error}`);
+		}
+	}
+
+	async getStatus(orderId: string) {
+		const body = {
+			context: {
+				domain: 'onest:financial-support',
+				action: 'status',
+				timestamp: new Date().toISOString(),
+				ttl: 'PT10M',
+				version: '1.1.0',
+				bap_id: this.configService.get<string>('BAP_ID'),
+				bap_uri: this.configService.get<string>('BAP_URI'),
+				bpp_id: this.configService.get<string>('BPP_ID'),
+				bpp_uri: this.configService.get<string>('BPP_URI'),
+				transaction_id: uuidv4(),
+				message_id: uuidv4(),
+			},
+			message: {
+				order_id: orderId,
+			},
+		};
+
+		const response = await this.proxyService.bapCLientApi2('status', body);
+
+		try {
+			const rawStatus =
+				response?.responses[0]?.message?.order?.fulfillments[0]?.state
+					?.descriptor?.name;
+
+			if (!rawStatus) return null;
+
+			// Parse status stringified JSON
+			const parsedStatus = JSON.parse(rawStatus);
+			return parsedStatus; // { status: '...', comment: '...' }
+		} catch (error) {
+			console.error(`Error while getting status from response: ${error}`);
+			throw new Error('Error while getting status from response');
+		}
+	}
+
+	async processApplications(applications: any) {
+		try {
+			await Promise.all(
+				applications.map(async (application: any) => {
+					const statusData = await this.getStatus(
+						application.external_application_id,
+					);
+					await this.updateStatus(application, statusData);
+				}),
+			);
+		} catch (error) {
+			Logger.error(`Error while processing applications: ${error}`);
+		}
+	}
+
+	async processApplicationStatusUpdates(userId?: string) {
+		try {
+			Logger.log(
+				`Starting processApplicationStatusUpdates${userId ? ` for user ${userId}` : ' for all applications'}`,
+			);
+
+			// Get user application records from database
+			const applications = await this.getApplications(userId);
+			Logger.log(`Found ${applications.length} applications to process`);
+
+			if (applications.length === 0) {
+				Logger.log('No applications found matching criteria');
+				return new SuccessResponse({
+					statusCode: HttpStatus.OK,
+					message: userId
+						? `No applications found for user ${userId}`
+						: 'No applications found matching criteria',
+					data: { processedCount: 0 },
+				});
+			}
+
+			// Update status of each application
+			await this.processApplications(applications);
+			Logger.log(`Successfully processed ${applications.length} applications`);
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: userId
+					? `Application status updated successfully for user ${userId}`
+					: 'Application status updated successfully for all eligible applications',
+				data: { processedCount: applications.length },
+			});
+		} catch (error) {
+			Logger.error(`Error in 'processApplicationStatusUpdates': ${error}`);
+			throw new InternalServerErrorException(
+				'Failed to update application status',
+			);
+		}
+	}
+
+	async processApplicationStatusUpdatesForAuthenticatedUser(req: any) {
+		try {
+			const sso_id = req?.user?.keycloak_id;
+			if (!sso_id) {
+				return new ErrorResponse({
+					statusCode: HttpStatus.UNAUTHORIZED,
+					errorMessage: 'Invalid or missing Keycloak ID',
+				});
+			}
+
+			const userDetails = await this.userRepository.findOne({
+				where: { sso_id },
+			});
+
+			if (!userDetails) {
+				return new ErrorResponse({
+					statusCode: HttpStatus.NOT_FOUND,
+					errorMessage: `User with ID '${sso_id}' not found`,
+				});
+			}
+
+			// Call the existing method with the user_id from the token
+			return await this.processApplicationStatusUpdates(userDetails.user_id);
+		} catch (error) {
+			Logger.error(
+				`Error in 'processApplicationStatusUpdatesForAuthenticatedUser': ${error}`,
+			);
+			throw new InternalServerErrorException(
+				'Failed to update application status',
+			);
+		}
+	}
 }
