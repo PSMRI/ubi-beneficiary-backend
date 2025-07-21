@@ -340,7 +340,7 @@ export class HasuraService {
 
     try {
       const response = await this.queryDb(query, { itemId });
-      console.log(`Deleted item with item_id: ${itemId}`);
+      this.logger.log(`Deleted item with item_id: ${itemId}`);
       return response;
     } catch (error) {
       console.log('Error deleting item by item ID:', error);
