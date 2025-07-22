@@ -1,10 +1,11 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { ErrorResponse } from 'src/common/responses/error-response';
 import { SuccessResponse } from 'src/common/responses/success-response';
 
 @Injectable()
 export class HasuraService {
+  private readonly logger = new Logger(HasuraService.name);
   private readonly adminSecretKey = process.env.HASURA_GRAPHQL_ADMIN_SECRET;
   private readonly cache_db = process.env.CACHE_DB;
   private readonly response_cache_db = process.env.RESPONSE_CACHE_DB;
@@ -281,8 +282,7 @@ export class HasuraService {
   }
 
   async insertCacheData(arrayOfObjects) {
-    console.log('inserting jobs into ' + this.cache_db);
-    console.log('arrayOfObjects', arrayOfObjects);
+    
     // $provider_id: String, provider_name: String, bpp_id: String, bpp_uri: String
     // provider_id: $provider_id, provider_name: $provider_name, bpp_id: $bpp_id, bpp_uri: $bpp_uri
     const query = `mutation MyMutation($title: String, $description: String, $url: String, $provider_name: String, $enrollmentEndDate: timestamptz, $bpp_id: String, $unique_id: String, $bpp_uri: String, $item_id: String, $offeringInstitute: jsonb, $credits: String, $instructors: String,$provider_id: String, $item: json, $descriptor: json, $categories: json, $fulfillments: json) { 
@@ -295,21 +295,52 @@ export class HasuraService {
         }
         `;
 
-    let promises = [];
-    arrayOfObjects.forEach((item) => {
-      promises.push(this.queryDb(query, item));
-    });
+    let insertApiRes = [];
+    for (const item of arrayOfObjects) {
+      try {  
+        // First check if item exists and delete it
+        if (item.item_id) {
+          await this.deleteItemByItemId(item.item_id);
+        }
+        
+        // Then insert the new item
+        const insertResult = await this.queryDb(query, item);
+     
+        
+        if (insertResult.errors) {
+          insertApiRes.push({ error: insertResult.errors, item_id: item.item_id });
+        } else {
+          insertApiRes.push(insertResult);
+        }
+      } catch (error) {
+     
+        insertApiRes.push({ error: error.message, item_id: item.item_id });
+      }
+    }
 
-    let insertApiRes = await Promise.all(promises);
-    console.log('insertApiRes', insertApiRes);
     return insertApiRes;
+  }
 
-    // try {
-    //   const response = await this.queryDb(query, filteredArray[0] );
-    //   return response
-    // } catch (error) {
-    //   throw new HttpException('Failed to create Content', HttpStatus.NOT_FOUND);
-    // }
+  async deleteItemByItemId(itemId: string): Promise<any> {
+    const query = `mutation MyMutation($itemId: String!) {
+      delete_${this.cache_db}(where: {item_id: {_eq: $itemId}}) {
+        affected_rows
+        returning {
+          id
+          item_id
+          title
+        }
+      }
+    }`;
+
+    try {
+      const response = await this.queryDb(query, { itemId });
+      this.logger.log(`Deleted item with item_id: ${itemId}`);
+      return response;
+    } catch (error) {
+      console.log('Error deleting item by item ID:', error);
+      throw error;
+    }
   }
 
   async queryDb(query: string, variables?: Record<string, any>): Promise<any> {
