@@ -65,6 +65,7 @@ export class FieldValue {
 	 * The field value
 	 * @description The actual value stored for this field instance
 	 * Type depends on the field type - stored as text but can be JSON for complex types
+	 * For encrypted fields, this contains the encrypted value
 	 */
 	@ApiProperty({
 		description: 'The field value',
@@ -212,6 +213,14 @@ export class FieldValue {
 	}
 
 	/**
+	 * Set encrypted value (used by service layer)
+	 * @param encryptedValue The encrypted value to store
+	 */
+	setEncryptedValue(encryptedValue: string): void {
+		this.value = encryptedValue;
+	}
+
+	/**
 	 * Check if value is empty
 	 * @returns true if value is empty or null
 	 */
@@ -231,6 +240,12 @@ export class FieldValue {
 		// Check required field
 		if (this.field.isRequired && this.isEmpty()) {
 			return false;
+		}
+
+		// For encrypted fields, validation is handled by the encryption service
+		// This method is kept for backward compatibility with non-encrypted fields
+		if (this.field.isEncrypted()) {
+			return true; // Validation handled by encryption service
 		}
 
 		// Check field-specific validation

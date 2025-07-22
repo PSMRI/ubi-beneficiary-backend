@@ -15,6 +15,7 @@ import { UpdateFieldDto } from './dto/update-field.dto';
 import { CustomFieldDto, CustomFieldResponseDto } from './dto/custom-field.dto';
 import { QueryFieldsDto } from './dto/query-fields.dto';
 import { AdminService } from '../admin/admin.service';
+import { FieldEncryptionService } from './helpers/field-encryption.service';
 
 /**
  * Service for managing custom fields and field values
@@ -31,7 +32,8 @@ export class CustomFieldsService {
 		@InjectRepository(FieldValue)
 		private readonly fieldValueRepository: Repository<FieldValue>,
 		private readonly dataSource: DataSource,
-		private readonly adminService: AdminService
+		private readonly adminService: AdminService,
+		private readonly fieldEncryptionService: FieldEncryptionService
 	) { }
 
 	/**
@@ -146,6 +148,25 @@ export class CustomFieldsService {
 			if (existingField && existingField.fieldId !== fieldId) {
 				throw new ConflictException(
 					`Field with name "${updateFieldDto.name}" already exists in context "${field.context}"`
+				);
+			}
+		}
+
+		// Handle encryption changes through FieldEncryptionService
+		if (updateFieldDto.fieldAttributes?.isEncrypted !== undefined) {
+			const existingValuesCount = await this.fieldValueRepository.count({
+				where: { fieldId },
+			});
+
+			if (updateFieldDto.fieldAttributes.isEncrypted && !field.isEncrypted()) {
+				if (existingValuesCount > 0) {
+					throw new BadRequestException(
+						`Cannot enable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
+					);
+				}
+			} else if (!updateFieldDto.fieldAttributes.isEncrypted && field.isEncrypted()) {
+				throw new BadRequestException(
+					`Cannot disable encryption for field '${field.name}'. Once enabled, encryption cannot be disabled.`
 				);
 			}
 		}
@@ -290,13 +311,19 @@ export class CustomFieldsService {
 			}
 
 			fieldValue.field = field;
-			fieldValue.setValue(customField.value);
 			fieldValue.metadata = customField.metadata;
 
-			if (!fieldValue.isValid()) {
-				throw new BadRequestException(
-					`Invalid value for field "${field.name}": ${customField.value}`
-				);
+			// Handle value setting (encryption is handled automatically by FieldEncryptionService)
+			if (field.isEncrypted()) {
+				const encryptedValue = this.fieldEncryptionService.encryptFieldValue(customField.value, field);
+				fieldValue.setEncryptedValue(encryptedValue);
+			} else {
+				fieldValue.setValue(customField.value);
+				if (!fieldValue.isValid()) {
+					throw new BadRequestException(
+						`Invalid value for field "${field.name}": ${customField.value}`
+					);
+				}
 			}
 
 			const savedValue = await this.fieldValueRepository.save(fieldValue);
@@ -355,12 +382,20 @@ export class CustomFieldsService {
 		for (const field of allFields) {
 			const fieldValue = fieldValueMap.get(field.fieldId);
 
+			// Get value (decryption handled by FieldEncryptionService)
+			let decryptedValue = null;
+			if (fieldValue) {
+				decryptedValue = field.isEncrypted() 
+					? this.fieldEncryptionService.decryptFieldValue(fieldValue.value, field)
+					: fieldValue.getParsedValue();
+			}
+
 			const response: CustomFieldResponseDto = {
 				fieldId: field.fieldId,
 				name: field.name,
 				label: field.label,
 				type: field.type,
-				value: fieldValue ? fieldValue.getParsedValue() : null,
+				value: decryptedValue,
 				fieldParams: field.fieldParams,
 				fieldAttributes: field.fieldAttributes,
 				metadata: fieldValue?.metadata || null,
