@@ -282,6 +282,16 @@ export class HasuraService {
   }
 
   async insertCacheData(arrayOfObjects) {
+    this.logger.log(`Starting cache refresh: deleting all existing records and inserting ${arrayOfObjects.length} new records`);
+    
+    // First delete all existing records
+    try {
+      await this.deleteJobs();
+      this.logger.log('Successfully deleted all existing records');
+    } catch (error) {
+      this.logger.error('Error deleting existing records:', error);
+      throw error;
+    }
     
     // $provider_id: String, provider_name: String, bpp_id: String, bpp_uri: String
     // provider_id: $provider_id, provider_name: $provider_name, bpp_id: $bpp_id, bpp_uri: $bpp_uri
@@ -298,15 +308,7 @@ export class HasuraService {
     let insertApiRes = [];
     for (const item of arrayOfObjects) {
       try {  
-        // First check if item exists and delete it
-        if (item.item_id) {
-          await this.deleteItemByItemId(item.item_id);
-        }
-        
-        // Then insert the new item
         const insertResult = await this.queryDb(query, item);
-     
-        
         if (insertResult.errors) {
           insertApiRes.push({ error: insertResult.errors, item_id: item.item_id });
         } else {
@@ -318,29 +320,8 @@ export class HasuraService {
       }
     }
 
+    this.logger.log(`Cache refresh completed: inserted ${insertApiRes.length} records`);
     return insertApiRes;
-  }
-
-  async deleteItemByItemId(itemId: string): Promise<any> {
-    const query = `mutation MyMutation($itemId: String!) {
-      delete_${this.cache_db}(where: {item_id: {_eq: $itemId}}) {
-        affected_rows
-        returning {
-          id
-          item_id
-          title
-        }
-      }
-    }`;
-
-    try {
-      const response = await this.queryDb(query, { itemId });
-      this.logger.log(`Deleted item with item_id: ${itemId}`);
-      return response;
-    } catch (error) {
-      console.log('Error deleting item by item ID:', error);
-      throw error;
-    }
   }
 
   async queryDb(query: string, variables?: Record<string, any>): Promise<any> {
@@ -435,8 +416,11 @@ export class HasuraService {
           }
         `;
     try {
-      return await this.queryDb(query);
+      const result = await this.queryDb(query);
+      this.logger.log(`Deleted ${result.data.delete_ubi_network_cache.affected_rows} records from cache`);
+      return result;
     } catch (error) {
+      this.logger.error('Error deleting all jobs:', error);
       throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
     }
   }
