@@ -32,10 +32,10 @@ export class AuthService {
   public async login(body: LoginDTO) {
 
     const token = await this.keycloakService.getUserKeycloakToken(body);
+    
     if (token) {
       // First try to get Keycloak user details
       const keycloakUser = await this.keycloakService.getUserByUsername(body.username);
-      
       if (keycloakUser?.user?.id) {
         // Try to find user by Keycloak ID (sso_id)
         const user = await this.userService.findBySsoId(keycloakUser.user.id);
