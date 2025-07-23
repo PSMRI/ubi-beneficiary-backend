@@ -260,7 +260,7 @@ export class ContentService {
 		};
 
 		try {
-			const response = await this.proxyService.bapCLientApi2('search', data);
+			const response = await this.proxyService.bapCLientApi2('search', data);	
 			if (response) {
 				const arrayOfObjects = [];
 				for (const responses of response.responses) {
