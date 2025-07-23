@@ -425,7 +425,9 @@ export class FieldValidationService {
 	 * @returns true if email is valid
 	 */
 	private isValidEmail(email: string): boolean {
-		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+		// Use a more efficient regex that avoids catastrophic backtracking
+		// This pattern is more restrictive but safe from ReDoS attacks
+		const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 		return emailRegex.test(email);
 	}
 
