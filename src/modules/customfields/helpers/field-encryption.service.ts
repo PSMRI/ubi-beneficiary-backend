@@ -2,8 +2,6 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EncryptionService } from '../../../common/helper/encryptionService';
 import { Field, FieldType } from '../entities/field.entity';
-import { FieldValue } from '../entities/field-value.entity';
-
 /**
  * Service for handling encryption and decryption of custom field values
  * @description Provides transparent encryption/decryption for sensitive field values
@@ -178,11 +176,13 @@ export class FieldEncryptionService {
 
 			case FieldType.DATE:
 			case FieldType.DATETIME:
-				const date = new Date(value);
-				if (isNaN(date.getTime())) {
-					throw new BadRequestException(`Value must be a valid date for field type ${fieldType}`);
+				{
+					const date = new Date(value);
+					if (isNaN(date.getTime())) {
+						throw new BadRequestException(`Value must be a valid date for field type ${fieldType}`);
+					}
+					break;
 				}
-				break;
 
 			case FieldType.CHECKBOX:
 				if (typeof value !== 'boolean' && !['true', 'false', '0', '1'].includes(String(value).toLowerCase())) {
@@ -196,6 +196,7 @@ export class FieldEncryptionService {
 				try {
 					JSON.stringify(value);
 				} catch (error) {
+					this.logger.error(`Invalid JSON value for field type ${fieldType}: ${error.message}`);
 					throw new BadRequestException(`Value must be valid JSON for field type ${fieldType}`);
 				}
 				break;

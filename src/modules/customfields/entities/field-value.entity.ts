@@ -242,12 +242,6 @@ export class FieldValue {
 			return false;
 		}
 
-		// For encrypted fields, validation is handled by the encryption service
-		// This method is kept for backward compatibility with non-encrypted fields
-		if (this.field.isEncrypted()) {
-			return true; // Validation handled by encryption service
-		}
-
 		// Check field-specific validation
 		const fieldParams = this.field.fieldParams;
 		if (fieldParams?.validation) {
@@ -302,6 +296,10 @@ export class FieldValue {
 			if (!validOptions.includes(this.value)) {
 				return false;
 			}
+		}
+
+		if (this.field.isEncrypted()) {
+			return true;
 		}
 
 		return true;
