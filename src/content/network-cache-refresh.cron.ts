@@ -57,10 +57,11 @@ export class NetworkCacheRefreshCron {
     };
   }
 
-  @Cron(process.env.NETWORK_CACHE_REFRESH_CRON_TIME ?? '*/10 * * * *')
+  @Cron(process.env.NETWORK_CACHE_REFRESH_CRON_TIME || '*/10 * * * *')
   async refreshNetworkCache() {
     try {
       this.logger.log('Network Cache Refresh CRON started at ' + new Date().toISOString());
+
       // Use ContentService to process and insert jobs
       await this.contentService.jobsApiCall();
       
