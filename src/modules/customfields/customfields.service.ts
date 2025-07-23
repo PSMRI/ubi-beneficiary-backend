@@ -315,25 +315,21 @@ export class CustomFieldsService {
 			fieldValue.field = field;
 			fieldValue.metadata = customField.metadata;
 
-			// Handle value setting (encryption is handled automatically by FieldEncryptionService)
+			// Always validate first using centralized validation service
+			const validationResult = this.fieldValidationService.validateFieldValue(
+				customField.value,
+				field,
+				true // Throw exception on validation error
+			);
+
+			// Handle value setting using centralized serialization
 			if (field.isEncrypted()) {
 				const encryptedValue = this.fieldEncryptionService.encryptFieldValue(customField.value, field);
 				fieldValue.setEncryptedValue(encryptedValue);
 			} else {
-				fieldValue.setValue(customField.value);
-				
-				// Use centralized validation service
-				const validationResult = this.fieldValidationService.validateFieldValue(
-					customField.value, 
-					field, 
-					false
-				);
-				
-				if (!validationResult.isValid) {
-					throw new BadRequestException(
-						`Invalid value for field "${field.name}": ${validationResult.errors.join('; ')}`
-					);
-				}
+				// Use centralized serialization instead of entity's setValue method
+				const serializedValue = this.fieldValidationService.serializeValue(customField.value, field.type);
+				fieldValue.value = serializedValue;
 			}
 
 			const savedValue = await this.fieldValueRepository.save(fieldValue);
@@ -392,12 +388,12 @@ export class CustomFieldsService {
 		for (const field of allFields) {
 			const fieldValue = fieldValueMap.get(field.fieldId);
 
-			// Get value (decryption handled by FieldEncryptionService)
+			// Get value using centralized deserialization
 			let decryptedValue = null;
 			if (fieldValue) {
 				decryptedValue = field.isEncrypted() 
 					? this.fieldEncryptionService.decryptFieldValue(fieldValue.value, field)
-					: fieldValue.getParsedValue();
+					: this.fieldValidationService.deserializeValue(fieldValue.value, field.type);
 			}
 
 			const response: CustomFieldResponseDto = {

@@ -138,6 +138,9 @@ export class FieldValue {
 			return this.value;
 		}
 
+		// Use centralized deserialization from FieldValidationService
+		// Note: This method is used by the entity itself, so we can't inject the service
+		// The service layer should use FieldValidationService.deserializeValue() instead
 		switch (this.field.type) {
 			case 'numeric':
 			case 'currency':
@@ -180,6 +183,8 @@ export class FieldValue {
 			return;
 		}
 
+		// Use centralized serialization logic (duplicated here for entity independence)
+		// The service layer should use FieldValidationService.serializeValue() instead
 		switch (this.field.type) {
 			case 'multi_select':
 			case 'json':
@@ -230,95 +235,16 @@ export class FieldValue {
 
 	/**
 	 * Validate value against field constraints
-	 * @param validationService Optional validation service instance
+	 * @param validationService Validation service instance (required)
 	 * @returns true if value is valid
 	 */
-	isValid(validationService?: any): boolean {
-		if (!this.field) {
+	isValid(validationService: any): boolean {
+		if (!this.field || !validationService) {
 			return true;
 		}
 
-		// Use validation service if provided
-		if (validationService) {
-			const result = validationService.validateFieldValue(this.getParsedValue(), this.field);
-			return result.isValid;
-		}
-
-		// Fallback to basic validation for backward compatibility
-		if (!this.checkRequired()) {
-			return false;
-		}
-
-		// Skip validation for encrypted fields as they are validated before encryption
-		if (this.field.isEncrypted()) {
-			return true;
-		}
-
-		const fieldParams = this.field.fieldParams;
-		if (fieldParams?.validation && !this.checkValidation(fieldParams.validation)) {
-			return false;
-		}
-
-		if (
-			(this.field.type === 'drop_down' || this.field.type === 'radio') &&
-			fieldParams?.options &&
-			!this.checkOptions(fieldParams.options)
-		) {
-			return false;
-		}
-
-		return true;
-	}
-
-	private checkRequired(): boolean {
-		if (this.field.isRequired && this.isEmpty()) {
-			return false;
-		}
-		return true;
-	}
-
-	private checkValidation(validation: any): boolean {
-		if (validation.regex && this.value) {
-			const regex = new RegExp(validation.regex);
-			if (!regex.test(this.value)) {
-				return false;
-			}
-		}
-
-		if (
-			validation.minLength &&
-			this.value &&
-			this.value.length < validation.minLength
-		) {
-			return false;
-		}
-		if (
-			validation.maxLength &&
-			this.value &&
-			this.value.length > validation.maxLength
-		) {
-			return false;
-		}
-
-		if (
-			this.field.type === 'numeric' ||
-			this.field.type === 'currency' ||
-			this.field.type === 'percent'
-		) {
-			const numValue = parseFloat(this.value);
-			if (validation.min !== undefined && numValue < validation.min) {
-				return false;
-			}
-			if (validation.max !== undefined && numValue > validation.max) {
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	private checkOptions(options: any[]): boolean {
-		const validOptions = options.map((opt) => opt.value);
-		return validOptions.includes(this.value);
+		// Always use the centralized validation service
+		const result = validationService.validateFieldValue(this.getParsedValue(), this.field);
+		return result.isValid;
 	}
 }

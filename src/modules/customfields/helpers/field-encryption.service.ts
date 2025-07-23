@@ -22,7 +22,7 @@ export class FieldEncryptionService {
 
 	/**
 	 * Encrypt a field value if the field is configured for encryption
-	 * @param value The value to encrypt
+	 * @param value The value to encrypt (assumed to be already validated)
 	 * @param field The field definition
 	 * @returns Encrypted value as string, or original value if encryption is not enabled
 	 */
@@ -32,10 +32,7 @@ export class FieldEncryptionService {
 		}
 
 		try {
-			// Validate the value using centralized validation service
-			this.fieldValidationService.validateFieldValue(value, field, true);
-			
-			// Serialize the value according to field type
+			// Serialize the value according to field type (validation already done in service layer)
 			const serializedValue = this.fieldValidationService.serializeValue(value, field.type);
 			
 			// Encrypt the serialized value
