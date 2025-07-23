@@ -217,17 +217,17 @@ export class UserController {
     return await this.userService.fetchVcJsonFromUrl(fetchVcUrlDto.url);
   }
 
-  @Post('/applications/update-status/:user_id')
+  @Post('/applications/update-status')
   @UseGuards(AuthGuard)
-  @ApiOperation({ summary: 'Update application statuses for a specific user' })
+  @ApiOperation({ summary: 'Update application statuses for the authenticated user' })
   @ApiResponse({ status: 200, description: 'Application statuses updated successfully' })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
   async updateApplicationStatus(
-    @Param('user_id', new ParseUUIDPipe()) userId: string,
+    @Req() req: Request,
   ) {
     try {
-      const result = await this.userService.updateApplicationStatuses(userId);
+      const result = await this.userService.updateApplicationStatuses(req);
       return {
         statusCode: HttpStatus.OK,
         message: result.message,
