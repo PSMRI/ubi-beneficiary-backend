@@ -16,6 +16,7 @@ import { CustomFieldDto, CustomFieldResponseDto } from './dto/custom-field.dto';
 import { QueryFieldsDto } from './dto/query-fields.dto';
 import { AdminService } from '../admin/admin.service';
 import { FieldEncryptionService } from './helpers/field-encryption.service';
+import { FieldValidationService } from './helpers/field-validation.service';
 
 /**
  * Service for managing custom fields and field values
@@ -33,7 +34,8 @@ export class CustomFieldsService {
 		private readonly fieldValueRepository: Repository<FieldValue>,
 		private readonly dataSource: DataSource,
 		private readonly adminService: AdminService,
-		private readonly fieldEncryptionService: FieldEncryptionService
+		private readonly fieldEncryptionService: FieldEncryptionService,
+		private readonly fieldValidationService: FieldValidationService,
 	) { }
 
 	/**
@@ -319,9 +321,17 @@ export class CustomFieldsService {
 				fieldValue.setEncryptedValue(encryptedValue);
 			} else {
 				fieldValue.setValue(customField.value);
-				if (!fieldValue.isValid()) {
+				
+				// Use centralized validation service
+				const validationResult = this.fieldValidationService.validateFieldValue(
+					customField.value, 
+					field, 
+					false
+				);
+				
+				if (!validationResult.isValid) {
 					throw new BadRequestException(
-						`Invalid value for field "${field.name}": ${customField.value}`
+						`Invalid value for field "${field.name}": ${validationResult.errors.join('; ')}`
 					);
 				}
 			}
