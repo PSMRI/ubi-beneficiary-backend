@@ -316,7 +316,7 @@ export class CustomFieldsService {
 			fieldValue.metadata = customField.metadata;
 
 			// Always validate first using centralized validation service
-			const validationResult = this.fieldValidationService.validateFieldValue(
+			this.fieldValidationService.validateFieldValue(
 				customField.value,
 				field,
 				true // Throw exception on validation error
