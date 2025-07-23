@@ -44,7 +44,7 @@ export class FieldEncryptionService {
 			this.logger.debug(`Encrypted value for field ${field.name} (${field.fieldId})`);
 			return encryptedValue;
 		} catch (error) {
-			this.logger.error(`Failed to encrypt value for field ${field.name}: ${error.message}`);
+			this.logger.error(`Failed to encrypt value for field ${field.name}: ${error.message}`, error.stack);
 			throw new BadRequestException(`Failed to encrypt field value: ${error.message}`);
 		}
 	}
@@ -74,7 +74,7 @@ export class FieldEncryptionService {
 			this.logger.debug(`Decrypted value for field ${field.name} (${field.fieldId})`);
 			return parsedValue;
 		} catch (error) {
-			this.logger.error(`Failed to decrypt value for field ${field.name}: ${error.message}`);
+			this.logger.error(`Failed to decrypt value for field ${field.name}: ${error.message}`, error.stack);
 			throw new BadRequestException(`Failed to decrypt field value: ${error.message}`);
 		}
 	}
