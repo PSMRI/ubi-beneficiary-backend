@@ -247,6 +247,16 @@ export class ContentService {
 				transaction_id: uuidv4(),
 				message_id: uuidv4(),
 				timestamp: new Date().toISOString(),
+				location: {
+					country: {
+						name: 'India',
+						code: 'IND',
+					},
+					city: {
+						name: 'Bangalore',
+						code: 'std:080',
+					},
+				},
 			},
 			message: {
 				intent: {
@@ -260,7 +270,7 @@ export class ContentService {
 		};
 
 		try {
-			const response = await this.proxyService.bapCLientApi2('search', data);
+			const response = await this.proxyService.bapCLientApi2('search', data);	
 			if (response) {
 				const arrayOfObjects = [];
 				for (const responses of response.responses) {
