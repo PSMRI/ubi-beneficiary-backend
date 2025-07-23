@@ -1062,7 +1062,7 @@ export class UserService {
   async getStatus(orderId: string) {
     const body = {
       context: {
-        domain: 'onest:financial-support',
+        domain: this.configService.get<string>('DOMAIN'),
         action: 'status',
         timestamp: new Date().toISOString(),
         ttl: 'PT10M',
@@ -1073,6 +1073,16 @@ export class UserService {
         bpp_uri: this.configService.get<string>('BPP_URI'),
         transaction_id: uuidv4(),
         message_id: uuidv4(),
+        location: {
+					country: {
+						name: 'India',
+						code: 'IND',
+					},
+					city: {
+						name: 'Bangalore',
+						code: 'std:080',
+					},
+				},
       },
       message: {
         order_id: orderId,
@@ -1112,8 +1122,28 @@ export class UserService {
     }
   }
 
-  async updateApplicationStatuses(userId?: string) {
+  async updateApplicationStatuses(req?: any) {
     try {
+      let userId: string | undefined;
+      
+      // If req is provided, extract user_id from token
+      if (req) {
+        const sso_id = req?.user?.keycloak_id;
+        if (!sso_id) {
+          throw new UnauthorizedException('Invalid or missing Keycloak ID');
+        }
+
+        const userDetails = await this.userRepository.findOne({
+          where: { sso_id },
+        });
+
+        if (!userDetails) {
+          throw new NotFoundException(`User with ID '${sso_id}' not found`);
+        }
+
+        userId = userDetails.user_id;
+      }
+
       // Get user application records from database
       const applications = await this.getApplications(userId);
 
