@@ -13,6 +13,7 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
   Logger,
+  HttpStatus,
 } from '@nestjs/common';
 import { UserService } from '../users/users.service';
 import {
@@ -214,5 +215,32 @@ export class UserController {
   @ApiResponse({ status: 400, description: 'Invalid URL or unable to fetch VC JSON' })
   async fetchVcJson(@Body() fetchVcUrlDto: FetchVcUrlDto) {
     return await this.userService.fetchVcJsonFromUrl(fetchVcUrlDto.url);
+  }
+
+  @Post('/applications/update-status/:user_id')
+  @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Update application statuses for a specific user' })
+  @ApiResponse({ status: 200, description: 'Application statuses updated successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async updateApplicationStatus(
+    @Param('user_id', new ParseUUIDPipe()) userId: string,
+  ) {
+    try {
+      const result = await this.userService.updateApplicationStatuses(userId);
+      return {
+        statusCode: HttpStatus.OK,
+        message: result.message,
+        data: {
+          success: result.success,
+          processedCount: result.processedCount,
+        },
+      };
+    } catch (error) {
+      Logger.error('Failed to update application statuses:', error);
+      throw new InternalServerErrorException(
+        'An error occurred while updating application statuses',
+      );
+    }
   }
 }
