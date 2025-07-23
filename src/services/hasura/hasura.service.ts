@@ -285,12 +285,14 @@ export class HasuraService {
     this.logger.log(`Starting cache refresh: deleting all existing records and inserting ${arrayOfObjects.length} new records`);
     
     // First delete all existing records
-    try {
-      await this.deleteJobs();
-      this.logger.log('Successfully deleted all existing records');
-    } catch (error) {
-      this.logger.error('Error deleting existing records:', error);
-      throw error;
+    if(arrayOfObjects.length > 0){
+      try {
+        await this.deleteJobs();
+        this.logger.log('Successfully deleted all existing records');
+      } catch (error) {
+        this.logger.error('Error deleting existing records:', error);
+        throw error;
+      }
     }
     
     // $provider_id: String, provider_name: String, bpp_id: String, bpp_uri: String
