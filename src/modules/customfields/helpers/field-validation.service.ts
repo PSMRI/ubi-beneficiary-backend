@@ -217,6 +217,7 @@ export class FieldValidationService {
 			}
 			return null;
 		} catch {
+			// JSON parsing failed
 			return `Value must be valid JSON for field type ${fieldType}`;
 		}
 	}
