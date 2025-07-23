@@ -8,7 +8,7 @@ export class ApplicationStatusUpdate {
 		private readonly userService: UserService,
 	) {}
 
-	@Cron('*/1 * * * *')
+	@Cron('*/15 * * * *')
 	async updateApplicationStatusCron() {
 		try {
 			Logger.log('Starting application status update cron job');
