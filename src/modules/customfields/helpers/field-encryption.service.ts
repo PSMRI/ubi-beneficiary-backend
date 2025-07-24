@@ -97,10 +97,20 @@ export class FieldEncryptionService {
 	/**
 	 * Check if a field can have encryption disabled
 	 * @param field The field to check
+	 * @param hasExistingValues Whether the field has existing values
 	 * @returns true if encryption can be disabled
 	 */
-	canDisableEncryption(field: Field): boolean {
-		// Encryption cannot be disabled once enabled (for security reasons)
-		return !field.isEncrypted();
+	canDisableEncryption(field: Field, hasExistingValues: boolean): boolean {
+		// Encryption can only be disabled if the field is currently encrypted
+		if (!field.isEncrypted()) {
+			return false; // Not encrypted, so nothing to disable
+		}
+
+		// Encryption can only be disabled if there are no existing values
+		if (hasExistingValues) {
+			return false; // Cannot disable encryption for fields with existing values
+		}
+
+		return true; // Can disable encryption if no existing values
 	}
 }

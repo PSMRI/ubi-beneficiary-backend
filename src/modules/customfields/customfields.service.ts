@@ -161,15 +161,25 @@ export class CustomFieldsService {
 			});
 
 			if (updateFieldDto.fieldAttributes.isEncrypted && !field.isEncrypted()) {
-				if (existingValuesCount > 0) {
+				// Enabling encryption
+				if (!this.fieldEncryptionService.canEnableEncryption(field, existingValuesCount > 0)) {
 					throw new BadRequestException(
 						`Cannot enable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
 					);
 				}
 			} else if (!updateFieldDto.fieldAttributes.isEncrypted && field.isEncrypted()) {
-				throw new BadRequestException(
-					`Cannot disable encryption for field '${field.name}'. Once enabled, encryption cannot be disabled.`
-				);
+				// Disabling encryption
+				if (!this.fieldEncryptionService.canDisableEncryption(field, existingValuesCount > 0)) {
+					if (existingValuesCount > 0) {
+						throw new BadRequestException(
+							`Cannot disable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
+						);
+					} else {
+						throw new BadRequestException(
+							`Cannot disable encryption for field '${field.name}'. Field is not currently encrypted.`
+						);
+					}
+				}
 			}
 		}
 
@@ -545,4 +555,6 @@ export class CustomFieldsService {
 	async getFieldByName(name: string, context: FieldContext): Promise<Field> {
 		return await this.fieldRepository.findOne({ where: { name, context } });
 	}
+
+
 }
