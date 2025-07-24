@@ -237,7 +237,12 @@ export class UserController {
         },
       };
     } catch (error) {
-      Logger.error('Failed to update application statuses:', error);
+      Logger.error(
+        'Failed to update application statuses',
+        error.stack || error.toString(),
+        'UserController',
+        'updateApplicationStatus',
+      );
       throw new InternalServerErrorException(
         'An error occurred while updating application statuses',
       );
