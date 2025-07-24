@@ -49,6 +49,7 @@ export class UserService {
     private readonly proxyService: ProxyService,
   ) { }
 
+
   async create(createUserDto: CreateUserDto) {
     const user = this.userRepository.create(createUserDto);
     try {
@@ -1027,7 +1028,7 @@ export class UserService {
       return applications;
     } catch (error) {
       Logger.error(`Error while getting user applications: ${error}`);
-      return [];
+      throw new InternalServerErrorException(  'Failed to fetch user applications');
     }
   }
 
@@ -1051,6 +1052,7 @@ export class UserService {
       } catch (error) {
         await queryRunner.rollbackTransaction();
         Logger.error(`Error in query runner: ${error}`);
+        throw new Error('Error in query runner');
       } finally {
         await queryRunner.release();
       }
@@ -1060,6 +1062,14 @@ export class UserService {
   }
 
   async getStatus(orderId: string) {
+    const bapId = this.configService.get<string>('BAP_ID'); 
+    const bapUri = this.configService.get<string>('BAP_URI'); 
+    const bppId = this.configService.get<string>('BPP_ID');  
+    const bppUri = this.configService.get<string>('BPP_URI'); 
+    if (!bapId || !bapUri || !bppId || !bppUri) {  
+      throw new Error('Missing required configuration for BAP/BPP');
+    }
+    
     const body = {
       context: {
         domain: this.configService.get<string>('DOMAIN'),
@@ -1067,10 +1077,10 @@ export class UserService {
         timestamp: new Date().toISOString(),
         ttl: 'PT10M',
         version: '1.1.0',
-        bap_id: this.configService.get<string>('BAP_ID'),
-        bap_uri: this.configService.get<string>('BAP_URI'),
-        bpp_id: this.configService.get<string>('BPP_ID'),
-        bpp_uri: this.configService.get<string>('BPP_URI'),
+        bap_id: bapId,
+        bap_uri: bapUri,
+        bpp_id: bppId,
+        bpp_uri: bppUri,
         transaction_id: uuidv4(),
         message_id: uuidv4(),
         location: {
@@ -1109,7 +1119,7 @@ export class UserService {
 
   async processApplications(applications: any) {
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         applications.map(async (application: any) => {
           const statusData = await this.getStatus(
             application.external_application_id,
@@ -1117,8 +1127,19 @@ export class UserService {
           await this.updateStatus(application, statusData);
         }),
       );
+      const failures = results.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        Logger.error(`Failed to process ${failures.length} out of ${applications.length} applications`);
+      }
+      return {
+        total: applications.length,
+        succeeded: results.filter(r => r.status === 'fulfilled').length,
+      };
     } catch (error) {
       Logger.error(`Error while processing applications: ${error}`);
+      throw new InternalServerErrorException(
+        'Failed to process applications',
+      );
     }
   }
 
