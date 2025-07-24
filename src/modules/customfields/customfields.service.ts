@@ -138,7 +138,21 @@ export class CustomFieldsService {
 
 		const field = await this.findFieldById(fieldId);
 
-		// Check name uniqueness if name is being updated
+		await this.ensureFieldNameIsUnique(field, updateFieldDto, fieldId);
+		await this.handleEncryptionChange(field, updateFieldDto, fieldId);
+
+		Object.assign(field, updateFieldDto);
+		const savedField = await this.fieldRepository.save(field);
+
+		this.logger.log(`Field updated successfully: ${fieldId}`);
+		return savedField;
+	}
+
+	private async ensureFieldNameIsUnique(
+		field: Field,
+		updateFieldDto: UpdateFieldDto,
+		fieldId: string
+	): Promise<void> {
 		if (updateFieldDto.name && updateFieldDto.name !== field.name) {
 			const existingField = await this.fieldRepository.findOne({
 				where: {
@@ -153,41 +167,42 @@ export class CustomFieldsService {
 				);
 			}
 		}
+	}
 
-		// Handle encryption changes through FieldEncryptionService
-		if (updateFieldDto.fieldAttributes?.isEncrypted !== undefined) {
-			const existingValuesCount = await this.fieldValueRepository.count({
-				where: { fieldId },
-			});
+	private async handleEncryptionChange(
+		field: Field,
+		updateFieldDto: UpdateFieldDto,
+		fieldId: string
+	): Promise<void> {
+		if (updateFieldDto.fieldAttributes?.isEncrypted === undefined) {
+			return;
+		}
+		const existingValuesCount = await this.fieldValueRepository.count({
+			where: { fieldId },
+		});
 
-			if (updateFieldDto.fieldAttributes.isEncrypted && !field.isEncrypted()) {
-				// Enabling encryption
-				if (!this.fieldEncryptionService.canEnableEncryption(field, existingValuesCount > 0)) {
+		const isEnabling = updateFieldDto.fieldAttributes.isEncrypted && !field.isEncrypted();
+		const isDisabling = !updateFieldDto.fieldAttributes.isEncrypted && field.isEncrypted();
+
+		if (isEnabling) {
+			if (!this.fieldEncryptionService.canEnableEncryption(field, existingValuesCount > 0)) {
+				throw new BadRequestException(
+					`Cannot enable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
+				);
+			}
+		} else if (isDisabling) {
+			if (!this.fieldEncryptionService.canDisableEncryption(field, existingValuesCount > 0)) {
+				if (existingValuesCount > 0) {
 					throw new BadRequestException(
-						`Cannot enable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
+						`Cannot disable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
 					);
-				}
-			} else if (!updateFieldDto.fieldAttributes.isEncrypted && field.isEncrypted()) {
-				// Disabling encryption
-				if (!this.fieldEncryptionService.canDisableEncryption(field, existingValuesCount > 0)) {
-					if (existingValuesCount > 0) {
-						throw new BadRequestException(
-							`Cannot disable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
-						);
-					} else {
-						throw new BadRequestException(
-							`Cannot disable encryption for field '${field.name}'. Field is not currently encrypted.`
-						);
-					}
+				} else {
+					throw new BadRequestException(
+						`Cannot disable encryption for field '${field.name}'. Field is not currently encrypted.`
+					);
 				}
 			}
 		}
-
-		Object.assign(field, updateFieldDto);
-		const savedField = await this.fieldRepository.save(field);
-
-		this.logger.log(`Field updated successfully: ${fieldId}`);
-		return savedField;
 	}
 
 	/**
