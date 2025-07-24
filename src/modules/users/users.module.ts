@@ -17,7 +17,7 @@ import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { AdminModule } from '@modules/admin/admin.module';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -42,7 +42,7 @@ import { ConfigService } from '@nestjs/config';
     ApplicationStatusUpdate,
     ProxyService,
     CustomFieldsService,
-    ConfigService,
+    ConfigModule,
   ],
    exports: [UserService],
 })
