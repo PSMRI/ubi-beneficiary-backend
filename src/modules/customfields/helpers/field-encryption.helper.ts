@@ -2,20 +2,20 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EncryptionService } from '../../../common/helper/encryptionService';
 import { Field } from '../entities/field.entity';
-import { FieldValidationService } from './field-validation.service';
+import { FieldValidationHelper } from './field-validation.helper';
 
 /**
- * Service for handling encryption and decryption of custom field values
+ * Helper for handling encryption and decryption of custom field values
  * @description Provides transparent encryption/decryption for sensitive field values
  */
 @Injectable()
-export class FieldEncryptionService {
-	private readonly logger = new Logger(FieldEncryptionService.name);
+export class FieldEncryptionHelper {
+	private readonly logger = new Logger(FieldEncryptionHelper.name);
 	private readonly encryptionService: EncryptionService;
 
 	constructor(
 		private readonly configService: ConfigService,
-		private readonly fieldValidationService: FieldValidationService,
+		private readonly fieldValidationHelper: FieldValidationHelper,
 	) {
 		this.encryptionService = EncryptionService.getInstance(configService);
 	}
@@ -28,12 +28,12 @@ export class FieldEncryptionService {
 	 */
 	encryptFieldValue(value: any, field: Field): string {
 		if (!field.isEncrypted()) {
-			return this.fieldValidationService.serializeValue(value, field.type);
+			return this.fieldValidationHelper.serializeValue(value, field.type);
 		}
 
 		try {
 			// Serialize the value according to field type (validation already done in service layer)
-			const serializedValue = this.fieldValidationService.serializeValue(value, field.type);
+			const serializedValue = this.fieldValidationHelper.serializeValue(value, field.type);
 			
 			// Encrypt the serialized value
 			const encryptedValue = this.encryptionService.encrypt(serializedValue);
@@ -54,7 +54,7 @@ export class FieldEncryptionService {
 	 */
 	decryptFieldValue(encryptedValue: string, field: Field): any {
 		if (!field.isEncrypted()) {
-			return this.fieldValidationService.deserializeValue(encryptedValue, field.type);
+			return this.fieldValidationHelper.deserializeValue(encryptedValue, field.type);
 		}
 
 		if (!encryptedValue) {
@@ -66,7 +66,7 @@ export class FieldEncryptionService {
 			const decryptedValue = this.encryptionService.decrypt(encryptedValue);
 			
 			// Deserialize according to field type
-			const parsedValue = this.fieldValidationService.deserializeValue(decryptedValue, field.type);
+			const parsedValue = this.fieldValidationHelper.deserializeValue(decryptedValue, field.type);
 			
 			this.logger.debug(`Decrypted value for field ${field.name} (${field.fieldId})`);
 			return parsedValue;
@@ -75,42 +75,4 @@ export class FieldEncryptionService {
 			throw new BadRequestException(`Failed to decrypt field value: ${error.message}`);
 		}
 	}
-
-	/**
-	 * Check if a field can have encryption enabled
-	 * @param field The field to check
-	 * @param hasExistingValues Whether the field has existing values
-	 * @returns true if encryption can be enabled
-	 */
-	canEnableEncryption(field: Field, hasExistingValues: boolean): boolean {
-		if (field.isEncrypted()) {
-			return false; // Already encrypted
-		}
-
-		if (hasExistingValues) {
-			return false; // Cannot enable encryption for fields with existing values
-		}
-
-		return true;
-	}
-
-	/**
-	 * Check if a field can have encryption disabled
-	 * @param field The field to check
-	 * @param hasExistingValues Whether the field has existing values
-	 * @returns true if encryption can be disabled
-	 */
-	canDisableEncryption(field: Field, hasExistingValues: boolean): boolean {
-		// Encryption can only be disabled if the field is currently encrypted
-		if (!field.isEncrypted()) {
-			return false; // Not encrypted, so nothing to disable
-		}
-
-		// Encryption can only be disabled if there are no existing values
-		if (hasExistingValues) {
-			return false; // Cannot disable encryption for fields with existing values
-		}
-
-		return true; // Can disable encryption if no existing values
-	}
-}
+} 

@@ -5,8 +5,8 @@ import { CustomFieldsService } from './customfields.service';
 import { Field } from './entities/field.entity';
 import { FieldValue } from './entities/field-value.entity';
 import { AdminModule } from '../admin/admin.module';
-import { FieldEncryptionService } from './helpers/field-encryption.service';
-import { FieldValidationService } from './helpers/field-validation.service';
+import { FieldEncryptionHelper } from './helpers/field-encryption.helper';
+import { FieldValidationHelper } from './helpers/field-validation.helper';
 
 /**
  * CustomFields Module
@@ -26,7 +26,7 @@ import { FieldValidationService } from './helpers/field-validation.service';
 @Module({
 	imports: [TypeOrmModule.forFeature([Field, FieldValue]), AdminModule],
 	controllers: [CustomFieldsController],
-	providers: [CustomFieldsService, FieldEncryptionService, FieldValidationService],
-	exports: [CustomFieldsService, FieldEncryptionService, FieldValidationService, TypeOrmModule],
+	providers: [CustomFieldsService, FieldEncryptionHelper, FieldValidationHelper],
+	exports: [CustomFieldsService, FieldEncryptionHelper, FieldValidationHelper, TypeOrmModule],
 })
 export class CustomFieldsModule {}

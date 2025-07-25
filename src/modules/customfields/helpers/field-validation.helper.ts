@@ -11,11 +11,11 @@ export interface ValidationOptions {
 }
 
 /**
- * Centralized service for field validation
+ * Centralized helper for field validation
  * @description Provides comprehensive validation for custom field values
  */
 @Injectable()
-export class FieldValidationService {
+export class FieldValidationHelper {
 	/**
 	 * Validate a field value against all constraints
 	 * @param value The value to validate
@@ -547,4 +547,4 @@ export class FieldValidationService {
 				return serializedValue;
 		}
 	}
-}
+} 

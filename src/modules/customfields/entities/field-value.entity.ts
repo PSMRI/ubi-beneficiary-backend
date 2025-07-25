@@ -138,9 +138,9 @@ export class FieldValue {
 			return this.value;
 		}
 
-		// Use centralized deserialization from FieldValidationService
-		// Note: This method is used by the entity itself, so we can't inject the service
-		// The service layer should use FieldValidationService.deserializeValue() instead
+		// Use centralized deserialization from FieldValidationHelper
+		// Note: This method is used by the entity itself, so we can't inject the helper
+		// The service layer should use FieldValidationHelper.deserializeValue() instead
 		switch (this.field.type) {
 			case 'numeric':
 			case 'currency':
@@ -168,54 +168,7 @@ export class FieldValue {
 		}
 	}
 
-	/**
-	 * Set value with automatic type conversion
-	 * @param value Value to set
-	 */
-	setValue(value: any): void {
-		if (value === null || value === undefined) {
-			this.value = null;
-			return;
-		}
 
-		if (!this.field) {
-			this.value = String(value);
-			return;
-		}
-
-		// Use centralized serialization logic (duplicated here for entity independence)
-		// The service layer should use FieldValidationService.serializeValue() instead
-		switch (this.field.type) {
-			case 'multi_select':
-			case 'json':
-				this.value =
-					typeof value === 'string' ? value : JSON.stringify(value);
-				break;
-
-			case 'checkbox':
-				this.value = Boolean(value).toString();
-				break;
-
-			case 'date':
-				if (value instanceof Date) {
-					this.value = value.toISOString().split('T')[0];
-				} else {
-					this.value = String(value);
-				}
-				break;
-
-			case 'datetime':
-				if (value instanceof Date) {
-					this.value = value.toISOString();
-				} else {
-					this.value = String(value);
-				}
-				break;
-
-			default:
-				this.value = String(value);
-		}
-	}
 
 	/**
 	 * Set encrypted value (used by service layer)
@@ -233,18 +186,4 @@ export class FieldValue {
 		return !this.value || this.value.trim() === '';
 	}
 
-	/**
-	 * Validate value against field constraints
-	 * @param validationService Validation service instance (required)
-	 * @returns true if value is valid
-	 */
-	isValid(validationService: any): boolean {
-		if (!this.field || !validationService) {
-			return true;
-		}
-
-		// Always use the centralized validation service
-		const result = validationService.validateFieldValue(this.getParsedValue(), this.field);
-		return result.isValid;
-	}
 }
