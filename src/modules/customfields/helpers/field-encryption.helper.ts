@@ -17,7 +17,15 @@ export class FieldEncryptionHelper {
 		private readonly configService: ConfigService,
 		private readonly fieldValidationHelper: FieldValidationHelper,
 	) {
-		this.encryptionService = EncryptionService.getInstance(configService);
+		try {
+			this.encryptionService = EncryptionService.getInstance(configService);
+			if (!this.encryptionService) {
+				throw new Error('Failed to initialize EncryptionService');
+			}
+		} catch (error) {
+			this.logger.error('Failed to initialize EncryptionService', error);
+			throw new Error('EncryptionService initialization failed');
+		}
 	}
 
 	/**
