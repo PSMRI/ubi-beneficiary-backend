@@ -651,12 +651,53 @@ export class UserService {
     page?: number;
     limit?: number;
   }) {
+    console.log("requestBody", requestBody.filters.user_id);
+    
+    const { filters = {}, search, page = 1, limit = 10 } = requestBody;
+    
+    // First, attempt to update application statuses
+    // This should not affect the main response if it fails
+    let statusUpdateInfo = {
+      attempted: false,
+      success: false,
+      processedCount: 0,
+      error: null
+    };
+
+    try {
+      statusUpdateInfo.attempted = true;
+      
+      // Get applications that need status updates (same logic as updateApplicationStatuses)
+      const userId = filters?.user_id;
+      const applicationsForUpdate = await this.getApplications(userId);
+      
+      if (applicationsForUpdate.length > 0) {
+        await this.processApplications(applicationsForUpdate);
+        statusUpdateInfo.success = true;
+        statusUpdateInfo.processedCount = applicationsForUpdate.length;
+        
+        Logger.log(
+          `Status update completed for ${applicationsForUpdate.length} applications ${userId ? `for user ${userId}` : 'across all users'}`
+        );
+      } else {
+        statusUpdateInfo.success = true; // No applications to update is still a success
+        Logger.log(`No applications found requiring status updates ${userId ? `for user ${userId}` : 'across all users'}`);
+      }
+    } catch (statusUpdateError) {
+      // Log the error but don't let it affect the main response
+      statusUpdateInfo.error = statusUpdateError.message;
+      Logger.error(
+        `Status update failed during user applications list retrieval: ${statusUpdateError.message}`,
+        statusUpdateError.stack
+      );
+    }
+
+    // Now fetch the applications list with updated statuses
     const whereClause = {};
     try {
       const filterKeys = this.userApplicationRepository.metadata.columns.map(
         (column) => column.propertyName,
       );
-      const { filters = {}, search, page = 1, limit = 10 } = requestBody;
 
       // Handle filters
       if (filters && Object.keys(filters).length > 0) {
@@ -685,11 +726,14 @@ export class UserService {
           take: limit,
         });
 
-
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User applications list retrieved successfully.',
-        data: { applications: userApplication, total },
+        data: { 
+          applications: userApplication, 
+          total,
+          statusUpdate: statusUpdateInfo
+        },
       });
     } catch (error) {
       console.error('Error while fetching user applications:', error);
@@ -1149,20 +1193,7 @@ export class UserService {
       
       // If req is provided, extract user_id from token
       if (req) {
-        const sso_id = req?.user?.keycloak_id;
-        if (!sso_id) {
-          throw new UnauthorizedException('Invalid or missing Keycloak ID');
-        }
-
-        const userDetails = await this.userRepository.findOne({
-          where: { sso_id },
-        });
-
-        if (!userDetails) {
-          throw new NotFoundException(`User with ID '${sso_id}' not found`);
-        }
-
-        userId = userDetails.user_id;
+        userId = req.mw_userid;
       }
 
       // Get user application records from database
