@@ -49,7 +49,6 @@ export default class ProfilePopulator {
 
     return null;
   }
-
   private romanToInt(roman: string): number {
     const romanMap: { [key: string]: number } = {
       I: 1,
@@ -164,6 +163,14 @@ export default class ProfilePopulator {
     const intValue = this.romanToInt(value);
     if (!intValue) return value;
     return intValue;
+  }
+  private handleDisabilityTypeField(vc: any, pathValue: any) {
+    const value = this.getValue(vc, pathValue);
+    if (!value) return null;
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_'); // Replace all other non-alphanumerics (including '-') with '_'
   }
 
   private handleDisabilityTypeField(vc: any, pathValue: any) {
