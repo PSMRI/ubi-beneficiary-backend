@@ -82,6 +82,26 @@ interface Job {
 	instructors?: string;
 }
 
+interface CriteriaResult {
+	  ruleKey: string;
+	  passed: boolean;
+	  description: string;
+	  reasons?: string[];
+	}
+	
+	interface EligibilityItem {
+	  schemaId: string;
+	  details?: {
+	    isEligible: boolean;
+	    criteriaResults?: CriteriaResult[];
+	  };
+	}
+	
+	interface EligibilityData {
+	  eligible?: EligibilityItem[];
+	  ineligible?: EligibilityItem[];
+	}
+
 @Injectable()
 export class ContentService {
 	private readonly domain = process.env.DOMAIN;
@@ -1084,11 +1104,11 @@ export class ContentService {
 	 * @param eligibilityData - The eligibility response data
 	 * @returns Array of benefits with eligibility percentages
 	 */
-	private calculateEligibilityPercentages(eligibilityData: any): any[] {
+	private calculateEligibilityPercentages(eligibilityData: EligibilityData): any[] {
 		const results: any[] = [];
 
 		// Helper function to process a single item
-		const processItem = (item: any) => {
+		const processItem = (item: EligibilityItem) => {
 			const { schemaId, details } = item;
 			
 			if (!details?.criteriaResults || !Array.isArray(details.criteriaResults)) {
