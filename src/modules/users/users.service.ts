@@ -656,75 +656,16 @@ export class UserService {
     const { filters = {}, search, page = 1, limit = 10 } = requestBody;
     
     // First, attempt to update application statuses
-    // This should not affect the main response if it fails
-    let statusUpdateInfo = {
-      attempted: false,
-      success: false,
-      processedCount: 0,
-      error: null
-    };
-
-    try {
-      statusUpdateInfo.attempted = true;
-      
-      // Get applications that need status updates (same logic as updateApplicationStatuses)
-      const userId = filters?.user_id;
-      const applicationsForUpdate = await this.getApplications(userId);
-      
-      if (applicationsForUpdate.length > 0) {
-        await this.processApplications(applicationsForUpdate);
-        statusUpdateInfo.success = true;
-        statusUpdateInfo.processedCount = applicationsForUpdate.length;
-        
-        Logger.log(
-          `Status update completed for ${applicationsForUpdate.length} applications ${userId ? `for user ${userId}` : 'across all users'}`
-        );
-      } else {
-        statusUpdateInfo.success = true; // No applications to update is still a success
-        Logger.log(`No applications found requiring status updates ${userId ? `for user ${userId}` : 'across all users'}`);
-      }
-    } catch (statusUpdateError) {
-      // Log the error but don't let it affect the main response
-      statusUpdateInfo.error = statusUpdateError.message;
-      Logger.error(
-        `Status update failed during user applications list retrieval: ${statusUpdateError.message}`,
-        statusUpdateError.stack
-      );
-    }
+    const statusUpdateInfo = await this.performStatusUpdate(filters?.user_id);
 
     // Now fetch the applications list with updated statuses
-    const whereClause = {};
     try {
-      const filterKeys = this.userApplicationRepository.metadata.columns.map(
-        (column) => column.propertyName,
-      );
-
-      // Handle filters
-      if (filters && Object.keys(filters).length > 0) {
-        for (const [key, value] of Object.entries(filters)) {
-          if (
-            filterKeys.includes(key) &&
-            value !== null &&
-            value !== undefined
-          ) {
-            whereClause[key] = value;
-          }
-        }
-      }
-
-      // Handle search for `application_name`
-      if (search && search.trim().length > 0) {
-        const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
-        whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
-      }
-
-      // Fetch data with pagination
-      const [userApplication, total] =
-        await this.userApplicationRepository.findAndCount({
-          where: whereClause,
-          skip: (page - 1) * limit,
-          take: limit,
-        });
+      const whereClause = this.buildWhereClause(filters, search);
+      const [userApplication, total] = await this.userApplicationRepository.findAndCount({
+        where: whereClause,
+        skip: (page - 1) * limit,
+        take: limit,
+      });
 
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
@@ -738,6 +679,66 @@ export class UserService {
     } catch (error) {
       console.error('Error while fetching user applications:', error);
       throw new InternalServerErrorException('Failed to fetch user applications');
+    }
+  }
+
+  private async performStatusUpdate(userId?: string) {
+    const statusUpdateInfo = {
+      attempted: false,
+      success: false,
+      processedCount: 0,
+      error: null
+    };
+
+    try {
+      statusUpdateInfo.attempted = true;
+      const applicationsForUpdate = await this.getApplications(userId);
+      
+      if (applicationsForUpdate.length > 0) {
+        await this.processApplications(applicationsForUpdate);
+        statusUpdateInfo.success = true;
+        statusUpdateInfo.processedCount = applicationsForUpdate.length;
+        Logger.log(`Status update completed for ${applicationsForUpdate.length} applications'}`);
+      } else {
+        statusUpdateInfo.success = true;
+        Logger.log(`No applications found requiring status updates`);
+      }
+    } catch (statusUpdateError) {
+      statusUpdateInfo.error = statusUpdateError.message;
+      Logger.error(
+        `Status update failed during user applications list retrieval: ${statusUpdateError.message}`,
+        statusUpdateError.stack
+      );
+    }
+
+    return statusUpdateInfo;
+  }
+
+  private buildWhereClause(filters: any, search?: string) {
+    const whereClause = {};
+    const filterKeys = this.userApplicationRepository.metadata.columns.map(
+      (column) => column.propertyName,
+    );
+
+    // Handle filters
+    if (filters && Object.keys(filters).length > 0) {
+      this.applyFilters(whereClause, filters, filterKeys);
+    }
+
+    // Handle search for `application_name`
+    if (search && search.trim().length > 0) {
+      const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
+      whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
+    }
+
+    return whereClause;
+  }
+
+  private applyFilters(whereClause: any, filters: any, filterKeys: string[]) {
+    for (const [key, value] of Object.entries(filters)) {
+      if (filterKeys.includes(key) && value !== null && value !== undefined) {
+        whereClause[key] = value;
+      }
     }
   }
 
