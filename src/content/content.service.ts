@@ -1058,7 +1058,13 @@ export class ContentService {
 			}
 			const eligibilityData = await this.checkEligibility(userInfo, filteredJobs);
 
-			return eligibilityData;
+			// Calculate eligibility percentages
+			const eligibilityPercentages = this.calculateEligibilityPercentages(eligibilityData);
+
+			return {
+				...eligibilityData,
+				eligibilityPercentages
+			};
 
 		} catch (err) {
 			this.logger.error('Error in getUserBenefitEligibility:', err);
@@ -1071,5 +1077,64 @@ export class ContentService {
 				HttpStatus.INTERNAL_SERVER_ERROR,
 			);
 		}
+	}
+
+	/**
+	 * Calculate eligibility percentage for each benefit
+	 * @param eligibilityData - The eligibility response data
+	 * @returns Array of benefits with eligibility percentages
+	 */
+	private calculateEligibilityPercentages(eligibilityData: any): any[] {
+		const results: any[] = [];
+
+		// Helper function to process a single item
+		const processItem = (item: any) => {
+			const { schemaId, details } = item;
+			
+			if (!details?.criteriaResults || !Array.isArray(details.criteriaResults)) {
+				return {
+					schemaId,
+					eligibilityPercentage: 0,
+					totalCriteria: 0,
+					passedCriteria: 0,
+					isEligible: details?.isEligible || false
+				};
+			}
+
+			const criteriaResults = details.criteriaResults;
+			const totalCriteria = criteriaResults.length;
+			const passedCriteria = criteriaResults.filter((criteria: any) => criteria.passed === true).length;
+			const eligibilityPercentage = totalCriteria > 0 ? Math.round((passedCriteria / totalCriteria) * 100) : 0;
+
+			return {
+				schemaId,
+				eligibilityPercentage,
+				totalCriteria,
+				passedCriteria,
+				isEligible: details?.isEligible || false,
+				criteriaResults: criteriaResults.map((criteria: any) => ({
+					ruleKey: criteria.ruleKey,
+					passed: criteria.passed,
+					description: criteria.description,
+					reasons: criteria.reasons || []
+				}))
+			};
+		};
+
+		// Process eligible items
+		if (eligibilityData?.eligible && Array.isArray(eligibilityData.eligible)) {
+			eligibilityData.eligible.forEach((item: any) => {
+				results.push(processItem(item));
+			});
+		}
+
+		// Process ineligible items
+		if (eligibilityData?.ineligible && Array.isArray(eligibilityData.ineligible)) {
+			eligibilityData.ineligible.forEach((item: any) => {
+				results.push(processItem(item));
+			});
+		}
+
+		return results;
 	}
 }
