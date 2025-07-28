@@ -13,7 +13,6 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
   Logger,
-  HttpStatus,
 } from '@nestjs/common';
 import { UserService } from '../users/users.service';
 import {
