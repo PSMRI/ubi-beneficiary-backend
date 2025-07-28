@@ -215,6 +215,4 @@ export class UserController {
   async fetchVcJson(@Body() fetchVcUrlDto: FetchVcUrlDto) {
     return await this.userService.fetchVcJsonFromUrl(fetchVcUrlDto.url);
   }
-
-
 }
