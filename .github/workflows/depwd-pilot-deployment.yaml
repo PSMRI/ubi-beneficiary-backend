@@ -1,4 +1,4 @@
-name: Deploy to DePWD-Pilot
+name: Deploy to UBA-DePWD-Pilot
 on:
   push:
     branches:
