@@ -57,7 +57,7 @@ export class ApplicationStatusUpdate {
   async getStatus(orderId: string) {
     const body = {
       context: {
-        domain: 'onest:financial-support',
+        domain: 'ubi:financial-support',
         action: 'status',
         timestamp: new Date().toISOString(),
         ttl: 'PT10M',
