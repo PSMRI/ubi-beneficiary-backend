@@ -1,10 +1,10 @@
-name: Deploy to DEV
+name: Deploy to DePWD-Pilot
 on:
   push:
     branches:
       - depwd-pilot
 jobs:
-   Deploy_on_UBA:
+   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,4 +24,3 @@ jobs:
                echo '${{ secrets.DEV_ENV }}' > .env
                ls -ltra
                ./deploy.sh
-#Testing
