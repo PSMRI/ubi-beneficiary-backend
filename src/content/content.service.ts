@@ -172,12 +172,8 @@ export class ContentService {
 						benefitsList,
 						strictCheck,
 					);
-					
-					// Calculate eligibility percentages and update eligibility data
-					const updatedEligibilityData = this.calculateEligibilityPercentages(eligibilityData);
-					
 					// get the eligible list from the eligibility API response
-					const eligibleList = updatedEligibilityData?.eligible ?? []; 
+					const eligibleList = eligibilityData?.eligible ?? []; 
 
 					// extract job IDs from the eligible list
 					const eligibleJobIds = eligibleList.map((e) => e?.schemaId); 
@@ -186,19 +182,6 @@ export class ContentService {
 					filteredJobs = filteredJobs.filter((scheme) =>
 						eligibleJobIds.includes(scheme?.id),
 					); 
-					
-					// Add eligibility percentages to each job
-					filteredJobs = filteredJobs.map((job) => {
-						const eligibilityInfo = updatedEligibilityData.eligible?.find(
-							(ep) => ep.schemaId === job.id
-						) || updatedEligibilityData.ineligible?.find(
-							(ep) => ep.schemaId === job.id
-						);
-						return {
-							...job,
-							eligibilityInfo: eligibilityInfo || null
-						};
-					});
 				} catch (err) {
 					console.error('Error in eligibility filtering:', err);
 				}
