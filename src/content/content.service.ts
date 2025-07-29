@@ -172,8 +172,12 @@ export class ContentService {
 						benefitsList,
 						strictCheck,
 					);
+					
+					// Calculate eligibility percentages and update eligibility data
+					const updatedEligibilityData = this.calculateEligibilityPercentages(eligibilityData);
+					
 					// get the eligible list from the eligibility API response
-					const eligibleList = eligibilityData?.eligible ?? []; 
+					const eligibleList = updatedEligibilityData?.eligible ?? []; 
 
 					// extract job IDs from the eligible list
 					const eligibleJobIds = eligibleList.map((e) => e?.schemaId); 
@@ -182,6 +186,19 @@ export class ContentService {
 					filteredJobs = filteredJobs.filter((scheme) =>
 						eligibleJobIds.includes(scheme?.id),
 					); 
+					
+					// Add eligibility percentages to each job
+					filteredJobs = filteredJobs.map((job) => {
+						const eligibilityInfo = updatedEligibilityData.eligible?.find(
+							(ep) => ep.schemaId === job.id
+						) || updatedEligibilityData.ineligible?.find(
+							(ep) => ep.schemaId === job.id
+						);
+						return {
+							...job,
+							eligibilityInfo: eligibilityInfo || null
+						};
+					});
 				} catch (err) {
 					console.error('Error in eligibility filtering:', err);
 				}
@@ -1078,13 +1095,10 @@ export class ContentService {
 			}
 			const eligibilityData = await this.checkEligibility(userInfo, filteredJobs);
 
-			// Calculate eligibility percentages
-			const eligibilityPercentages = this.calculateEligibilityPercentages(eligibilityData);
+			// Calculate eligibility percentages and update eligibility data
+			const updatedEligibilityData = this.calculateEligibilityPercentages(eligibilityData);
 
-			return {
-				...eligibilityData,
-				eligibilityPercentages
-			};
+			return updatedEligibilityData;
 
 		} catch (err) {
 			this.logger.error('Error in getUserBenefitEligibility:', err);
@@ -1100,24 +1114,21 @@ export class ContentService {
 	}
 
 	/**
-	 * Calculate eligibility percentage for each benefit
+	 * Calculate eligibility percentage and add to eligibility data object
 	 * @param eligibilityData - The eligibility response data
-	 * @returns Array of benefits with eligibility percentages
+	 * @returns Updated eligibility data with percentages
 	 */
-	private calculateEligibilityPercentages(eligibilityData: EligibilityData): any[] {
-		const results: any[] = [];
-
-		// Helper function to process a single item
-		const processItem = (item: EligibilityItem) => {
-			const { schemaId, details } = item;
+	private calculateEligibilityPercentages(eligibilityData: EligibilityData): EligibilityData {
+		// Helper function to calculate percentage for a single item
+		const calculatePercentage = (item: EligibilityItem) => {
+			const { details } = item;
 			
 			if (!details?.criteriaResults || !Array.isArray(details.criteriaResults)) {
 				return {
-					schemaId,
+					...item,
 					eligibilityPercentage: 0,
 					totalCriteria: 0,
-					passedCriteria: 0,
-					isEligible: details?.isEligible || false
+					passedCriteria: 0
 				};
 			}
 
@@ -1127,34 +1138,23 @@ export class ContentService {
 			const eligibilityPercentage = totalCriteria > 0 ? Math.round((passedCriteria / totalCriteria) * 100) : 0;
 
 			return {
-				schemaId,
+				...item,
 				eligibilityPercentage,
 				totalCriteria,
-				passedCriteria,
-				isEligible: details?.isEligible || false,
-				criteriaResults: criteriaResults.map((criteria: any) => ({
-					ruleKey: criteria.ruleKey,
-					passed: criteria.passed,
-					description: criteria.description,
-					reasons: criteria.reasons || []
-				}))
+				passedCriteria
 			};
 		};
 
 		// Process eligible items
 		if (eligibilityData?.eligible && Array.isArray(eligibilityData.eligible)) {
-			eligibilityData.eligible.forEach((item: any) => {
-				results.push(processItem(item));
-			});
+			eligibilityData.eligible = eligibilityData.eligible.map(calculatePercentage);
 		}
 
 		// Process ineligible items
 		if (eligibilityData?.ineligible && Array.isArray(eligibilityData.ineligible)) {
-			eligibilityData.ineligible.forEach((item: any) => {
-				results.push(processItem(item));
-			});
+			eligibilityData.ineligible = eligibilityData.ineligible.map(calculatePercentage);
 		}
 
-		return results;
+		return eligibilityData;
 	}
 }
