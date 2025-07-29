@@ -29,7 +29,7 @@ export class ContentService {
     private readonly encrypt: EncryptionService,
     @InjectRepository(ResponseCache)
     private readonly responseCacheRepository: Repository<ResponseCache>,
-  ) {}
+  ) { }
 
   async getJobs(body) {
     return this.hasuraService.findJobsCache(body);
@@ -90,6 +90,16 @@ export class ContentService {
         transaction_id: uuidv4(),
         message_id: uuidv4(),
         timestamp: new Date().toISOString(),
+        location: {
+          country: {
+            name: 'India',
+            code: 'IND',
+          },
+          city: {
+            name: 'Bangalore',
+            code: 'std:080',
+          },
+        },
       },
       message: {
         intent: {

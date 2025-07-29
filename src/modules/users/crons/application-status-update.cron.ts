@@ -68,6 +68,16 @@ export class ApplicationStatusUpdate {
         bpp_uri: this.configService.get<string>('BPP_URI'),
         transaction_id: uuidv4(),
         message_id: uuidv4(),
+		location: {
+			country: {
+				name: 'India',
+				code: 'IND',
+			},
+			city: {
+				name: 'Bangalore',
+				code: 'std:080',
+			},
+		},
       },
       message: {
         order_id: orderId,
