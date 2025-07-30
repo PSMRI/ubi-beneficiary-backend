@@ -313,7 +313,7 @@ export default class ProfilePopulator {
   }
 
   // Update values in database based on built profile
-  async updateDatabase(profile: any, validationData: any, user: any, adminResultData: any) {
+  async updateDatabase(profile: any, validationData: any, user: User, adminResultData: any) {
     // ===Reset user verification status===
     user.fieldsVerified = false;
     user.fieldsVerifiedAt = new Date();
