@@ -382,35 +382,76 @@ class KeyRotationService {
      * Prints execution summary
      */
     private printSummary(): void {
-        console.log('\n🎯 Key Rotation Summary');
+        if (this.dryRun) {
+            this.printDryRunSummary();
+        } else {
+            this.printLiveExecutionSummary();
+        }
+    }
+
+    /**
+     * Prints dry-run simulation summary
+     */
+    private printDryRunSummary(): void {
+        console.log('\n🔍 Dry Run Simulation Results');
         console.log('=======================================');
-        console.log(`Mode: ${this.dryRun ? 'DRY RUN' : 'LIVE EXECUTION'}`);
+        console.log('This was a simulation - NO DATA WAS MODIFIED');
         console.log('');
         
         const totalRecords = this.stats.userDocs.total + this.stats.userApplications.total + this.stats.fieldValues.total;
         const totalProcessed = this.stats.userDocs.processed + this.stats.userApplications.processed + this.stats.fieldValues.processed;
         const totalErrors = this.stats.userDocs.errors + this.stats.userApplications.errors + this.stats.fieldValues.errors;
 
-        console.log('📊 User Documents:');
-        console.log(`   Total: ${this.stats.userDocs.total}, Processed: ${this.stats.userDocs.processed}, Errors: ${this.stats.userDocs.errors}`);
+        console.log('📊 Records that would be processed:');
+        console.log(`   📄 User Documents: ${this.stats.userDocs.total} records`);
+        console.log(`   📋 User Applications: ${this.stats.userApplications.total} records`);
+        console.log(`   🏷️  Field Values: ${this.stats.fieldValues.total} records`);
+        console.log(`   📈 Total: ${totalRecords} records`);
+        console.log('');
+
+        if (totalErrors === 0) {
+            console.log('✅ SIMULATION SUCCESSFUL');
+            console.log('   All records can be processed without errors.');
+            console.log('');
+            console.log('🚀 Ready to execute actual key rotation');
+            console.log('   Run: npm run script:key-rotation');
+            console.log('');
+            console.log('⚠️  After successful execution, remember to:');
+            console.log('   1. Update ENCRYPTION_KEY to NEW_ENCRYPTION_KEY');
+            console.log('   2. Restart your application');
+        } else {
+            console.log('❌ SIMULATION FAILED');
+            console.log(`   ${totalErrors} records would fail to process.`);
+            console.log('');
+            console.log('🔧 Please fix the errors above before running actual key rotation.');
+        }
+    }
+
+    /**
+     * Prints live execution summary
+     */
+    private printLiveExecutionSummary(): void {
+        console.log('\n🎯 Key Rotation Summary');
+        console.log('=======================================');
+        console.log('LIVE EXECUTION - DATA HAS BEEN MODIFIED');
+        console.log('');
         
-        console.log('📊 User Applications:');
-        console.log(`   Total: ${this.stats.userApplications.total}, Processed: ${this.stats.userApplications.processed}, Errors: ${this.stats.userApplications.errors}`);
-        
-        console.log('📊 Field Values:');
-        console.log(`   Total: ${this.stats.fieldValues.total}, Processed: ${this.stats.fieldValues.processed}, Errors: ${this.stats.fieldValues.errors}`);
-        
-        console.log('📊 Overall:');
-        console.log(`   Total: ${totalRecords}, Processed: ${totalProcessed}, Errors: ${totalErrors}`);
+        const totalRecords = this.stats.userDocs.total + this.stats.userApplications.total + this.stats.fieldValues.total;
+        const totalProcessed = this.stats.userDocs.processed + this.stats.userApplications.processed + this.stats.fieldValues.processed;
+        const totalErrors = this.stats.userDocs.errors + this.stats.userApplications.errors + this.stats.fieldValues.errors;
+
+        console.log('📊 Records processed:');
+        console.log(`   📄 User Documents: ${this.stats.userDocs.total}, Processed: ${this.stats.userDocs.processed}, Errors: ${this.stats.userDocs.errors}`);
+        console.log(`   📋 User Applications: ${this.stats.userApplications.total}, Processed: ${this.stats.userApplications.processed}, Errors: ${this.stats.userApplications.errors}`);
+        console.log(`   🏷️  Field Values: ${this.stats.fieldValues.total}, Processed: ${this.stats.fieldValues.processed}, Errors: ${this.stats.fieldValues.errors}`);
+        console.log(`   📈 Overall: ${totalRecords}, Processed: ${totalProcessed}, Errors: ${totalErrors}`);
         
         if (totalErrors === 0) {
             console.log('');
             console.log('🎉 Key rotation completed successfully!');
-            if (!this.dryRun) {
-                console.log('');
-                console.log('⚠️  IMPORTANT: Update your ENCRYPTION_KEY environment variable');
-                console.log('   to the value of NEW_ENCRYPTION_KEY and restart your application.');
-            }
+            console.log('');
+            console.log('⚠️  IMPORTANT: Update your ENCRYPTION_KEY environment variable');
+            console.log('   to the value of NEW_ENCRYPTION_KEY and restart your application.');
         } else {
             console.log('');
             console.log(`⚠️  Key rotation completed with ${totalErrors} errors. Please review the logs above.`);
