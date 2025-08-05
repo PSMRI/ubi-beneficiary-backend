@@ -1,6 +1,0 @@
-{
-  "aadhaar": "credentialSubject.code",
-  "name": "credentialSubject.name",
-  "dob": "credentialSubject.dob",
-  "gender": "credentialSubject.gender"
-}
