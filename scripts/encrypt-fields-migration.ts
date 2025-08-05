@@ -30,8 +30,6 @@ class SimpleFieldEncryptionMigration {
 	private readonly sensitiveFields = [
 		'aadhaar',
 		'bankAccountNumber',
-		'bankIfscCode',
-		'annualIncome',
 		'udid'
 	];
 
