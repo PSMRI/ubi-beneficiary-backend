@@ -16,6 +16,7 @@ import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { AdminModule } from '@modules/admin/admin.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { AdminModule } from '@modules/admin/admin.module';
     ProfilePopulator,
     ApplicationStatusUpdate,
     ProxyService,
+    ConfigModule,
   ],
    exports: [UserService],
 })

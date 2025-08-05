@@ -20,6 +20,7 @@ import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { AdminModule } from '@modules/admin/admin.module';
+import { ProxyService } from '@services/proxy/proxy.service';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { AdminModule } from '@modules/admin/admin.module';
     ProfilePopulator,
     WalletService,
     RoleGuard,
+    ProxyService,
   ],
   exports: [AuthService, UserService, EncryptionService, WalletService, RoleGuard],
 })

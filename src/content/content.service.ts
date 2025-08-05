@@ -82,6 +82,26 @@ interface Job {
 	instructors?: string;
 }
 
+interface CriteriaResult {
+	  ruleKey: string;
+	  passed: boolean;
+	  description: string;
+	  reasons?: string[];
+	}
+	
+	interface EligibilityItem {
+	  schemaId: string;
+	  details?: {
+	    isEligible: boolean;
+	    criteriaResults?: CriteriaResult[];
+	  };
+	}
+	
+	interface EligibilityData {
+	  eligible?: EligibilityItem[];
+	  ineligible?: EligibilityItem[];
+	}
+
 @Injectable()
 export class ContentService {
 	private readonly domain = process.env.DOMAIN;
@@ -1058,7 +1078,10 @@ export class ContentService {
 			}
 			const eligibilityData = await this.checkEligibility(userInfo, filteredJobs);
 
-			return eligibilityData;
+			// Calculate eligibility percentages and update eligibility data
+			const updatedEligibilityData = this.calculateEligibilityPercentages(eligibilityData);
+
+			return updatedEligibilityData;
 
 		} catch (err) {
 			this.logger.error('Error in getUserBenefitEligibility:', err);
@@ -1071,5 +1094,50 @@ export class ContentService {
 				HttpStatus.INTERNAL_SERVER_ERROR,
 			);
 		}
+	}
+
+	/**
+	 * Calculate eligibility percentage and add to eligibility data object
+	 * @param eligibilityData - The eligibility response data
+	 * @returns Updated eligibility data with percentages
+	 */
+	private calculateEligibilityPercentages(eligibilityData: EligibilityData): EligibilityData {
+		// Helper function to calculate percentage for a single item
+		const calculatePercentage = (item: EligibilityItem) => {
+			const { details } = item;
+			
+			if (!details?.criteriaResults || !Array.isArray(details.criteriaResults)) {
+				return {
+					...item,
+					eligibilityPercentage: 0,
+					totalCriteria: 0,
+					passedCriteria: 0
+				};
+			}
+
+			const criteriaResults = details.criteriaResults;
+			const totalCriteria = criteriaResults.length;
+			const passedCriteria = criteriaResults.filter((criteria: any) => criteria.passed === true).length;
+			const eligibilityPercentage = totalCriteria > 0 ? Math.round((passedCriteria / totalCriteria) * 100) : 0;
+
+			return {
+				...item,
+				eligibilityPercentage,
+				totalCriteria,
+				passedCriteria
+			};
+		};
+
+		// Process eligible items
+		if (eligibilityData?.eligible && Array.isArray(eligibilityData.eligible)) {
+			eligibilityData.eligible = eligibilityData.eligible.map(calculatePercentage);
+		}
+
+		// Process ineligible items
+		if (eligibilityData?.ineligible && Array.isArray(eligibilityData.ineligible)) {
+			eligibilityData.ineligible = eligibilityData.ineligible.map(calculatePercentage);
+		}
+
+		return eligibilityData;
 	}
 }
