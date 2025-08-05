@@ -9,7 +9,7 @@ try {
 	const dotenv = require('dotenv');
 	dotenv.config();
 } catch (error) {
-	// dotenv not available, continue with existing environment variables
+	console.warn('dotenv could not be loaded:', error);
 }
 
 // Import entities and services
@@ -24,7 +24,7 @@ import { EncryptionService } from '../src/common/helper/encryptionService';
 class SimpleFieldEncryptionMigration {
 	private dataSource: DataSource;
 	private encryptionService: EncryptionService;
-	private isDryRun: boolean;
+	private readonly isDryRun: boolean;
 	
 	// List of sensitive fields to encrypt
 	private readonly sensitiveFields = [
@@ -54,11 +54,11 @@ class SimpleFieldEncryptionMigration {
 		// Initialize DataSource
 		this.dataSource = new DataSource({
 			type: 'postgres',
-			host: process.env.DB_HOST!,
+			host: process.env.DB_HOST,
 			port: parseInt(process.env.DB_PORT || '5432'),
-			username: process.env.DB_USERNAME!,
+			username: process.env.DB_USERNAME,
 			password: String(process.env.DB_PASSWORD),
-			database: process.env.DB_NAME!,
+			database: process.env.DB_NAME,
 			entities: [Field, FieldValue],
 			synchronize: false,
 			logging: false
@@ -250,7 +250,7 @@ class SimpleFieldEncryptionMigration {
 			this.log(`❌ Migration failed: ${error.message}`);
 			throw error;
 		} finally {
-			if (this.dataSource && this.dataSource.isInitialized) {
+			if (this.dataSource?.isInitialized) {
 				await this.dataSource.destroy();
 			}
 		}

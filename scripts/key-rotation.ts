@@ -25,9 +25,9 @@ class KeyRotationService {
     private oldKey: Buffer;
     private newKey: Buffer;
     private dataSource: DataSource;
-    private dryRun: boolean;
+    private readonly dryRun: boolean;
     
-    private stats = {
+    private readonly stats = {
         userDocs: { total: 0, processed: 0, errors: 0 },
         userApplications: { total: 0, processed: 0, errors: 0 },
         fieldValues: { total: 0, processed: 0, errors: 0 }
@@ -67,8 +67,8 @@ class KeyRotationService {
      */
     private initializeKeys(): void {
         try {
-            this.oldKey = Buffer.from(process.env.ENCRYPTION_KEY!, 'base64');
-            this.newKey = Buffer.from(process.env.NEW_ENCRYPTION_KEY!, 'base64');
+            this.oldKey = Buffer.from(process.env.ENCRYPTION_KEY, 'base64');
+            this.newKey = Buffer.from(process.env.NEW_ENCRYPTION_KEY, 'base64');
 
             if (this.oldKey.length !== 32) {
                 throw new Error('ENCRYPTION_KEY must be a base64-encoded 32-byte key');
@@ -399,7 +399,6 @@ class KeyRotationService {
         console.log('');
         
         const totalRecords = this.stats.userDocs.total + this.stats.userApplications.total + this.stats.fieldValues.total;
-        const totalProcessed = this.stats.userDocs.processed + this.stats.userApplications.processed + this.stats.fieldValues.processed;
         const totalErrors = this.stats.userDocs.errors + this.stats.userApplications.errors + this.stats.fieldValues.errors;
 
         console.log('📊 Records that would be processed:');
