@@ -154,169 +154,107 @@ class KeyRotationService {
     }
 
     /**
-     * Rotates encryption keys for user_docs table
+     * Generic method to rotate encryption keys for any table
      */
-    private async rotateUserDocsKeys(queryRunner: QueryRunner): Promise<void> {
-        console.log('\n📋 Processing user_docs table...');
+    private async rotateTableKeys(
+        queryRunner: QueryRunner,
+        tableName: string,
+        selectQuery: string,
+        updateQuery: string,
+        idField: string,
+        dataField: string,
+        statsKey: keyof typeof this.stats
+    ): Promise<void> {
+        console.log(`\n📋 Processing ${tableName} table...`);
         
-        // Query raw data to bypass TypeORM transformers
-        const userDocs = await queryRunner.query(
-            'SELECT doc_id, doc_data FROM user_docs WHERE doc_data IS NOT NULL'
-        );
-
-        this.stats.userDocs.total = userDocs.length;
-        console.log(`Found ${userDocs.length} user documents to process`);
+        const records = await queryRunner.query(selectQuery);
+        this.stats[statsKey].total = records.length;
+        console.log(`Found ${records.length} records to process`);
 
         let batchCount = 0;
         const batchSize = 100;
 
-        for (let i = 0; i < userDocs.length; i += batchSize) {
-            const batch = userDocs.slice(i, i + batchSize);
+        for (let i = 0; i < records.length; i += batchSize) {
+            const batch = records.slice(i, i + batchSize);
             batchCount++;
             
-            console.log(`Processing batch ${batchCount}/${Math.ceil(userDocs.length / batchSize)} (${batch.length} records)`);
+            console.log(`Processing batch ${batchCount}/${Math.ceil(records.length / batchSize)} (${batch.length} records)`);
 
-            for (const userDoc of batch) {
+            for (const record of batch) {
                 try {
-                    if (!userDoc.doc_data) continue;
+                    if (!record[dataField]) continue;
 
                     // The data is stored encrypted, we need to decrypt with old key first
-                    const decryptedData = this.decryptWithOldKey(userDoc.doc_data);
+                    const decryptedData = this.decryptWithOldKey(record[dataField]);
                     
                     // Re-encrypt with new key
                     const reencryptedData = this.encryptWithNewKey(decryptedData);
                     
                     if (!this.dryRun) {
-                        await queryRunner.query(
-                            'UPDATE user_docs SET doc_data = $1 WHERE doc_id = $2',
-                            [reencryptedData, userDoc.doc_id]
-                        );
+                        await queryRunner.query(updateQuery, [reencryptedData, record[idField]]);
                     }
 
-                    this.stats.userDocs.processed++;
+                    this.stats[statsKey].processed++;
                 } catch (error) {
-                    console.error(`❌ Error processing user doc ${userDoc.doc_id}: ${error.message}`);
-                    this.stats.userDocs.errors++;
+                    console.error(`❌ Error processing ${tableName} record ${record[idField]}: ${error.message}`);
+                    this.stats[statsKey].errors++;
                 }
             }
 
             // Progress update
-            const processed = Math.min(i + batchSize, userDocs.length);
-            const percentage = ((processed / userDocs.length) * 100).toFixed(1);
-            console.log(`Progress: ${processed}/${userDocs.length} (${percentage}%)`);
+            const processed = Math.min(i + batchSize, records.length);
+            const percentage = ((processed / records.length) * 100).toFixed(1);
+            console.log(`Progress: ${processed}/${records.length} (${percentage}%)`);
         }
+    }
+
+    /**
+     * Rotates encryption keys for user_docs table
+     */
+    private async rotateUserDocsKeys(queryRunner: QueryRunner): Promise<void> {
+        await this.rotateTableKeys(
+            queryRunner,
+            'user_docs',
+            'SELECT doc_id, doc_data FROM user_docs WHERE doc_data IS NOT NULL',
+            'UPDATE user_docs SET doc_data = $1 WHERE doc_id = $2',
+            'doc_id',
+            'doc_data',
+            'userDocs'
+        );
     }
 
     /**
      * Rotates encryption keys for user_applications table
      */
     private async rotateUserApplicationsKeys(queryRunner: QueryRunner): Promise<void> {
-        console.log('\n📋 Processing user_applications table...');
-        
-        // Query raw data to bypass TypeORM transformers
-        const userApplications = await queryRunner.query(
-            'SELECT internal_application_id, application_data FROM user_applications WHERE application_data IS NOT NULL'
+        await this.rotateTableKeys(
+            queryRunner,
+            'user_applications',
+            'SELECT internal_application_id, application_data FROM user_applications WHERE application_data IS NOT NULL',
+            'UPDATE user_applications SET application_data = $1 WHERE internal_application_id = $2',
+            'internal_application_id',
+            'application_data',
+            'userApplications'
         );
-
-        this.stats.userApplications.total = userApplications.length;
-        console.log(`Found ${userApplications.length} user applications to process`);
-
-        let batchCount = 0;
-        const batchSize = 100;
-
-        for (let i = 0; i < userApplications.length; i += batchSize) {
-            const batch = userApplications.slice(i, i + batchSize);
-            batchCount++;
-            
-            console.log(`Processing batch ${batchCount}/${Math.ceil(userApplications.length / batchSize)} (${batch.length} records)`);
-
-            for (const userApp of batch) {
-                try {
-                    if (!userApp.application_data) continue;
-
-                    // The data is stored encrypted, we need to decrypt with old key first
-                    const decryptedData = this.decryptWithOldKey(userApp.application_data);
-                    
-                    // Re-encrypt with new key
-                    const reencryptedData = this.encryptWithNewKey(decryptedData);
-                    
-                    if (!this.dryRun) {
-                        await queryRunner.query(
-                            'UPDATE user_applications SET application_data = $1 WHERE internal_application_id = $2',
-                            [reencryptedData, userApp.internal_application_id]
-                        );
-                    }
-
-                    this.stats.userApplications.processed++;
-                } catch (error) {
-                    console.error(`❌ Error processing user application ${userApp.internal_application_id}: ${error.message}`);
-                    this.stats.userApplications.errors++;
-                }
-            }
-
-            // Progress update
-            const processed = Math.min(i + batchSize, userApplications.length);
-            const percentage = ((processed / userApplications.length) * 100).toFixed(1);
-            console.log(`Progress: ${processed}/${userApplications.length} (${percentage}%)`);
-        }
     }
 
     /**
      * Rotates encryption keys for field_values table (only encrypted fields)
      */
     private async rotateFieldValuesKeys(queryRunner: QueryRunner): Promise<void> {
-        console.log('\n📋 Processing field_values table...');
-        
-        // Get encrypted field values by joining with fields table using raw SQL
-        const encryptedFieldValues = await queryRunner.query(`
-            SELECT fv.id, fv.value, fv."fieldId"
-            FROM "fieldValues" fv
-            INNER JOIN fields f ON f."fieldId" = fv."fieldId"
-            WHERE fv.value IS NOT NULL
-            AND f."fieldAttributes"->>'isEncrypted' = 'true'
-        `);
-
-        this.stats.fieldValues.total = encryptedFieldValues.length;
-        console.log(`Found ${encryptedFieldValues.length} encrypted field values to process`);
-
-        let batchCount = 0;
-        const batchSize = 100;
-
-        for (let i = 0; i < encryptedFieldValues.length; i += batchSize) {
-            const batch = encryptedFieldValues.slice(i, i + batchSize);
-            batchCount++;
-            
-            console.log(`Processing batch ${batchCount}/${Math.ceil(encryptedFieldValues.length / batchSize)} (${batch.length} records)`);
-
-            for (const fieldValue of batch) {
-                try {
-                    if (!fieldValue.value) continue;
-
-                    // The data is stored encrypted, we need to decrypt with old key first
-                    const decryptedData = this.decryptWithOldKey(fieldValue.value);
-                    
-                    // Re-encrypt with new key
-                    const reencryptedData = this.encryptWithNewKey(decryptedData);
-                    
-                    if (!this.dryRun) {
-                        await queryRunner.query(
-                            'UPDATE "fieldValues" SET value = $1 WHERE id = $2',
-                            [reencryptedData, fieldValue.id]
-                        );
-                    }
-
-                    this.stats.fieldValues.processed++;
-                } catch (error) {
-                    console.error(`❌ Error processing field value ${fieldValue.id}: ${error.message}`);
-                    this.stats.fieldValues.errors++;
-                }
-            }
-
-            // Progress update
-            const processed = Math.min(i + batchSize, encryptedFieldValues.length);
-            const percentage = ((processed / encryptedFieldValues.length) * 100).toFixed(1);
-            console.log(`Progress: ${processed}/${encryptedFieldValues.length} (${percentage}%)`);
-        }
+        await this.rotateTableKeys(
+            queryRunner,
+            'field_values',
+            `SELECT fv.id, fv.value, fv."fieldId"
+             FROM "fieldValues" fv
+             INNER JOIN fields f ON f."fieldId" = fv."fieldId"
+             WHERE fv.value IS NOT NULL
+             AND f."fieldAttributes"->>'isEncrypted' = 'true'`,
+            'UPDATE "fieldValues" SET value = $1 WHERE id = $2',
+            'id',
+            'value',
+            'fieldValues'
+        );
     }
 
     /**
