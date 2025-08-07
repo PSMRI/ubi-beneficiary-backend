@@ -17,14 +17,14 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 ### Test Migration (Dry Run)
 ```bash
-OLD_ENCRYPTION_KEY=current_key
+ENCRYPTION_KEY=current_key
 NEW_ENCRYPTION_KEY=new_key
 ts-node scripts/key-rotation.ts --dry-run
 ```
 
 ### Execute Migration
 ```bash
-OLD_ENCRYPTION_KEY=current_key
+ENCRYPTION_KEY=current_key
 NEW_ENCRYPTION_KEY=new_key
 ts-node scripts/key-rotation.ts
 ```
