@@ -25,6 +25,7 @@ import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
+import { AdminService } from '@modules/admin/admin.service';
 import axios from 'axios';
 import { FieldContext } from '@modules/customfields/entities/field.entity';
 import { ConfigService } from '@nestjs/config';
@@ -47,6 +48,7 @@ export class UserService {
     private readonly customFieldsService: CustomFieldsService,
     private readonly configService: ConfigService,
     private readonly proxyService: ProxyService,
+    private readonly adminService: AdminService,
   ) { }
 
 
@@ -893,34 +895,71 @@ export class UserService {
     }
   }
 
+  /**
+   * Get fields to reset from database configuration based on document type
+   * @param docSubtype Document subtype (e.g., 'casteCertificate', 'disabilityCertificate')
+   * @returns Array of field names to reset
+   */
+  private async getFieldsToResetFromConfig(docSubtype: string): Promise<string[]> {
+    try {
+      // Get profile fields configuration from settings table
+      const configResponse = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
+
+      if (!configResponse?.value) {
+        Logger.warn('profileFieldToDocumentFieldMapping configuration not found');
+        return [];
+      }
+
+      const profileFields = Array.isArray(configResponse.value) ? configResponse.value : [];
+      const fieldsToReset: string[] = [];
+
+      // Find all fields that have mappings to this document type
+      for (const fieldConfig of profileFields) {
+        const documentMappings = fieldConfig.documentMappings || [];
+
+        // Check if this field has a mapping for the given document type
+        const hasMapping = documentMappings.some((mapping: any) => mapping.document === docSubtype);
+
+        if (hasMapping && fieldConfig.fieldName) {
+          fieldsToReset.push(fieldConfig.fieldName);
+        }
+      }
+
+      Logger.debug(`Fields to reset for document type '${docSubtype}': [${fieldsToReset.join(', ')}]`);
+      return fieldsToReset;
+    } catch (error) {
+      Logger.error(`Error getting fields to reset for document type '${docSubtype}':`, error);
+      return [];
+    }
+  }
+
   async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
-    
-    // const fieldsArray = {
-    //   aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
-    //   casteCertificate: ['caste'],
-    //   enrollmentCertificate: ['class', 'studentType'],
-    //   incomeCertificate: ['annualIncome'],
-    //   janAadharCertificate: ['state'],
-    //   marksheet: ['previousYearMarks'],
-    // };
+    try {
+      // Get fields to reset from database configuration instead of hardcoded array
+      const fields = await this.getFieldsToResetFromConfig(existingDoc.doc_subtype);
 
-    // Mapped fields array where document types are keys and field arrays are values
-     const fieldsArray = {
-      disabilityCertificate: ['aadhaar', 'disabilityRange', 'disabilityType', 'udid'],
-      incomeCertificate: ['annualIncome'],
-      bankAccountDetails: ['bankAccountHolderName', 'bankAccountNumber', 'bankAddress', 'bankIfscCode', 'bankName', 'branchCode'],
-      marksheet: ['class', 'currentSchoolName', 'previousYearMarks'],
-      enrollmentCertificate: ['class', 'state'],
-      otrCertificate: ['dob', 'fatherName', 'firstName', 'gender', 'lastName', 'middleName', 'nspOtr'],
-      feeReceipt: ['miscFeePaid', 'tuitionAndAdminFeePaid'],
-    };
+      if (fields.length === 0) {
+        Logger.warn(`No field mappings found for document type '${existingDoc.doc_subtype}'`);
+        return;
+      }
 
-    const fields = fieldsArray[existingDoc.doc_subtype] ?? [];
-
-    for (const field of fields) {
-      if (field === 'middleName')
-        await this.resetInUsers(field, existingDoc, queryRunner);
-      else await this.resetFields(field, existingDoc);
+      for (const field of fields) {
+        try {
+          if (field === 'middleName') {
+            // Special handling for middleName field (updates users table directly)
+            await this.resetInUsers(field, existingDoc, queryRunner);
+          } else {
+            // Reset custom field values
+            await this.resetFields(field, existingDoc);
+          }
+        } catch (error) {
+          Logger.error(`Error resetting field '${field}' for user ${existingDoc.user_id}:`, error);
+          // Continue with other fields even if one fails
+        }
+      }
+    } catch (error) {
+      Logger.error(`Error in resetField for document ${existingDoc.doc_id}:`, error);
+      throw error;
     }
   }
 
