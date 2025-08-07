@@ -40,7 +40,14 @@ export class UserDoc {
   @Column({ type: 'varchar', length: 255, nullable: true })
   doc_path: string;
 
-  @Column({ type: 'text', nullable: true, transformer: encryptionTransformer })
+  @Column({ type: 'varchar', length: 1500, nullable: true })
+  doc_data_link: string;
+
+	@Column({
+		type: 'text',
+		nullable: true,
+		transformer: encryptionTransformer,
+	})
   doc_data: Record<string, unknown> | null;
 
   @Column({ type: 'varchar', length: 100 })
@@ -48,6 +55,15 @@ export class UserDoc {
 
   @Column({ type: 'boolean' })
   doc_verified: boolean;
+
+  @Column({ type: 'boolean', default: false, nullable: true })
+  watcher_registered: boolean;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  watcher_email: string;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  watcher_callback_url: string;
 
   @CreateDateColumn({ type: 'timestamptz', default: () => 'NOW()' })
   uploaded_at: Date;

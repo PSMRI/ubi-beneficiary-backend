@@ -1,18 +1,18 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-  Req,
-  ParseUUIDPipe,
-  Delete,
-  InternalServerErrorException,
-  UnauthorizedException,
-  Logger,
+	Controller,
+	Get,
+	Post,
+	Put,
+	Body,
+	Param,
+	Query,
+	UseGuards,
+	Req,
+	ParseUUIDPipe,
+	Delete,
+	InternalServerErrorException,
+	UnauthorizedException,
+	Logger,
 } from '@nestjs/common';
 import { UserService } from '../users/users.service';
 import {
@@ -31,6 +31,7 @@ import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { Request } from 'express';
 import { FetchVcUrlDto } from './dto/fetch-vc-url.dto';
+import { WalletCallbackDto } from './dto/wallet-callback.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -214,5 +215,15 @@ export class UserController {
   @ApiResponse({ status: 400, description: 'Invalid URL or unable to fetch VC JSON' })
   async fetchVcJson(@Body() fetchVcUrlDto: FetchVcUrlDto) {
     return await this.userService.fetchVcJsonFromUrl(fetchVcUrlDto.url);
+  }
+
+  @Post('/wallet-callback')
+  @ApiOperation({ summary: 'Handle wallet callback and update document data' })
+  @ApiResponse({ status: 200, description: 'Document updated successfully from wallet callback' })
+  @ApiResponse({ status: 404, description: 'Document not found for the given identifier' })
+  @ApiResponse({ status: 400, description: 'Failed to fetch updated data from wallet' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async handleWalletCallback(@Body() walletCallbackDto: WalletCallbackDto) {
+    return await this.userService.handleWalletCallback(walletCallbackDto);
   }
 }

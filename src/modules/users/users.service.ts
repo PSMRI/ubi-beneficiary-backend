@@ -496,6 +496,7 @@ export class UserService {
           userDetails,
           baseFolder
         );
+
         if (savedDoc) {
           savedDocs.push(savedDoc);
         }
@@ -562,8 +563,6 @@ export class UserService {
 
     if (existingDoc) await this.deleteDoc(existingDoc);
 
-
-
     if (!createUserDocDto?.user_id) {
       createUserDocDto.user_id = userDetails?.user_id;
     }
@@ -572,6 +571,44 @@ export class UserService {
     try {
       const savedDoc = await this.saveDoc(createUserDocDto);
       await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+
+      // Register watcher if imported_from is e-wallet or QR Code
+      if (createUserDocDto.imported_from && 
+          (createUserDocDto.imported_from.toLowerCase() === 'e-wallet' || 
+           createUserDocDto.imported_from.toLowerCase() === 'qr code')) {
+        
+        // Use provided email and callback URL or defaults
+        const email = process.env.DHIWAY_WATCHER_EMAIL || '';
+        const callbackUrl = createUserDocDto.watcher_callback_url || 
+                           `${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
+
+        try {
+          const watcherResult = await this.registerWatcher(
+            createUserDocDto.imported_from,
+            createUserDocDto.doc_data,
+            createUserDocDto.doc_data_link,
+            email,
+            callbackUrl
+          );
+
+          if (watcherResult.success) {
+            // Update the saved document with watcher information
+            savedDoc.watcher_registered = true;
+            savedDoc.watcher_email = email;
+            savedDoc.watcher_callback_url = callbackUrl;
+            
+            // Save the updated document
+            await this.userDocsRepository.save(savedDoc);
+            
+            Logger.log(`Watcher registered successfully for document: ${savedDoc.doc_id}`);
+          } else {
+            Logger.warn(`Watcher registration failed for document: ${savedDoc.doc_id}, Error: ${watcherResult.message}`);
+          }
+        } catch (watcherError) {
+          Logger.error(`Error during watcher registration for document: ${savedDoc.doc_id}`, watcherError);
+        }
+      }
+
       return savedDoc;
     } catch (error) {
       Logger.error('Error processing document:', error);
@@ -965,6 +1002,15 @@ export class UserService {
    */
   async fetchVcJsonFromUrl(url: string): Promise<any> {
     try {
+      const vcJsonResponse = {
+        status: 200,
+        message: 'VC JSON fetched successfully',
+        data: {
+          vcData: {},
+          url: '',
+        },
+      };
+
       // 1. Follow redirects to get the final URL
       const response = await axios.get(url, {
         maxRedirects: 5,
@@ -980,7 +1026,10 @@ export class UserService {
       // 3. Fetch the VC JSON
       const vcResponse = await axios.get(finalUrl, { headers: { Accept: 'application/json' } });
 
-      return vcResponse.data;
+      vcJsonResponse.data.vcData = vcResponse.data;
+      vcJsonResponse.data.url = finalUrl;
+
+      return vcJsonResponse;
     }
     catch (error) {
       // Handle errors and return a meaningful message
@@ -1038,6 +1087,150 @@ export class UserService {
           error.message ??
           'VC Verification failed',
         errors: error?.response?.data?.errors,
+      };
+    }
+  }
+
+  // Register watcher for e-wallet
+  private async registerWatcherForEWallet(
+    identifier: string,
+    recordPublicId: string,
+    email: string,
+    callbackUrl: string
+  ): Promise<{ success: boolean; message?: string; data?: any }> {
+    try {
+      const walletUrl = process.env.WALLET_BASE_URL+ '/api/wallet/vcs/watch';
+      const authToken = process.env.WALLET_AUTH_TOKEN || '';
+
+      const payload = {
+        vcPublicId: recordPublicId,
+        email: email,
+        callbackUrl: callbackUrl
+      };
+
+      const response = await axios.post(walletUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        timeout: 10000,
+      });
+
+      return {
+        success: true,
+        message: 'Watcher registered successfully',
+        data: response.data
+      };
+    } catch (error) {
+      Logger.error('E-Wallet watcher registration error:', error?.response?.data ?? error.message);
+      return {
+        success: false,
+        message: error?.response?.data?.message ?? error.message ?? 'Watcher registration failed',
+        data: error?.response?.data
+      };
+    }
+  }
+
+  // Register watcher for QR Code (Dhiway)
+  private async registerWatcherForQRCode(
+    identifier: string,
+    recordPublicId: string,
+    email: string,
+    callbackUrl: string
+  ): Promise<{ success: boolean; message?: string; data?: any }> {
+    try {
+      const dhiwayUrl = process.env.DHIWAY_WATCHER_URL || '';
+      const payload = {
+        identifier: identifier,
+        recordPublicId: recordPublicId,
+        email: email,
+        callbackUrl: callbackUrl
+      };
+
+      const response = await axios.post(dhiwayUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000,
+      });
+
+      return {
+        success: true,
+        message: 'Watcher registered successfully',
+        data: response.data
+      };
+    } catch (error) {
+      Logger.error('QR Code watcher registration error:', error?.response?.data ?? error.message);
+      return {
+        success: false,
+        message: error?.response?.data?.message ?? error.message ?? 'Watcher registration failed',
+        data: error?.response?.data
+      };
+    }
+  }
+
+  // Register watcher based on imported_from
+  private async registerWatcher(
+    importedFrom: string,
+    docData: any,
+    docPath: string,
+    email: string,
+    callbackUrl: string
+  ): Promise<{ success: boolean; message?: string; data?: any }> {
+    try {
+      // Normalize docPath to ensure it ends with .json
+      let normalizedDocPath = docPath;
+      if (normalizedDocPath.endsWith('.vc')) {
+        normalizedDocPath = normalizedDocPath.replace('.vc', '.json');
+      } else if (!normalizedDocPath.endsWith('.json')) {
+        normalizedDocPath = normalizedDocPath + '.json';
+      }
+
+      // Fetch document details from the path
+      let fetchedDocData;
+      try {
+        const response = await axios.get(normalizedDocPath, {
+          timeout: 10000,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        fetchedDocData = response.data;
+      } catch (fetchError) {
+        Logger.error('Failed to fetch document from path:', normalizedDocPath, fetchError);
+        return {
+          success: false,
+          message: `Failed to fetch document from path: ${normalizedDocPath}`
+        };
+      }
+
+      // Extract vcPublicId from fetched document data
+      const identifier = fetchedDocData?.identifier || '';
+      const recordPublicId = fetchedDocData?.publicId || '';
+      callbackUrl = process.env.BASE_URL + '/users/wallet-callback';
+
+      if (!identifier || !recordPublicId) {
+        return {
+          success: false,
+          message: 'identifier or recordPublicId not found in fetched document data'
+        };
+      }
+
+      if (importedFrom.toLowerCase() === 'e-wallet') {
+        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, callbackUrl);
+      } else if (importedFrom.toLowerCase() === 'qr code') {
+        return await this.registerWatcherForQRCode(identifier, recordPublicId, email, callbackUrl);
+      } else {
+        return {
+          success: false,
+          message: `Watcher registration not supported for imported_from: ${importedFrom}`
+        };
+      }
+    } catch (error) {
+      Logger.error('Watcher registration error:', error);
+      return {
+        success: false,
+        message: error.message || 'Watcher registration failed'
       };
     }
   }
@@ -1226,6 +1419,75 @@ export class UserService {
       throw new InternalServerErrorException(
         'Failed to update application statuses',
       );
+    }
+  }
+
+  async handleWalletCallback(callbackData: {
+    identifier: string;
+    message: string;
+    type: string;
+    recordPublicId: string;
+  }) {
+    try {
+      Logger.log(`Processing wallet callback for identifier: ${callbackData.identifier}`);
+
+      // Find the user document that matches the identifier
+      const userDoc = await this.userDocsRepository.findOne({
+        where: {
+          doc_data_link: ILike(`%${callbackData.identifier}%`),
+        },
+      });
+
+      if (!userDoc) {
+        Logger.warn(`No user document found for identifier: ${callbackData.identifier}`);
+        return new ErrorResponse({
+          statusCode: HttpStatus.NOT_FOUND,
+          errorMessage: `No document found for identifier: ${callbackData.identifier}`,
+        });
+      }
+
+      // Fetch updated data from the wallet using the recordPublicId
+      const updatedDataUrl = `${callbackData.recordPublicId}.json`;
+      let updatedDocData;
+
+      try {
+        updatedDocData = await this.fetchVcJsonFromUrl(updatedDataUrl);
+      } catch (error) {
+        Logger.error(`Failed to fetch updated data from wallet: ${error}`);
+        return new ErrorResponse({
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: 'Failed to fetch updated data from wallet',
+        });
+      }
+
+      // Update the document data in the database
+      userDoc.doc_data = updatedDocData;
+      userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
+
+      const updatedUserDoc = await this.userDocsRepository.save(userDoc);
+
+      Logger.log(`Successfully updated document ${userDoc.doc_id} with wallet callback data`);
+
+      return new SuccessResponse({
+        statusCode: HttpStatus.OK,
+        message: 'Document updated successfully from wallet callback',
+        data: {
+          doc_id: updatedUserDoc.doc_id,
+          user_id: updatedUserDoc.user_id,
+          doc_name: updatedUserDoc.doc_name,
+          doc_type: updatedUserDoc.doc_type,
+          doc_subtype: updatedUserDoc.doc_subtype,
+          doc_verified: updatedUserDoc.doc_verified,
+          updated_at: new Date().toISOString(),
+          callback_data: callbackData,
+        },
+      });
+    } catch (error) {
+      Logger.error(`Error processing wallet callback: ${error}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: 'Failed to process wallet callback',
+      });
     }
   }
 }
