@@ -239,12 +239,12 @@ class KeyRotationService {
     }
 
     /**
-     * Rotates encryption keys for field_values table (only encrypted fields)
+     * Rotates encryption keys for fieldValues table (only encrypted fields)
      */
     private async rotateFieldValuesKeys(queryRunner: QueryRunner): Promise<void> {
         await this.rotateTableKeys(
             queryRunner,
-            'field_values',
+            'fieldValues',
             `SELECT fv.id, fv.value, fv."fieldId"
              FROM "fieldValues" fv
              INNER JOIN fields f ON f."fieldId" = fv."fieldId"
