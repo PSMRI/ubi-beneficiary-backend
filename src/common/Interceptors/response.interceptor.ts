@@ -18,6 +18,7 @@ export class ResponseInterceptor implements NestInterceptor {
     return next.handle().pipe(
       map((data) => {
         if (data instanceof ErrorResponse) {
+          console.log('data=================', data);
           response.status(data.statusCode).json({
             statusCode: data.statusCode,
             error: data.errorMessage,

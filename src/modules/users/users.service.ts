@@ -575,12 +575,21 @@ export class UserService {
       await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
 
       // Register watcher if imported_from is e-wallet or QR Code
-      if (createUserDocDto.imported_from && 
-          (createUserDocDto.imported_from.toLowerCase() === 'e-wallet' || 
-           createUserDocDto.imported_from.toLowerCase() === 'qr code')) {
-        
+      const importSource = createUserDocDto.imported_from?.toLowerCase();
+      if (importSource && (importSource === 'e-wallet' || importSource === 'qr code')) {
+        // Validate doc_data_link exists
+        if (!createUserDocDto.doc_data_link) {
+          Logger.warn(`No doc_data_link for watcher registration: ${savedDoc.doc_id}`);
+          return savedDoc;
+        }
+
         // Use provided email and callback URL or defaults
-        const email = process.env.DHIWAY_WATCHER_EMAIL || '';
+        const email = process.env.DHIWAY_WATCHER_EMAIL;
+        if (!email) {
+          Logger.warn(`No watcher email configured, skipping registration for: ${savedDoc.doc_id}`);
+          return savedDoc;
+        }
+
         const callbackUrl = createUserDocDto.watcher_callback_url || 
                            `${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
 

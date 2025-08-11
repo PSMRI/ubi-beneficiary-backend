@@ -19,5 +19,5 @@ COMMENT ON COLUMN user_docs.watcher_email IS 'Email address used for watcher reg
 COMMENT ON COLUMN user_docs.watcher_callback_url IS 'Callback URL for watcher notifications';
 
 -- Create index for better query performance
-CREATE INDEX idx_user_docs_watcher_registered ON user_docs(watcher_registered);
-CREATE INDEX idx_user_docs_imported_from ON user_docs(imported_from); 
+CREATE INDEX IF NOT EXISTS idx_user_docs_watcher_registered ON user_docs(watcher_registered);
+CREATE INDEX IF NOT EXISTS idx_user_docs_imported_from ON user_docs(imported_from);

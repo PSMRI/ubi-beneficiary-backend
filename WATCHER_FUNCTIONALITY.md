@@ -95,11 +95,11 @@ Add the following to your `.env` file:
 ```env
 # E-Wallet Configuration
 WALLET_WATCHER_URL=localhost:3018/api/wallet/vcs/watch
-WALLET_AUTH_TOKEN=8779cc8a-a1fc-499c-9b19-400551041739
+WALLET_AUTH_TOKEN=YOUR_TOKEN_VALUE
 
 # Dhiway Configuration
 DHIWAY_WATCHER_URL=https://api.depwd.onest.dhiway.net/api/watch
-DHIWAY_COOKIE=connect.sid=s%3Ae2I4C8LHipRmYG3apc6Nge5J2eVsseCw.gokVPhLHYd%2BWjdks1qjcsKFyLdxpBVFinpIHkJi44FU
+DHIWAY_COOKIE=YOUR_COOKIE_VALUE
 
 # Base URL for callbacks
 BASE_URL=http://localhost:3000

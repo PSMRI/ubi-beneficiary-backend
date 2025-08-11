@@ -10,7 +10,7 @@ The following environment variables need to be added to your `.env` file for the
 WALLET_WATCHER_URL=localhost:3018/api/wallet/vcs/watch
 
 # E-Wallet authentication token
-WALLET_AUTH_TOKEN=8779cc8a-a1fc-499c-9b19-400551041739
+WALLET_AUTH_TOKEN=your-wallet-auth-token-here
 ```
 
 ### QR Code (Dhiway) Watcher Configuration
@@ -19,7 +19,7 @@ WALLET_AUTH_TOKEN=8779cc8a-a1fc-499c-9b19-400551041739
 DHIWAY_WATCHER_URL=https://api.depwd.onest.dhiway.net/api/watch
 
 # Dhiway session cookie
-DHIWAY_COOKIE=connect.sid=s%3Ae2I4C8LHipRmYG3apc6Nge5J2eVsseCw.gokVPhLHYd%2BWjdks1qjcsKFyLdxpBVFinpIHkJi44FU
+DHIWAY_COOKIE=YOUR_COOKIE_VALUE
 ```
 
 ### Base URL Configuration
@@ -31,10 +31,10 @@ BASE_URL=http://localhost:3000
 ## Optional Environment Variables
 
 If not provided, the system will use these default values:
-- `WALLET_WATCHER_URL`: `localhost:3018/api/wallet/vcs/watch`
-- `WALLET_AUTH_TOKEN`: `8779cc8a-a1fc-499c-9b19-400551041739`
+- `WALLET_WATCHER_URL`: `YOUR_APPLICATION_BASE_URL/api/wallet/vcs/watch`
+- `WALLET_AUTH_TOKEN`: `your-wallet-auth-token-here`
 - `DHIWAY_WATCHER_URL`: `https://api.depwd.onest.dhiway.net/api/watch`
-- `DHIWAY_COOKIE`: `connect.sid=s%3Ae2I4C8LHipRmYG3apc6Nge5J2eVsseCw.gokVPhLHYd%2BWjdks1qjcsKFyLdxpBVFinpIHkJi44FU`
+- `DHIWAY_COOKIE`: `YOUR_COOKIE_VALUE`
 - `BASE_URL`: `http://localhost:3000`
 
 ## Database Migration
