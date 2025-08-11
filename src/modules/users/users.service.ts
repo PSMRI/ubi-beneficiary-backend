@@ -575,50 +575,7 @@ export class UserService {
       await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
 
       // Register watcher if imported_from is e-wallet or QR Code
-      const importSource = createUserDocDto.imported_from?.toLowerCase();
-      if (importSource && (importSource === 'e-wallet' || importSource === 'qr code')) {
-        // Validate doc_data_link exists
-        if (!createUserDocDto.doc_data_link) {
-          Logger.warn(`No doc_data_link for watcher registration: ${savedDoc.doc_id}`);
-          return savedDoc;
-        }
-
-        // Use provided email and callback URL or defaults
-        const email = process.env.DHIWAY_WATCHER_EMAIL;
-        if (!email) {
-          Logger.warn(`No watcher email configured, skipping registration for: ${savedDoc.doc_id}`);
-          return savedDoc;
-        }
-
-        const callbackUrl = createUserDocDto.watcher_callback_url || 
-                           `${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
-
-        try {
-          const watcherResult = await this.registerWatcher(
-            createUserDocDto.imported_from,
-            createUserDocDto.doc_data,
-            createUserDocDto.doc_data_link,
-            email,
-            callbackUrl
-          );
-
-          if (watcherResult.success) {
-            // Update the saved document with watcher information
-            savedDoc.watcher_registered = true;
-            savedDoc.watcher_email = email;
-            savedDoc.watcher_callback_url = callbackUrl;
-            
-            // Save the updated document
-            await this.userDocsRepository.save(savedDoc);
-            
-            Logger.log(`Watcher registered successfully for document: ${savedDoc.doc_id}`);
-          } else {
-            Logger.warn(`Watcher registration failed for document: ${savedDoc.doc_id}, Error: ${watcherResult.message}`);
-          }
-        } catch (watcherError) {
-          Logger.error(`Error during watcher registration for document: ${savedDoc.doc_id}`, watcherError);
-        }
-      }
+      await this.handleWatcherRegistrationIfNeeded(createUserDocDto, savedDoc);
 
       return savedDoc;
     } catch (error) {
@@ -969,6 +926,55 @@ export class UserService {
     } catch (error) {
       Logger.error(`Error in resetField for document ${existingDoc.doc_id}:`, error);
       throw error;
+    }
+  }
+
+  private async handleWatcherRegistrationIfNeeded(createUserDocDto: CreateUserDocDTO, savedDoc: UserDoc): Promise<void> {
+    const importSource = createUserDocDto.imported_from?.toLowerCase();
+    if (!importSource || (importSource !== 'e-wallet' && importSource !== 'qr code')) {
+      return;
+    }
+
+    // Validate doc_data_link exists
+    if (!createUserDocDto.doc_data_link) {
+      Logger.warn(`No doc_data_link for watcher registration: ${savedDoc.doc_id}`);
+      return;
+    }
+
+    // Use provided email and callback URL or defaults
+    const email = process.env.DHIWAY_WATCHER_EMAIL;
+    if (!email) {
+      Logger.warn(`No watcher email configured, skipping registration for: ${savedDoc.doc_id}`);
+      return;
+    }
+
+    const callbackUrl = createUserDocDto.watcher_callback_url || 
+                       `${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
+
+    try {
+      const watcherResult = await this.registerWatcher(
+        createUserDocDto.imported_from,
+        createUserDocDto.doc_data,
+        createUserDocDto.doc_data_link,
+        email,
+        callbackUrl
+      );
+
+      if (watcherResult.success) {
+        // Update the saved document with watcher information
+        savedDoc.watcher_registered = true;
+        savedDoc.watcher_email = email;
+        savedDoc.watcher_callback_url = callbackUrl;
+        
+        // Save the updated document
+        await this.userDocsRepository.save(savedDoc);
+        
+        Logger.log(`Watcher registered successfully for document: ${savedDoc.doc_id}`);
+      } else {
+        Logger.warn(`Watcher registration failed for document: ${savedDoc.doc_id}, Error: ${watcherResult.message}`);
+      }
+    } catch (watcherError) {
+      Logger.error(`Error during watcher registration for document: ${savedDoc.doc_id}`, watcherError);
     }
   }
 

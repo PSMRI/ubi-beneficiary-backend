@@ -56,7 +56,7 @@ export class UserDoc {
   @Column({ type: 'boolean' })
   doc_verified: boolean;
 
-  @Column({ type: 'boolean', default: false, nullable: true })
+  @Column({ type: 'boolean', default: false, nullable: false })
   watcher_registered: boolean;
 
   @Column({ type: 'varchar', length: 500, nullable: true })

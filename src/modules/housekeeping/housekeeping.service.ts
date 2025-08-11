@@ -261,16 +261,14 @@ export class HousekeepingService {
 				throw new UnauthorizedException('Invalid secret key');
 			}
 
-			switch (operation) {
-				case 'register_watchers':
-					return await this.getWatcherRegistrationStatus();
-				default:
-					return new ErrorResponse({
-						statusCode: HttpStatus.BAD_REQUEST,
-						errorMessage: `Unknown operation: ${operation}`,
-					});
+			if (operation === 'register_watchers') {
+				return await this.getWatcherRegistrationStatus();
 			}
 
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage: `Unknown operation: ${operation}`,
+			});
 		} catch (error) {
 			this.logger.error('Error in getMigrationStatus:', error);
 			return new ErrorResponse({
