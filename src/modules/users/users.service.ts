@@ -1262,7 +1262,6 @@ export class UserService {
       const identifier = fetchedDocData?.identifier || '';
       const recordPublicId = fetchedDocData?.publicId || '';
       const walletCallbackUrl = process.env.BASE_URL + '/users/wallet-callback';
-      callbackUrl = walletCallbackUrl;
 
       if (!identifier || !recordPublicId) {
         return {
@@ -1272,9 +1271,9 @@ export class UserService {
       }
 
       if (importedFrom.toLowerCase() === 'e-wallet') {
-        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, callbackUrl);
+        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, walletCallbackUrl);
       } else if (importedFrom.toLowerCase() === 'qr code') {
-        return await this.registerWatcherForQRCode(identifier, recordPublicId, email, callbackUrl);
+        return await this.registerWatcherForQRCode(identifier, recordPublicId, email, walletCallbackUrl);
       } else {
         return {
           success: false,
