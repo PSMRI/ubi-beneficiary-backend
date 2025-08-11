@@ -1261,7 +1261,8 @@ export class UserService {
       // Extract vcPublicId from fetched document data
       const identifier = fetchedDocData?.identifier || '';
       const recordPublicId = fetchedDocData?.publicId || '';
-      callbackUrl = process.env.BASE_URL + '/users/wallet-callback';
+      const walletCallbackUrl = process.env.BASE_URL + '/users/wallet-callback';
+      callbackUrl = walletCallbackUrl;
 
       if (!identifier || !recordPublicId) {
         return {
