@@ -657,8 +657,11 @@ export class UserService {
     
     const { filters = {}, search, page = 1, limit = 10 } = requestBody;
     
-    // First, attempt to update application statuses
-    const statusUpdateInfo = await this.performStatusUpdate(filters?.user_id);
+    let statusUpdateInfo = null;
+    // ✅ Skip network status update if benefit_id filter exists
+    if (!filters?.benefit_id) {
+      statusUpdateInfo = await this.performStatusUpdate(filters?.user_id);
+    } 
 
     // Now fetch the applications list with updated statuses
     try {
