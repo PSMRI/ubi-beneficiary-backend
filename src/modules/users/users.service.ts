@@ -930,7 +930,7 @@ export class UserService {
   }
 
   private async handleWatcherRegistrationIfNeeded(createUserDocDto: CreateUserDocDTO, savedDoc: UserDoc): Promise<void> {
-    const importSource = createUserDocDto.imported_from?.toLowerCase();
+    const importSource = createUserDocDto.imported_from?.trim().toLowerCase();
     if (!importSource || (importSource !== 'e-wallet' && importSource !== 'qr code')) {
       return;
     }
