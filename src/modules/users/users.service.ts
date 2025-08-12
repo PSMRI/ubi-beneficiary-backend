@@ -32,6 +32,14 @@ import { ConfigService } from '@nestjs/config';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
 
+type StatusUpdateInfo = {
+  attempted: boolean;
+  success: boolean;
+  processedCount: number;
+  error: string | null;
+  skipped?: boolean;
+  skipReason?: string | null;
+};
 @Injectable()
 export class UserService {
   constructor(
@@ -657,11 +665,20 @@ export class UserService {
     
     const { filters = {}, search, page = 1, limit = 10 } = requestBody;
     
-    let statusUpdateInfo = null;
-    // ✅ Skip network status update if benefit_id filter exists
-    if (!filters?.benefit_id) {
-      statusUpdateInfo = await this.performStatusUpdate(filters?.user_id);
-    } 
+    let statusUpdateInfo: StatusUpdateInfo;
+    if (filters.benefit_id) {
+      // skipped due to benefit_id filter
+      statusUpdateInfo = {
+        attempted: false,
+        success: true,
+        processedCount: 0,
+        error: null,
+        skipped: true,
+        skipReason: 'Skipped status update due to benefit_id filter',
+      };
+    } else {
+      statusUpdateInfo = await this.performStatusUpdate(filters.user_id);
+    }
 
     // Now fetch the applications list with updated statuses
     try {
