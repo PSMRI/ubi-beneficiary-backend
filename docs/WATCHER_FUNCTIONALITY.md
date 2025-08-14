@@ -179,7 +179,9 @@ To test the functionality:
        "vcPublicId": "test-vc-id",
        "credential": {...}
      },
-     "doc_datatype": "JSON"
+     "doc_data_link": "Link to VC json",
+     "watcher_email": "user@example.com",
+     "watcher_callback_url": "https://callback.example.com/notify"
    }
    ```
 
@@ -196,7 +198,9 @@ To test the functionality:
        "recordPublicId": "test-record-id",
        "credential": {...}
      },
-     "doc_datatype": "JSON"
+    "doc_data_link": "https://.../qr-code-docs/user-uuid/test-record-id.json",
+    "watcher_email": "user@example.com",
+    "watcher_callback_url": "https://callback.example.com/notify"
    }
    ```
 

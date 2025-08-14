@@ -2,16 +2,16 @@
 -- Run this SQL script to add the new columns for watcher functionality
 
 -- Add watcher_registered column
-ALTER TABLE user_docs 
-ADD COLUMN watcher_registered BOOLEAN DEFAULT FALSE;
+ALTER TABLE user_docs
+ADD COLUMN IF NOT EXISTS watcher_registered BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Add watcher_email column
-ALTER TABLE user_docs 
-ADD COLUMN watcher_email VARCHAR(255);
+ALTER TABLE user_docs
+ADD COLUMN IF NOT EXISTS watcher_email VARCHAR(255);
 
 -- Add watcher_callback_url column
-ALTER TABLE user_docs 
-ADD COLUMN watcher_callback_url VARCHAR(500);
+ALTER TABLE user_docs
+ADD COLUMN IF NOT EXISTS watcher_callback_url VARCHAR(500);
 
 -- Add comments for documentation
 COMMENT ON COLUMN user_docs.watcher_registered IS 'Indicates if a watcher is registered for this document';
