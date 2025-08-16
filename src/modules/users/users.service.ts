@@ -240,7 +240,6 @@ export class UserService {
   }
 
   async findBySsoId(ssoId: string): Promise<User | undefined> {
-    console.log('Finding user by username:', ssoId);
     return await this.userRepository.findOne({
       where: { sso_id: ssoId }
     });
@@ -656,8 +655,6 @@ export class UserService {
     page?: number;
     limit?: number;
   }) {
-    console.log("requestBody", requestBody.filters.user_id);
-    
     const { filters = {}, search, page = 1, limit = 10 } = requestBody;
     
     // First, attempt to update application statuses
@@ -1067,8 +1064,6 @@ export class UserService {
 
       // 1. Fetch the VC JSON
       const vcResponse = await axios.get(url, { headers: { Accept: 'application/json' } });
-      console.log('vcResponse=================', vcResponse);
-      console.log('url=================', url);
       vcJsonResponse.data.vcData = vcResponse.data;
       vcJsonResponse.data.url = url;
 
