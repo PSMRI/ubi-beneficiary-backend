@@ -1177,7 +1177,12 @@ export class UserService {
     callbackUrl: string
   ): Promise<{ success: boolean; message?: string; data?: any }> {
     try {
-      const dhiwayUrl = process.env.DHIWAY_WATCHER_URL || '';
+      const dhiwayUrl = process.env.DHIWAY_WATCHER_URL;
+
+      if (!dhiwayUrl) {
+        return { success: false, message: 'DHIWAY_WATCHER_URL env variable not set' };
+      }
+
       const payload = {
         identifier: identifier,
         recordPublicId: recordPublicId,
