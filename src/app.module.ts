@@ -21,6 +21,7 @@ import { OtpModule } from '@modules/otp/otp.module';
 import { AuthMiddleware } from './common/middlewares/auth.middleware';
 import { CustomFieldsModule } from './modules/customfields/customfields.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
 
 @Module({
 	imports: [
@@ -55,7 +56,8 @@ import { AdminModule } from './modules/admin/admin.module';
 		AuthModule,
 		OtpModule,
 		CustomFieldsModule,
-    AdminModule,
+		AdminModule,
+		HousekeepingModule,
 	],
 	controllers: [AppController],
 	providers: [
