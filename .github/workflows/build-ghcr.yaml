@@ -19,23 +19,25 @@ jobs:
 
       - name: Log in to GHCR
         env:
-         GHCR_PAT: ${{ secrets.GHCR_PAT_TOKEN }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT_TOKEN }}
         run: |
-         echo "$GHCR_PAT" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          echo "$GHCR_PAT" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Set image name
+        run: |
+          IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY_OWNER}/beneficiary-backend"
+          IMAGE_NAME=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          echo "TAG=${{ github.event.inputs.tag }}" >> $GITHUB_ENV
 
       - name: Build and Push Docker image
-        env:
-          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/beneficiary-backend
-          TAG: ${{ github.event.inputs.tag }}
         run: |
           echo "Building and tagging image as $IMAGE_NAME:$TAG"
           docker build -t $IMAGE_NAME:$TAG .
           docker tag $IMAGE_NAME:$TAG $IMAGE_NAME:latest
-
           echo "Pushing image: $IMAGE_NAME:$TAG"
           docker push $IMAGE_NAME:$TAG
           docker push $IMAGE_NAME:latest
-
           echo "$IMAGE_NAME:$TAG" > image.txt
 
       - name: Upload image URI
