@@ -1160,12 +1160,6 @@ export class UserService {
    */
   async fetchVcJsonFromUrl(url: string): Promise<any> {
     try {
-      // Validate URL scheme to prevent SSRF attacks
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        return { error: true, message: 'Invalid URL scheme', status: 400 };
-      }
-
       // 1. Follow redirects to get the final URL
       const response = await axios.get(url, {
         maxRedirects: 5,
@@ -1185,12 +1179,9 @@ export class UserService {
     catch (error) {
       // Handle errors and return a meaningful message
       if (axios.isAxiosError(error)) {
-        const msg = typeof error.response?.data === 'string'
-          ? error.response.data
-          : error.message;
         return {
           error: true,
-          message: msg,
+          message: error.response?.data ?? error.message,
           status: error.response?.status ?? 500,
         };
       }
