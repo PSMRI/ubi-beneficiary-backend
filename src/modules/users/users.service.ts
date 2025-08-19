@@ -1160,18 +1160,36 @@ export class UserService {
    */
   async fetchVcJsonFromUrl(url: string): Promise<any> {
     try {
-      // 1. Follow redirects to get the final URL
+      // Basic scheme validation before the first network call
+      const initialParsed = new URL(url);
+      if (initialParsed.protocol !== 'http:' && initialParsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid URL scheme', status: 400 };
+      }
+
+      // 1. Follow redirects to get the final URL (without downloading the VC yet)
       const response = await axios.get(url, {
         maxRedirects: 5,
-        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
         timeout: 8000,
+        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
       });
-      let finalUrl = response.request?.res?.responseUrl ?? url;
-
-      // 2. If not already ending with .vc, append .vc
-      if (!finalUrl.endsWith('.vc')) {
-        finalUrl = `${finalUrl}.vc`;
+      // Try multiple known locations for the resolved URL (follow-redirects runtime)
+      let finalUrl = url;
+      if (response.request?.res?.responseUrl) {
+        finalUrl = response.request.res.responseUrl;
+      } else if (response.request?._redirectable?._currentUrl) {
+        finalUrl = response.request._redirectable._currentUrl;
       }
+
+      // 2. Append/normalize to .vc while preserving query and hash
+      const parsedFinal = new URL(finalUrl);
+      if (!parsedFinal.pathname.endsWith('.vc')) {
+        if (parsedFinal.pathname.endsWith('.json')) {
+          parsedFinal.pathname = parsedFinal.pathname.replace(/\.json$/, '.vc');
+        } else {
+          parsedFinal.pathname = parsedFinal.pathname.replace(/\/$/, '') + '.vc';
+        }
+      }
+      finalUrl = parsedFinal.toString();
 
       // 3. Use the common method to fetch and validate VC data
       return this.fetchAndValidateVcJson(finalUrl);
@@ -1179,9 +1197,12 @@ export class UserService {
     catch (error) {
       // Handle errors and return a meaningful message
       if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
         return {
           error: true,
-          message: error.response?.data ?? error.message,
+          message: msg,
           status: error.response?.status ?? 500,
         };
       }
