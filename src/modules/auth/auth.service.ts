@@ -397,7 +397,7 @@ export class AuthService {
     });
   }
 
-  public async logout(req, response) {
+  public async logout(req) {
     const accessToken = req.body.access_token;
     const refreshToken = req.body.refresh_token; // Optional: if provided
 
