@@ -1072,12 +1072,19 @@ export class UserService {
    */
   private async fetchAndValidateVcJson(url: string): Promise<any> {
     try {
+      // Validate URL scheme to prevent SSRF attacks
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid VC URL scheme', status: 400 };
+      }
+
       // Fetch the VC JSON with proper headers
       const vcResponse = await axios.get(url, {
         headers: {
           Accept: 'application/json',
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
+        timeout: 8000,
       });
 
       // Validate that we received JSON data
@@ -1088,7 +1095,8 @@ export class UserService {
         } else {
           vcData = vcResponse.data;
         }
-      } catch (parseError) {
+      } catch (_parseError) {
+        Logger.error('Invalid JSON response from VC endpoint', _parseError);
         return {
           error: true,
           message: 'Invalid JSON response from VC endpoint',
@@ -1109,16 +1117,19 @@ export class UserService {
       return {
         data: {
           vcData: vcData,
-          url: url
-        }
+          url: url,
+        },
       };
     }
     catch (error) {
       // Handle errors and return a meaningful message
       if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
         return {
           error: true,
-          message: error.response?.data ?? error.message,
+          message: msg,
           status: error.response?.status ?? 500,
         };
       }
@@ -1149,10 +1160,17 @@ export class UserService {
    */
   async fetchVcJsonFromUrl(url: string): Promise<any> {
     try {
+      // Validate URL scheme to prevent SSRF attacks
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid URL scheme', status: 400 };
+      }
+
       // 1. Follow redirects to get the final URL
       const response = await axios.get(url, {
         maxRedirects: 5,
         validateStatus: (status) => status >= 200 && status < 400, // allow redirects
+        timeout: 8000,
       });
       let finalUrl = response.request?.res?.responseUrl ?? url;
 
@@ -1167,9 +1185,12 @@ export class UserService {
     catch (error) {
       // Handle errors and return a meaningful message
       if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
         return {
           error: true,
-          message: error.response?.data ?? error.message,
+          message: msg,
           status: error.response?.status ?? 500,
         };
       }
