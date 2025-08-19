@@ -1066,35 +1066,143 @@ export class UserService {
   }
 
   /**
-   * Fetches a Verifiable Credential JSON from a given URL.
-   * Handles both dway.io and haqdarshak.com style URLs.
-   * Follows redirects and appends .vc if needed.
-   * @param url The URL from the QR code
+   * Private helper method to fetch and validate VC JSON from a URL
+   * @param url The VC URL to fetch data from
+   * @returns Promise containing validated VC data or error
    */
-  async fetchVcJsonFromUrl(url: string): Promise<any> {
+  private async fetchAndValidateVcJson(url: string): Promise<any> {
     try {
-      const vcJsonResponse = {
-        status: 200,
-        message: 'VC JSON fetched successfully',
+      // Validate URL scheme to prevent SSRF attacks
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid VC URL scheme', status: 400 };
+      }
+
+      // Fetch the VC JSON with proper headers
+      const vcResponse = await axios.get(url, {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        timeout: 8000,
+      });
+
+      // Validate that we received JSON data
+      let vcData;
+      try {
+        if (typeof vcResponse.data === 'string') {
+          vcData = JSON.parse(vcResponse.data);
+        } else {
+          vcData = vcResponse.data;
+        }
+      } catch (_parseError) {
+        Logger.error('Invalid JSON response from VC endpoint', _parseError);
+        return {
+          error: true,
+          message: 'Invalid JSON response from VC endpoint',
+          status: 422,
+        };
+      }
+
+      // Basic validation that it looks like a VC
+      if (!vcData || typeof vcData !== 'object') {
+        return {
+          error: true,
+          message: 'Invalid VC data structure received',
+          status: 422,
+        };
+      }
+
+      // Return in format expected by frontend
+      return {
         data: {
-          vcData: {},
-          url: '',
+          vcData: vcData,
+          url: url,
         },
       };
-
-      // 1. Fetch the VC JSON
-      const vcResponse = await axios.get(url, { headers: { Accept: 'application/json' } });
-      vcJsonResponse.data.vcData = vcResponse.data;
-      vcJsonResponse.data.url = url;
-
-      return vcJsonResponse;
     }
     catch (error) {
       // Handle errors and return a meaningful message
       if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
         return {
           error: true,
-          message: error.response?.data ?? error.message,
+          message: msg,
+          status: error.response?.status ?? 500,
+        };
+      }
+      return {
+        error: true,
+        message: 'Unknown error occurred while fetching VC data',
+        status: 500,
+      };
+    }
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a URL that already ends with .vc
+   * Used for wallet callbacks and direct VC URLs
+   * @param vcUrl The direct VC URL (already ending with .vc)
+   * @returns Object containing vcData and vcUrl in format expected by frontend
+   */
+  async fetchVcJsonFromVcUrl(vcUrl: string): Promise<any> {
+    return this.fetchAndValidateVcJson(vcUrl);
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a given URL.
+   * Handles both dway.io and haqdarshak.com style URLs.
+   * Follows redirects and appends .vc if needed.
+   * @param url The URL from the QR code
+   * @returns Object containing vcData and vcUrl in format expected by frontend
+   */
+  async fetchVcJsonFromUrl(url: string): Promise<any> {
+    try {
+      // Basic scheme validation before the first network call
+      const initialParsed = new URL(url);
+      if (initialParsed.protocol !== 'http:' && initialParsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid URL scheme', status: 400 };
+      }
+
+      // 1. Follow redirects to get the final URL (without downloading the VC yet)
+      const response = await axios.get(url, {
+        maxRedirects: 5,
+        timeout: 8000,
+        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
+      });
+      // Try multiple known locations for the resolved URL (follow-redirects runtime)
+      let finalUrl = url;
+      if (response.request?.res?.responseUrl) {
+        finalUrl = response.request.res.responseUrl;
+      } else if (response.request?._redirectable?._currentUrl) {
+        finalUrl = response.request._redirectable._currentUrl;
+      }
+
+      // 2. Append/normalize to .vc while preserving query and hash
+      const parsedFinal = new URL(finalUrl);
+      if (!parsedFinal.pathname.endsWith('.vc')) {
+        if (parsedFinal.pathname.endsWith('.json')) {
+          parsedFinal.pathname = parsedFinal.pathname.replace(/\.json$/, '.vc');
+        } else {
+          parsedFinal.pathname = parsedFinal.pathname.replace(/\/$/, '') + '.vc';
+        }
+      }
+      finalUrl = parsedFinal.toString();
+
+      // 3. Use the common method to fetch and validate VC data
+      return this.fetchAndValidateVcJson(finalUrl);
+    }
+    catch (error) {
+      // Handle errors and return a meaningful message
+      if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
+        return {
+          error: true,
+          message: msg,
           status: error.response?.status ?? 500,
         };
       }
@@ -1521,7 +1629,7 @@ export class UserService {
       let updatedDocData;
 
       try {
-        updatedDocData = await this.fetchVcJsonFromUrl(userDoc.doc_data_link);
+        updatedDocData = await this.fetchVcJsonFromVcUrl(userDoc.doc_data_link);
       } catch (error) {
         Logger.error(`Failed to fetch updated data from wallet: ${error}`);
         return new ErrorResponse({
