@@ -1,0 +1,42 @@
+name: Build and Push to GHCR
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker tag to use (e.g., v1.0.4)'
+        required: true
+        default: 'v1.0.1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: GHCR_BUILD
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GHCR_PAT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and Push Docker image
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/beneficiary-backend
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          echo "Building and tagging image as $IMAGE_NAME:$TAG"
+          docker build -t $IMAGE_NAME:$TAG .
+          docker tag $IMAGE_NAME:$TAG $IMAGE_NAME:latest
+
+          echo "Pushing image: $IMAGE_NAME:$TAG"
+          docker push $IMAGE_NAME:$TAG
+          docker push $IMAGE_NAME:latest
+
+          echo "$IMAGE_NAME:$TAG" > image.txt
+
+      - name: Upload image URI
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-uri
+          path: image.txt
