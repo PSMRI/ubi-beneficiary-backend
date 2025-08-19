@@ -1066,15 +1066,14 @@ export class UserService {
   }
 
   /**
-   * Fetches a Verifiable Credential JSON from a URL that already ends with .vc
-   * Used for wallet callbacks and direct VC URLs
-   * @param vcUrl The direct VC URL (already ending with .vc)
-   * @returns Object containing vcData and vcUrl in format expected by frontend
+   * Private helper method to fetch and validate VC JSON from a URL
+   * @param url The VC URL to fetch data from
+   * @returns Promise containing validated VC data or error
    */
-  async fetchVcJsonFromVcUrl(vcUrl: string): Promise<any> {
+  private async fetchAndValidateVcJson(url: string): Promise<any> {
     try {
-      // Fetch the VC JSON directly from the .vc URL
-      const vcResponse = await axios.get(vcUrl, {
+      // Fetch the VC JSON with proper headers
+      const vcResponse = await axios.get(url, {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json'
@@ -1110,7 +1109,7 @@ export class UserService {
       return {
         data: {
           vcData: vcData,
-          url: vcUrl
+          url: url
         }
       };
     }
@@ -1129,6 +1128,16 @@ export class UserService {
         status: 500,
       };
     }
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a URL that already ends with .vc
+   * Used for wallet callbacks and direct VC URLs
+   * @param vcUrl The direct VC URL (already ending with .vc)
+   * @returns Object containing vcData and vcUrl in format expected by frontend
+   */
+  async fetchVcJsonFromVcUrl(vcUrl: string): Promise<any> {
+    return this.fetchAndValidateVcJson(vcUrl);
   }
 
   /**
@@ -1152,46 +1161,8 @@ export class UserService {
         finalUrl = `${finalUrl}.vc`;
       }
 
-      // 3. Fetch the VC JSON with proper headers
-      const vcResponse = await axios.get(finalUrl, {
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json'
-        }
-      });
-
-      // 4. Validate that we received JSON data
-      let vcData;
-      try {
-        if (typeof vcResponse.data === 'string') {
-          vcData = JSON.parse(vcResponse.data);
-        } else {
-          vcData = vcResponse.data;
-        }
-      } catch (parseError) {
-        return {
-          error: true,
-          message: 'Invalid JSON response from VC endpoint',
-          status: 422,
-        };
-      }
-
-      // 6. Basic validation that it looks like a VC
-      if (!vcData || typeof vcData !== 'object') {
-        return {
-          error: true,
-          message: 'Invalid VC data structure received',
-          status: 422,
-        };
-      }
-
-      // 7. Return in format expected by frontend
-      return {
-        data: {
-          vcData: vcData,
-          url: finalUrl
-        }
-      };
+      // 3. Use the common method to fetch and validate VC data
+      return this.fetchAndValidateVcJson(finalUrl);
     }
     catch (error) {
       // Handle errors and return a meaningful message
