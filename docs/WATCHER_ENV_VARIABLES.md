@@ -9,8 +9,6 @@ The following environment variables need to be added to your `.env` file for the
 # E-Wallet watcher API URL
 WALLET_WATCHER_URL=localhost:3018/api/wallet/vcs/watch
 
-# E-Wallet authentication token
-WALLET_AUTH_TOKEN=your-wallet-auth-token-here
 ```
 
 ### QR Code (Dhiway) Watcher Configuration
@@ -32,7 +30,6 @@ BASE_URL=http://localhost:3000
 
 If not provided, the system will use these default values:
 - `WALLET_WATCHER_URL`: `YOUR_APPLICATION_BASE_URL/api/wallet/vcs/watch`
-- `WALLET_AUTH_TOKEN`: `your-wallet-auth-token-here`
 - `DHIWAY_WATCHER_URL`: `https://api.depwd.onest.dhiway.net/api/watch`
 - `DHIWAY_COOKIE`: `YOUR_COOKIE_VALUE`
 - `BASE_URL`: `http://localhost:3000`

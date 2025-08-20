@@ -574,7 +574,7 @@ export class UserService {
       await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
 
       // Register watcher if imported_from is e-wallet or QR Code
-      await this.handleWatcherRegistrationIfNeeded(createUserDocDto, savedDoc);
+      await this.handleWatcherRegistrationIfNeeded(createUserDocDto, savedDoc, userDetails);
 
       return savedDoc;
     } catch (error) {
@@ -926,7 +926,7 @@ export class UserService {
     }
   }
 
-  private async handleWatcherRegistrationIfNeeded(createUserDocDto: CreateUserDocDTO, savedDoc: UserDoc): Promise<void> {
+  private async handleWatcherRegistrationIfNeeded(createUserDocDto: CreateUserDocDTO, savedDoc: UserDoc, userDetails: any): Promise<void> {
     const importSource = createUserDocDto.imported_from?.trim().toLowerCase();
     if (!importSource || (importSource !== 'e-wallet' && importSource !== 'qr code')) {
       return;
@@ -954,7 +954,8 @@ export class UserService {
         createUserDocDto.doc_data,
         createUserDocDto.doc_data_link,
         email,
-        callbackUrl
+        callbackUrl,
+        userDetails,
       );
 
       if (watcherResult.success) {
@@ -1134,11 +1135,20 @@ export class UserService {
     identifier: string,
     recordPublicId: string,
     email: string,
-    callbackUrl: string
+    callbackUrl: string,
+    userDetails: any,
   ): Promise<{ success: boolean; message?: string; data?: any }> {
     try {
       const walletUrl = process.env.WALLET_BASE_URL+ '/api/wallet/vcs/watch';
-      const authToken = process.env.WALLET_AUTH_TOKEN || '';
+      const authToken = userDetails.walletToken || '';
+
+      if (!authToken) {
+        return {
+          success: false,
+          message: 'Wallet token not found',
+          data: null,
+        };
+      }
 
       const payload = {
         vcPublicId: recordPublicId,
@@ -1218,7 +1228,8 @@ export class UserService {
     docData: any,
     docPath: string,
     email: string,
-    callbackUrl: string
+    callbackUrl: string,
+    userDetails: any,
   ): Promise<{ success: boolean; message?: string; data?: any }> {
     try {
       // Normalize docPath to ensure it ends with .json
@@ -1260,7 +1271,7 @@ export class UserService {
       }
 
       if (importedFrom.toLowerCase() === 'e-wallet') {
-        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, walletCallbackUrl);
+        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, walletCallbackUrl, userDetails);
       } else if (importedFrom.toLowerCase() === 'qr code') {
         return await this.registerWatcherForQRCode(identifier, recordPublicId, email, walletCallbackUrl);
       } else {
