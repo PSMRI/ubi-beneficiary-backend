@@ -389,7 +389,6 @@ export class UserService {
         // Create the new document entity for the database
         const savedDoc = await this.saveDoc(createUserDocDto);
         savedDocs.push(savedDoc);
-        console.log("userFilePath==============123", userFilePath);
         await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
       }
     }
@@ -579,7 +578,6 @@ export class UserService {
     // Create the new document entity for the database
     try {
       const savedDoc = await this.saveDoc(createUserDocDto);
-      console.log("userFilePath==============123", userFilePath);
       await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
 
       // Register watcher if imported_from is e-wallet or QR Code
@@ -1689,8 +1687,8 @@ export class UserService {
 
       // Write updated data to file (same as user_docs API)
       const baseFolder = path.join(__dirname, 'userData');
-      const userFilePath = path.join(baseFolder, `${userDoc.user_id}.json`);
-      console.log("userFilePath==============123", userFilePath);
+      const userFilePath = path.join(baseFolder, "undefined.json");
+
       try {
         await this.writeToFile(
           {
