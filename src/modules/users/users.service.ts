@@ -1648,9 +1648,9 @@ export class UserService {
           errorMessage: 'Failed to fetch updated data from wallet',
         });
       }
-
+      console.log("updatedDocData==============123", updatedDocData);
       updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
-
+      console.log("updatedDocData==============1234", updatedDocData);
       if (!updatedDocData?.credentialSubject) {
         Logger.error(`Not a valid VC: ${updatedDocData}`);
         return new ErrorResponse({
@@ -1689,7 +1689,7 @@ export class UserService {
       // Write updated data to file (same as user_docs API)
       const baseFolder = path.join(__dirname, 'userData');
       const userFilePath = path.join(baseFolder, `${userDoc.user_id}.json`);
-      
+
       try {
         await this.writeToFile(
           {
