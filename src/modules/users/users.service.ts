@@ -389,7 +389,7 @@ export class UserService {
         // Create the new document entity for the database
         const savedDoc = await this.saveDoc(createUserDocDto);
         savedDocs.push(savedDoc);
-
+        console.log("userFilePath==============123", userFilePath);
         await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
       }
     }
@@ -579,6 +579,7 @@ export class UserService {
     // Create the new document entity for the database
     try {
       const savedDoc = await this.saveDoc(createUserDocDto);
+      console.log("userFilePath==============123", userFilePath);
       await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
 
       // Register watcher if imported_from is e-wallet or QR Code
@@ -1648,9 +1649,9 @@ export class UserService {
           errorMessage: 'Failed to fetch updated data from wallet',
         });
       }
-      console.log("updatedDocData==============123", updatedDocData);
+
       updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
-      console.log("updatedDocData==============1234", updatedDocData);
+
       if (!updatedDocData?.credentialSubject) {
         Logger.error(`Not a valid VC: ${updatedDocData}`);
         return new ErrorResponse({
@@ -1689,7 +1690,7 @@ export class UserService {
       // Write updated data to file (same as user_docs API)
       const baseFolder = path.join(__dirname, 'userData');
       const userFilePath = path.join(baseFolder, `${userDoc.user_id}.json`);
-
+      console.log("userFilePath==============123", userFilePath);
       try {
         await this.writeToFile(
           {
