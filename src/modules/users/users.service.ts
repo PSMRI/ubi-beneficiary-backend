@@ -1679,7 +1679,7 @@ export class UserService {
       }
 
       // Update the document data in the database
-      userDoc.doc_data = updatedDocData;
+      userDoc.doc_data = JSON.stringify(updatedDocData) as any;
       userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
 
       // Save the updated document
