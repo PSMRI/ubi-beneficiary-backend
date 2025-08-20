@@ -196,9 +196,8 @@ export class HousekeepingService {
 			const email = this.configService.get('DHIWAY_WATCHER_EMAIL') || '';
 
 			const walletUrl = `${this.configService.get('WALLET_BASE_URL')}/api/wallet/vcs/watch`;
-			const authToken = this.configService.get('WALLET_AUTH_TOKEN');
 
-			if (!walletUrl || !authToken) {
+			if (!walletUrl || !walletToken) {
 				return {
 					success: false,
 					docId: doc.doc_id,
@@ -215,7 +214,7 @@ export class HousekeepingService {
 
 			const response = await axios.post(walletUrl, payload, {
 				headers: {
-					'Authorization': `Bearer ${authToken}`,
+					'Authorization': `Bearer ${walletToken}`,
 					'Content-Type': 'application/json',
 				},
 				timeout: 10000,
