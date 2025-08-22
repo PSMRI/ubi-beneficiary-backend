@@ -341,13 +341,31 @@ export class UserService {
     savedDoc: any,
   ) {
     try {
+      // Check if userFilePath is valid
+      if (!userFilePath || typeof userFilePath !== 'string') {
+        console.warn(`Invalid file path provided: ${userFilePath}, skipping file write for user_id: ${createUserDocDto.user_id}`);
+        return;
+      }
+
+      // Ensure the directory exists before writing
+      const dir = path.dirname(userFilePath);
+      if (!fs.existsSync(dir)) {
+        try {
+          fs.mkdirSync(dir, { recursive: true });
+        } catch (mkdirErr) {
+          console.warn(`Could not create directory ${dir}: ${mkdirErr}, skipping file write for user_id: ${createUserDocDto.user_id}`);
+          return;
+        }
+      }
+
       // Initialize the file with empty array if it doesn't exist
       let currentData = [];
       if (fs.existsSync(userFilePath)) {
         try {
           currentData = JSON.parse(fs.readFileSync(userFilePath, 'utf-8'));
         } catch (err) {
-          console.error('Error reading/parsing file, reinitializing:', err);
+          console.warn(`Error reading/parsing file ${userFilePath}, reinitializing: ${err}`);
+          currentData = [];
         }
       }
 
@@ -359,7 +377,8 @@ export class UserService {
         `File written successfully for user_id: ${createUserDocDto.user_id}`,
       );
     } catch (err) {
-      console.error('Error writing to file:', err);
+      console.warn(`Error writing to file ${userFilePath}: ${err}, continuing execution for user_id: ${createUserDocDto.user_id}`);
+      // Don't throw error, just log and continue
     }
   }
 
@@ -1687,7 +1706,7 @@ export class UserService {
 
       // Write updated data to file (same as user_docs API)
       const baseFolder = path.join(__dirname, 'userData');
-      const userFilePath = path.join(baseFolder, "undefined.json");
+      const userFilePath = path.join(baseFolder, `${userDoc.user_id}.json`);
 
       try {
         await this.writeToFile(
