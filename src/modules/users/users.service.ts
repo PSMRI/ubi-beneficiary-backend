@@ -1649,7 +1649,7 @@ export class UserService {
       }
 
       updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
-
+      console.log("updatedDocData==============", updatedDocData);
       if (!updatedDocData?.credentialSubject) {
         Logger.error(`Not a valid VC: ${updatedDocData}`);
         return new ErrorResponse({
