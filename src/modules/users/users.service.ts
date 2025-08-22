@@ -341,21 +341,11 @@ export class UserService {
     savedDoc: any,
   ) {
     try {
-      // Check if userFilePath is valid
-      if (!userFilePath || typeof userFilePath !== 'string') {
-        console.warn(`Invalid file path provided: ${userFilePath}, skipping file write for user_id: ${createUserDocDto.user_id}`);
-        return;
-      }
-
-      // Ensure the directory exists before writing
+      // Ensure the directory exists before creating the file
       const dir = path.dirname(userFilePath);
       if (!fs.existsSync(dir)) {
-        try {
-          fs.mkdirSync(dir, { recursive: true });
-        } catch (mkdirErr) {
-          console.warn(`Could not create directory ${dir}: ${mkdirErr}, skipping file write for user_id: ${createUserDocDto.user_id}`);
-          return;
-        }
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`Created directory: ${dir}`);
       }
 
       // Initialize the file with empty array if it doesn't exist
@@ -364,21 +354,19 @@ export class UserService {
         try {
           currentData = JSON.parse(fs.readFileSync(userFilePath, 'utf-8'));
         } catch (err) {
-          console.warn(`Error reading/parsing file ${userFilePath}, reinitializing: ${err}`);
-          currentData = [];
+          console.error('Error reading/parsing file, reinitializing:', err);
         }
       }
 
       currentData.push(savedDoc);
 
-      // Write the updated data to the file
+      // Create the file if it doesn't exist and write the content
       fs.writeFileSync(userFilePath, JSON.stringify(currentData, null, 2));
       console.log(
         `File written successfully for user_id: ${createUserDocDto.user_id}`,
       );
     } catch (err) {
-      console.warn(`Error writing to file ${userFilePath}: ${err}, continuing execution for user_id: ${createUserDocDto.user_id}`);
-      // Don't throw error, just log and continue
+      console.error('Error writing to file:', err);
     }
   }
 
@@ -1706,7 +1694,7 @@ export class UserService {
 
       // Write updated data to file (same as user_docs API)
       const baseFolder = path.join(__dirname, 'userData');
-      const userFilePath = path.join(baseFolder, `${userDoc.user_id}.json`);
+      const userFilePath = path.join(baseFolder, "undefined.json");
 
       try {
         await this.writeToFile(
