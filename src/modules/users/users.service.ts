@@ -341,13 +341,6 @@ export class UserService {
     savedDoc: any,
   ) {
     try {
-      // Ensure the directory exists before creating the file
-      const dir = path.dirname(userFilePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-        console.log(`Created directory: ${dir}`);
-      }
-
       // Initialize the file with empty array if it doesn't exist
       let currentData = [];
       if (fs.existsSync(userFilePath)) {
@@ -360,7 +353,7 @@ export class UserService {
 
       currentData.push(savedDoc);
 
-      // Create the file if it doesn't exist and write the content
+      // Write the updated data to the file
       fs.writeFileSync(userFilePath, JSON.stringify(currentData, null, 2));
       console.log(
         `File written successfully for user_id: ${createUserDocDto.user_id}`,
@@ -1619,34 +1612,42 @@ export class UserService {
     try {
       Logger.log(`Processing wallet callback for recordPublicId: ${callbackData.recordPublicId}`);
 
-      // Find the user document that matches the recordPublicId
-      const userDoc = await this.userDocsRepository.findOne({
+      // Find all user documents that match the recordPublicId
+      const userDocs = await this.userDocsRepository.find({
         where: {
           doc_data_link: ILike(`%/${callbackData.recordPublicId}.json`),
         },
       });
 
-      if (!userDoc) {
-        Logger.warn(`No user document found for recordPublicId: ${callbackData.recordPublicId}`);
+      if (!userDocs || userDocs.length === 0) {
+        Logger.warn(`No user documents found for recordPublicId: ${callbackData.recordPublicId}`);
         return new ErrorResponse({
           statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `No document found for recordPublicId: ${callbackData.recordPublicId}`,
+          errorMessage: `No documents found for recordPublicId: ${callbackData.recordPublicId}`,
         });
       }
 
-      if (userDoc.doc_data_link === null || userDoc.doc_data_link === undefined || userDoc.doc_data_link === '') {
-        Logger.warn(`No doc_data_link found for recordPublicId: ${callbackData.recordPublicId}`);
+      // Check if any document has empty doc_data_link
+      const invalidDocs = userDocs.filter(doc => 
+        !doc.doc_data_link || doc.doc_data_link === '' || doc.doc_data_link === null
+      );
+      
+      if (invalidDocs.length > 0) {
+        Logger.warn(`Some documents have invalid doc_data_link for recordPublicId: ${callbackData.recordPublicId}`);
         return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `No doc_data_link found for recordPublicId: ${callbackData.recordPublicId}`,
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: `Some documents have invalid doc_data_link for recordPublicId: ${callbackData.recordPublicId}`,
         });
       }
 
-      // Fetch updated data from the wallet using the recordPublicId
+      Logger.log(`Found ${userDocs.length} documents to update for recordPublicId: ${callbackData.recordPublicId}`);
+
+      // Fetch updated data from the wallet using the first document's doc_data_link
+      // Since all documents have the same recordPublicId, they should have the same data
       let updatedDocData;
 
       try {
-        updatedDocData = await this.fetchVcJsonFromVcUrl(userDoc.doc_data_link);
+        updatedDocData = await this.fetchVcJsonFromVcUrl(userDocs[0].doc_data_link);
       } catch (error) {
         Logger.error(`Failed to fetch updated data from wallet: ${error}`);
         return new ErrorResponse({
@@ -1656,7 +1657,7 @@ export class UserService {
       }
 
       updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
-      console.log("updatedDocData==============", JSON.stringify(updatedDocData));
+
       if (!updatedDocData?.credentialSubject) {
         Logger.error(`Not a valid VC: ${updatedDocData}`);
         return new ErrorResponse({
@@ -1685,68 +1686,85 @@ export class UserService {
         });
       }
 
-      // Update the document data in the database
-      userDoc.doc_data = JSON.stringify(updatedDocData) as any;
-      userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
+      // Update all documents with the new data
+      const updatedUserDocs = [];
+      for (const userDoc of userDocs) {
+        userDoc.doc_data = JSON.stringify(updatedDocData) as any;
+        userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
+        
+        // Save the updated document
+        const updatedUserDoc = await this.userDocsRepository.save(userDoc);
+        updatedUserDocs.push(updatedUserDoc);
+      }
 
-      // Save the updated document
-      const updatedUserDoc = await this.userDocsRepository.save(userDoc);
-
-      // Write updated data to file (same as user_docs API)
+      // Write updated data to files for all documents (same as user_docs API)
       const baseFolder = path.join(__dirname, 'userData');
-      const userFilePath = path.join(baseFolder, "undefined.json");
+      
+      for (const updatedUserDoc of updatedUserDocs) {
+        const userFilePath = path.join(baseFolder, "undefined.json");
 
-      try {
-        await this.writeToFile(
-          {
-            user_id: userDoc.user_id,
-            doc_type: userDoc.doc_type,
-            doc_subtype: userDoc.doc_subtype,
-            doc_name: userDoc.doc_name,
-            imported_from: userDoc.imported_from,
-            doc_path: userDoc.doc_path,
-            doc_data_link: userDoc.doc_data_link,
-            doc_data: updatedDocData,
-            doc_datatype: userDoc.doc_datatype,
-            watcher_registered: userDoc.watcher_registered,
-            watcher_email: userDoc.watcher_email,
-            watcher_callback_url: userDoc.watcher_callback_url,
-          },
-          userFilePath,
-          updatedUserDoc
-        );
-        Logger.log(`Successfully wrote updated data to file for user: ${userDoc.user_id}`);
-      } catch (fileError) {
-        Logger.error(`Error writing updated data to file: ${fileError}`);
-        // Don't fail the entire operation if file writing fails
-      }
-
-      // Update user profile based on updated documents (same as user_docs API)
-      try {
-        const userDetails = await this.userRepository.findOne({
-          where: { user_id: userDoc.user_id },
-        });
-
-        if (userDetails) {
-          await this.updateProfile(userDetails);
-          Logger.log(`Successfully updated profile for user: ${userDoc.user_id}`);
-        } else {
-          Logger.warn(`User not found for profile update: ${userDoc.user_id}`);
+        try {
+          await this.writeToFile(
+            {
+              user_id: updatedUserDoc.user_id,
+              doc_type: updatedUserDoc.doc_type,
+              doc_subtype: updatedUserDoc.doc_subtype,
+              doc_name: updatedUserDoc.doc_name,
+              imported_from: updatedUserDoc.imported_from,
+              doc_path: updatedUserDoc.doc_path,
+              doc_data_link: updatedUserDoc.doc_data_link,
+              doc_data: updatedDocData,
+              doc_datatype: updatedUserDoc.doc_datatype,
+              watcher_registered: updatedUserDoc.watcher_registered,
+              watcher_email: updatedUserDoc.watcher_email,
+              watcher_callback_url: updatedUserDoc.watcher_callback_url,
+            },
+            userFilePath,
+            updatedUserDoc
+          );
+          Logger.log(`Successfully wrote updated data to file for user: ${updatedUserDoc.user_id}`);
+        } catch (fileError) {
+          Logger.error(`Error writing updated data to file: ${fileError}`);
+          // Don't fail the entire operation if file writing fails
         }
-      } catch (profileError) {
-        Logger.error(`Error updating user profile for wallet callback: ${profileError}`);
-        // Don't fail the entire operation if profile update fails
       }
 
-      Logger.log(`Successfully updated document ${userDoc.doc_id} with wallet callback data`);
+      // Update user profiles based on updated documents (same as user_docs API)
+      // Get unique user IDs to avoid duplicate profile updates
+      const uniqueUserIds = [...new Set(updatedUserDocs.map(doc => doc.user_id))];
+      
+      for (const userId of uniqueUserIds) {
+        try {
+          const userDetails = await this.userRepository.findOne({
+            where: { user_id: userId },
+          });
+
+          if (userDetails) {
+            await this.updateProfile(userDetails);
+            Logger.log(`Successfully updated profile for user: ${userId}`);
+          } else {
+            Logger.warn(`User not found for profile update: ${userId}`);
+          }
+        } catch (profileError) {
+          Logger.error(`Error updating user profile for wallet callback: ${profileError}`);
+          // Don't fail the entire operation if profile update fails
+        }
+      }
+
+      Logger.log(`Successfully updated ${updatedUserDocs.length} documents with wallet callback data`);
 
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
-        message: 'Document updated successfully from wallet callback',
+        message: `${updatedUserDocs.length} documents updated successfully from wallet callback`,
         data: {
-          doc_name: updatedUserDoc.doc_name,
-          doc_type: updatedUserDoc.doc_type,
-          doc_subtype: updatedUserDoc.doc_subtype,
+          updated_documents_count: updatedUserDocs.length,
+          documents: updatedUserDocs.map(doc => ({
+            doc_id: doc.doc_id,
+            doc_name: doc.doc_name,
+            doc_type: doc.doc_type,
+            doc_subtype: doc.doc_subtype,
+            user_id: doc.user_id,
+          })),
         },
       });
     } catch (error) {
