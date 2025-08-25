@@ -224,7 +224,6 @@ export class UserController {
   @ApiResponse({ status: 400, description: 'Failed to fetch updated data from wallet' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
   async handleWalletCallback(@Body() walletCallbackDto: WalletCallbackDto) {
-    console.log("walletCallbackDto==============", walletCallbackDto);
     return await this.userService.handleWalletCallback(walletCallbackDto);
   }
 }
