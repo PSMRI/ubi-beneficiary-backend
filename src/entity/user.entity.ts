@@ -5,12 +5,14 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Unique,
+  PrimaryColumn,
 } from 'typeorm';
 
 @Entity('users')
 @Unique(['user_id', 'email'])
 export class User {
-  @PrimaryGeneratedColumn('uuid')
+
+  @PrimaryColumn({ type: 'uuid', default: () => 'gen_random_uuid()' })
   user_id: string;
 
   @Column({ length: 50 })

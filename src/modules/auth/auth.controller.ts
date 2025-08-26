@@ -48,7 +48,7 @@ export class AuthController {
 
   @Post('/logout')
   @UsePipes(ValidationPipe)
-  logout(@Req() req: Request, @Res() response: Response) {
-    return this.authService.logout(req, response);
+  logout(@Req() req: Request) {
+    return this.authService.logout(req);
   }
 }

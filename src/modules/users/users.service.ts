@@ -8,13 +8,11 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository, QueryRunner } from 'typeorm';
+import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
 import { User } from '../../entity/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
-import { CreateUserInfoDto } from './dto/create-user-info.dto';
-import { UserInfo } from '@entities/user_info.entity';
 import { Consent } from '@entities/consent.entity';
 import { CreateConsentDto } from './dto/create-consent.dto';
 import { UserApplication } from '@entities/user_applications.entity';
@@ -26,8 +24,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
+import { CustomFieldsService } from '@modules/customfields/customfields.service';
+import { AdminService } from '@modules/admin/admin.service';
 import axios from 'axios';
+import { FieldContext } from '@modules/customfields/entities/field.entity';
+import { ConfigService } from '@nestjs/config';
+import { ProxyService } from '@services/proxy/proxy.service';
+import { v4 as uuidv4 } from 'uuid';
 
+type StatusUpdateInfo = {
+  attempted: boolean;
+  success: boolean;
+  processedCount: number;
+  error: string | null;
+  skipped?: boolean;
+  skipReason?: string | null;
+};
 @Injectable()
 export class UserService {
   constructor(
@@ -35,15 +47,18 @@ export class UserService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(UserDoc)
     private readonly userDocsRepository: Repository<UserDoc>,
-    @InjectRepository(UserInfo)
-    private readonly userInfoRepository: Repository<UserInfo>,
     @InjectRepository(Consent)
     private readonly consentRepository: Repository<Consent>,
     @InjectRepository(UserApplication)
     private readonly userApplicationRepository: Repository<UserApplication>,
     private readonly keycloakService: KeycloakService,
     private readonly profilePopulator: ProfilePopulator,
+    private readonly customFieldsService: CustomFieldsService,
+    private readonly configService: ConfigService,
+    private readonly proxyService: ProxyService,
+    private readonly adminService: AdminService,
   ) { }
+
 
   async create(createUserDto: CreateUserDto) {
     const user = this.userRepository.create(createUserDto);
@@ -83,25 +98,9 @@ export class UserService {
     Object.assign(existingUser, userData);
 
     try {
-      const updatedUser = await this.userRepository.save(existingUser);
+      const updatedUser: User = await this.userRepository.save(existingUser);
 
-      // Check for existing user info in userInfoRepository
-      const existingUserInfo = await this.userInfoRepository.findOne({
-        where: { user_id: userId },
-      });
-
-      if (existingUserInfo) {
-        // Update user info if it exists
-        Object.assign(existingUserInfo, userInfo);
-        await this.userInfoRepository.save(existingUserInfo);
-      } else if (userInfo) {
-        // Create a new user info if it doesn't exist and userInfo is provided
-        const newUserInfo = this.userInfoRepository.create({
-          user_id: userId,
-          ...userInfo,
-        });
-        await this.userInfoRepository.save(newUserInfo);
-      }
+      const existingUserInfo = await this.customFieldsService.saveCustomFields(updatedUser.user_id, FieldContext.USERS, userInfo);
 
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
@@ -141,16 +140,13 @@ export class UserService {
       }
 
       const user = await this.findOneUser(userDetails.user_id);
-      const userInfo = await this.findOneUserInfo(
-        userDetails.user_id,
-        decryptData,
-      );
+      const customFields = await this.customFieldsService.getCustomFields(userDetails.user_id, FieldContext.USERS);
       const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
 
       const final = {
         ...user,
-        ...userInfo,
         docs: userDoc || [],
+        customFields: customFields || [],
       };
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
@@ -212,17 +208,6 @@ export class UserService {
     return user;
   }
 
-  async findOneUserInfo(
-    user_id: string,
-    decryptData: boolean,
-  ): Promise<UserInfo> {
-    const userInfo = await this.userInfoRepository.findOne({
-      where: { user_id },
-    });
-
-    return userInfo;
-  }
-
   async findUserDocs(user_id: string, decryptData: boolean) {
     const userDocs = await this.userDocsRepository.find({ where: { user_id } });
 
@@ -255,14 +240,6 @@ export class UserService {
     };
   }
 
-  /*async remove(user_id: string): Promise<void> {
-    const userWithInfo = await this.findOne(user_id);
-
-    const user = userWithInfo.user;
-
-    await this.userRepository.remove(user);
-  }*/
-
   // Method to check if mobile number exists
   async findByMobile(mobile: string): Promise<User | undefined> {
     return await this.userRepository.findOne({
@@ -271,7 +248,6 @@ export class UserService {
   }
 
   async findBySsoId(ssoId: string): Promise<User | undefined> {
-    console.log('Finding user by username:', ssoId);
     return await this.userRepository.findOne({
       where: { sso_id: ssoId }
     });
@@ -413,7 +389,6 @@ export class UserService {
         // Create the new document entity for the database
         const savedDoc = await this.saveDoc(createUserDocDto);
         savedDocs.push(savedDoc);
-
         await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
       }
     }
@@ -441,7 +416,7 @@ export class UserService {
     return savedDocs;
   }
 
-  async getUserDetails(req: any) {
+  async getUserDetails(req: any): Promise<User> {
     const sso_id = req?.user?.keycloak_id;
     if (!sso_id) {
       throw new UnauthorizedException('Invalid or missing Keycloak ID');
@@ -458,7 +433,7 @@ export class UserService {
     return userDetails;
   }
 
-  async updateProfile(userDetails: any) {
+  async updateProfile(userDetails: User) {
     try {
       // Get all docs
       const allDocs = await this.userDocsRepository.find({
@@ -466,7 +441,7 @@ export class UserService {
       });
 
       // Build VCs
-      const VCs = await this.profilePopulator.buildVCs(allDocs);
+      const VCs: any[] = await this.profilePopulator.buildVCs(allDocs);
 
       // // build profile data
       const { userProfile, validationData } =
@@ -529,6 +504,7 @@ export class UserService {
           userDetails,
           baseFolder
         );
+
         if (savedDoc) {
           savedDocs.push(savedDoc);
         }
@@ -543,7 +519,7 @@ export class UserService {
       await this.updateProfile(userDetails);
     } catch (error) {
       Logger.error('Profile update failed:', error);
-      }
+    }
 
     return savedDocs;
   }
@@ -561,7 +537,7 @@ export class UserService {
       // Extract a user-friendly message
       let message =
         (error?.response?.data?.message ??
-        error?.message) ??
+          error?.message) ??
         'VC Verification failed';
       throw new BadRequestException({
         message: message,
@@ -595,8 +571,6 @@ export class UserService {
 
     if (existingDoc) await this.deleteDoc(existingDoc);
 
-
-
     if (!createUserDocDto?.user_id) {
       createUserDocDto.user_id = userDetails?.user_id;
     }
@@ -605,51 +579,17 @@ export class UserService {
     try {
       const savedDoc = await this.saveDoc(createUserDocDto);
       await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+
+      // Register watcher if imported_from is e-wallet or QR Code
+      await this.handleWatcherRegistrationIfNeeded(createUserDocDto, savedDoc, userDetails);
+
       return savedDoc;
     } catch (error) {
       Logger.error('Error processing document:', error);
       return null;
     }
   }
-  // User info
-  async createUserInfo(
-    createUserInfoDto: CreateUserInfoDto,
-  ): Promise<UserInfo | null> {
-    try {
-      // Ensure you await the result of registerUserWithUsername
-      const userData = await this.registerUserWithUsername(createUserInfoDto);
 
-      // Check if userData and userData.user exist
-      if (userData?.user?.user_id) {
-        // Assign the user_id from userData to createUserInfoDto
-        createUserInfoDto.user_id = userData.user.user_id;
-
-        // Create and save the new UserInfo record
-        const userInfo = this.userInfoRepository.create(createUserInfoDto);
-        return await this.userInfoRepository.save(userInfo);
-      } else {
-        // Handle the case where userData or userData.user is null
-        console.error('User registration failed or returned invalid data.');
-        return null;
-      }
-    } catch (error) {
-      console.error('Error while creating user info:', error);
-      throw new Error('Could not create user info');
-    }
-  }
-
-  async updateUserInfo(
-    user_id: string,
-    updateUserInfoDto: CreateUserInfoDto,
-  ): Promise<UserInfo> {
-    const userInfo = await this.userInfoRepository.findOne({
-      where: { user_id },
-    });
-
-    Object.assign(userInfo, updateUserInfoDto);
-    console.log('userInfo--->>', userInfo);
-    return this.userInfoRepository.save(userInfo);
-  }
   // Create a new consent record
   async createUserConsent(
     createConsentDto: CreateConsentDto,
@@ -660,7 +600,7 @@ export class UserService {
   async createUserApplication(
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
-  
+
 
     try {
       // Check if an application already exists for the given benefit_id and user_id
@@ -722,49 +662,104 @@ export class UserService {
     page?: number;
     limit?: number;
   }) {
-    const whereClause = {};
+    const { filters = {}, search, page = 1, limit = 10 } = requestBody;
+    
+    let statusUpdateInfo: StatusUpdateInfo;
+    if (filters.benefit_id) {
+      // skipped due to benefit_id filter
+      statusUpdateInfo = {
+        attempted: false,
+        success: true,
+        processedCount: 0,
+        error: null,
+        skipped: true,
+        skipReason: 'Skipped status update due to benefit_id filter',
+      };
+    } else {
+      statusUpdateInfo = await this.performStatusUpdate(filters.user_id);
+    }
+
+    // Now fetch the applications list with updated statuses
     try {
-      const filterKeys = this.userApplicationRepository.metadata.columns.map(
-        (column) => column.propertyName,
-      );
-      const { filters = {}, search, page = 1, limit = 10 } = requestBody;
-
-      // Handle filters
-      if (filters && Object.keys(filters).length > 0) {
-        for (const [key, value] of Object.entries(filters)) {
-          if (
-            filterKeys.includes(key) &&
-            value !== null &&
-            value !== undefined
-          ) {
-            whereClause[key] = value;
-          }
-        }
-      }
-
-      // Handle search for `application_name`
-      if (search && search.trim().length > 0) {
-        const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
-        whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
-      }
-
-      // Fetch data with pagination
-      const [userApplication, total] =
-        await this.userApplicationRepository.findAndCount({
-          where: whereClause,
-          skip: (page - 1) * limit,
-          take: limit,
-        });
-
+      const whereClause = this.buildWhereClause(filters, search);
+      const [userApplication, total] = await this.userApplicationRepository.findAndCount({
+        where: whereClause,
+        skip: (page - 1) * limit,
+        take: limit,
+      });
 
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User applications list retrieved successfully.',
-        data: { applications: userApplication, total },
+        data: { 
+          applications: userApplication, 
+          total,
+          statusUpdate: statusUpdateInfo
+        },
       });
     } catch (error) {
       console.error('Error while fetching user applications:', error);
       throw new InternalServerErrorException('Failed to fetch user applications');
+    }
+  }
+
+  private async performStatusUpdate(userId?: string) {
+    const statusUpdateInfo = {
+      attempted: false,
+      success: false,
+      processedCount: 0,
+      error: null
+    };
+
+    try {
+      statusUpdateInfo.attempted = true;
+      const applicationsForUpdate = await this.getApplications(userId);
+      
+      if (applicationsForUpdate.length > 0) {
+        await this.processApplications(applicationsForUpdate);
+        statusUpdateInfo.success = true;
+        statusUpdateInfo.processedCount = applicationsForUpdate.length;
+        Logger.log(`Status update completed for ${applicationsForUpdate.length} applications'}`);
+      } else {
+        statusUpdateInfo.success = true;
+        Logger.log(`No applications found requiring status updates`);
+      }
+    } catch (statusUpdateError) {
+      statusUpdateInfo.error = statusUpdateError.message;
+      Logger.error(
+        `Status update failed during user applications list retrieval: ${statusUpdateError.message}`,
+        statusUpdateError.stack
+      );
+    }
+
+    return statusUpdateInfo;
+  }
+
+  private buildWhereClause(filters: any, search?: string) {
+    const whereClause = {};
+    const filterKeys = this.userApplicationRepository.metadata.columns.map(
+      (column) => column.propertyName,
+    );
+
+    // Handle filters
+    if (filters && Object.keys(filters).length > 0) {
+      this.applyFilters(whereClause, filters, filterKeys);
+    }
+
+    // Handle search for `application_name`
+    if (search && search.trim().length > 0) {
+      const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
+      whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
+    }
+
+    return whereClause;
+  }
+
+  private applyFilters(whereClause: any, filters: any, filterKeys: string[]) {
+    for (const [key, value] of Object.entries(filters)) {
+      if (filterKeys.includes(key) && value !== null && value !== undefined) {
+        whereClause[key] = value;
+      }
     }
   }
 
@@ -863,36 +858,140 @@ export class UserService {
       .execute();
   }
 
-  async resetInUserInfo(
+  async resetFields(
     field: string,
     existingDoc: UserDoc,
-    queryRunner: QueryRunner,
   ) {
-    await queryRunner.manager
-      .getRepository(UserInfo)
-      .createQueryBuilder()
-      .update(UserInfo)
-      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
-      .where('user_id = :id', { id: existingDoc.user_id })
-      .execute();
+    try {
+      const fieldData = await this.customFieldsService.getFieldByName(field, FieldContext.USERS);
+
+      if (!fieldData?.fieldId) {
+        Logger.warn(`Field '${field}' not found in custom fields`);
+        return;
+      }
+
+      await this.customFieldsService.setFieldValueToNull(existingDoc.user_id, fieldData.fieldId);
+    } catch (error) {
+      Logger.error(`Error resetting field '${field}' for user ${existingDoc.user_id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get fields to reset from database configuration based on document type
+   * @param docSubtype Document subtype (e.g., 'casteCertificate', 'disabilityCertificate')
+   * @returns Array of field names to reset
+   */
+  private async getFieldsToResetFromConfig(docSubtype: string): Promise<string[]> {
+    try {
+      // Get profile fields configuration from settings table
+      const configResponse = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
+
+      if (!configResponse?.value) {
+        Logger.warn('profileFieldToDocumentFieldMapping configuration not found');
+        return [];
+      }
+
+      const profileFields = Array.isArray(configResponse.value) ? configResponse.value : [];
+      const fieldsToReset: string[] = [];
+
+      // Find all fields that have mappings to this document type
+      for (const fieldConfig of profileFields) {
+        const documentMappings = fieldConfig.documentMappings || [];
+
+        // Check if this field has a mapping for the given document type
+        const hasMapping = documentMappings.some((mapping: any) => mapping.document === docSubtype);
+
+        if (hasMapping && fieldConfig.fieldName) {
+          fieldsToReset.push(fieldConfig.fieldName);
+        }
+      }
+
+      Logger.debug(`Fields to reset for document type '${docSubtype}': [${fieldsToReset.join(', ')}]`);
+      return fieldsToReset;
+    } catch (error) {
+      Logger.error(`Error getting fields to reset for document type '${docSubtype}':`, error);
+      return [];
+    }
   }
 
   async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
-    const fieldsArray = {
-      aadhaar: ['middleName', 'fatherName', 'gender', 'dob'],
-      casteCertificate: ['caste'],
-      enrollmentCertificate: ['class', 'studentType'],
-      incomeCertificate: ['annualIncome'],
-      janAadharCertificate: ['state'],
-      marksheet: ['previousYearMarks'],
-    };
+    try {
+      // Get fields to reset from database configuration instead of hardcoded array
+      const fields = await this.getFieldsToResetFromConfig(existingDoc.doc_subtype);
 
-    const fields = fieldsArray[existingDoc.doc_subtype] ?? [];
+      if (fields.length === 0) {
+        Logger.warn(`No field mappings found for document type '${existingDoc.doc_subtype}'`);
+        return;
+      }
 
-    for (const field of fields) {
-      if (field === 'middleName')
-        await this.resetInUsers(field, existingDoc, queryRunner);
-      else await this.resetInUserInfo(field, existingDoc, queryRunner);
+      for (const field of fields) {
+        try {
+          if (field === 'middleName') {
+            // Special handling for middleName field (updates users table directly)
+            await this.resetInUsers(field, existingDoc, queryRunner);
+          } else {
+            // Reset custom field values
+            await this.resetFields(field, existingDoc);
+          }
+        } catch (error) {
+          Logger.error(`Error resetting field '${field}' for user ${existingDoc.user_id}:`, error);
+          // Continue with other fields even if one fails
+        }
+      }
+    } catch (error) {
+      Logger.error(`Error in resetField for document ${existingDoc.doc_id}:`, error);
+      throw error;
+    }
+  }
+
+  private async handleWatcherRegistrationIfNeeded(createUserDocDto: CreateUserDocDTO, savedDoc: UserDoc, userDetails: any): Promise<void> {
+    const importSource = createUserDocDto.imported_from?.trim().toLowerCase();
+    if (!importSource || (importSource !== 'e-wallet' && importSource !== 'qr code')) {
+      return;
+    }
+
+    // Validate doc_data_link exists
+    if (!createUserDocDto.doc_data_link) {
+      Logger.warn(`No doc_data_link for watcher registration: ${savedDoc.doc_id}`);
+      return;
+    }
+
+    // Use provided email and callback URL or defaults
+    const email = process.env.DHIWAY_WATCHER_EMAIL;
+    if (!email) {
+      Logger.warn(`No watcher email configured, skipping registration for: ${savedDoc.doc_id}`);
+      return;
+    }
+
+    const callbackUrl = createUserDocDto.watcher_callback_url || 
+                       `${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
+
+    try {
+      const watcherResult = await this.registerWatcher(
+        createUserDocDto.imported_from,
+        createUserDocDto.doc_data,
+        createUserDocDto.doc_data_link,
+        email,
+        callbackUrl,
+        userDetails,
+      );
+
+      if (watcherResult.success) {
+        // Update the saved document with watcher information
+        savedDoc.watcher_registered = true;
+        savedDoc.watcher_email = email;
+        savedDoc.watcher_callback_url = callbackUrl;
+        
+        // Save the updated document
+        await this.userDocsRepository.save(savedDoc);
+        
+        Logger.log(`Watcher registered successfully for document: ${savedDoc.doc_id}`);
+      } else {
+        Logger.warn(`Watcher registration failed for document: ${savedDoc.doc_id}, Error: ${watcherResult.message}`);
+      }
+    } catch (watcherError) {
+      Logger.error(`Error during watcher registration for document: ${savedDoc.doc_id}`, watcherError);
     }
   }
 
@@ -967,36 +1066,143 @@ export class UserService {
   }
 
   /**
-   * Fetches a Verifiable Credential JSON from a given URL.
-   * Handles both dway.io and haqdarshak.com style URLs.
-   * Follows redirects and appends .vc if needed.
-   * @param url The URL from the QR code
+   * Private helper method to fetch and validate VC JSON from a URL
+   * @param url The VC URL to fetch data from
+   * @returns Promise containing validated VC data or error
    */
-  async fetchVcJsonFromUrl(url: string): Promise<any> {
+  private async fetchAndValidateVcJson(url: string): Promise<any> {
     try {
-      // 1. Follow redirects to get the final URL
-      const response = await axios.get(url, {
-        maxRedirects: 5,
-        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
-      });
-      let finalUrl = response.request?.res?.responseUrl ?? url;
-
-      // 2. If not already ending with .vc, append .vc
-      if (!finalUrl.endsWith('.vc')) {
-        finalUrl = `${finalUrl}.vc`;
+      // Validate URL scheme to prevent SSRF attacks
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid VC URL scheme', status: 400 };
       }
 
-      // 3. Fetch the VC JSON
-      const vcResponse = await axios.get(finalUrl, { headers: { Accept: 'application/json' } });
+      // Fetch the VC JSON with proper headers
+      const vcResponse = await axios.get(url, {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        timeout: 8000,
+      });
 
-      return vcResponse.data;
+      // Validate that we received JSON data
+      let vcData;
+      try {
+        if (typeof vcResponse.data === 'string') {
+          vcData = JSON.parse(vcResponse.data);
+        } else {
+          vcData = vcResponse.data;
+        }
+      } catch (_parseError) {
+        Logger.error('Invalid JSON response from VC endpoint', _parseError);
+        return {
+          error: true,
+          message: 'Invalid JSON response from VC endpoint',
+          status: 422,
+        };
+      }
+
+      // Basic validation that it looks like a VC
+      if (!vcData || typeof vcData !== 'object') {
+        return {
+          error: true,
+          message: 'Invalid VC data structure received',
+          status: 422,
+        };
+      }
+
+      // Return in format expected by frontend
+      return {
+        data: {
+          vcData: vcData,
+          url: url,
+        },
+      };
     }
     catch (error) {
       // Handle errors and return a meaningful message
       if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
         return {
           error: true,
-          message: error.response?.data ?? error.message,
+          message: msg,
+          status: error.response?.status ?? 500,
+        };
+      }
+      return {
+        error: true,
+        message: 'Unknown error occurred while fetching VC data',
+        status: 500,
+      };
+    }
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a URL that already ends with .vc
+   * Used for wallet callbacks and direct VC URLs
+   * @param vcUrl The direct VC URL (already ending with .vc)
+   * @returns Object containing vcData and vcUrl in format expected by frontend
+   */
+  async fetchVcJsonFromVcUrl(vcUrl: string): Promise<any> {
+    return this.fetchAndValidateVcJson(vcUrl);
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a given URL.
+   * Handles both dway.io and haqdarshak.com style URLs.
+   * Follows redirects and appends .vc if needed.
+   * @param url The URL from the QR code
+   * @returns Object containing vcData and vcUrl in format expected by frontend
+   */
+  async fetchVcJsonFromUrl(url: string): Promise<any> {
+    try {
+      // Basic scheme validation before the first network call
+      const initialParsed = new URL(url);
+      if (initialParsed.protocol !== 'http:' && initialParsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid URL scheme', status: 400 };
+      }
+
+      // 1. Follow redirects to get the final URL (without downloading the VC yet)
+      const response = await axios.get(url, {
+        maxRedirects: 5,
+        timeout: 8000,
+        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
+      });
+      // Try multiple known locations for the resolved URL (follow-redirects runtime)
+      let finalUrl = url;
+      if (response.request?.res?.responseUrl) {
+        finalUrl = response.request.res.responseUrl;
+      } else if (response.request?._redirectable?._currentUrl) {
+        finalUrl = response.request._redirectable._currentUrl;
+      }
+
+      // 2. Append/normalize to .vc while preserving query and hash
+      const parsedFinal = new URL(finalUrl);
+      if (!parsedFinal.pathname.endsWith('.vc')) {
+        if (parsedFinal.pathname.endsWith('.json')) {
+          parsedFinal.pathname = parsedFinal.pathname.replace(/\.json$/, '.vc');
+        } else {
+          parsedFinal.pathname = parsedFinal.pathname.replace(/\/$/, '') + '.vc';
+        }
+      }
+      finalUrl = parsedFinal.toString();
+
+      // 3. Use the common method to fetch and validate VC data
+      return this.fetchAndValidateVcJson(finalUrl);
+    }
+    catch (error) {
+      // Handle errors and return a meaningful message
+      if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
+        return {
+          error: true,
+          message: msg,
           status: error.response?.status ?? 500,
         };
       }
@@ -1051,6 +1257,165 @@ export class UserService {
     }
   }
 
+  // Register watcher for e-wallet
+  private async registerWatcherForEWallet(
+    identifier: string,
+    recordPublicId: string,
+    email: string,
+    callbackUrl: string,
+    userDetails: any,
+  ): Promise<{ success: boolean; message?: string; data?: any }> {
+    try {
+      const walletUrl = process.env.WALLET_BASE_URL+ '/api/wallet/vcs/watch';
+      const authToken = userDetails.walletToken || '';
+
+      if (!authToken) {
+        return {
+          success: false,
+          message: 'Wallet token not found',
+          data: null,
+        };
+      }
+
+      const payload = {
+        vcPublicId: recordPublicId,
+        email: email,
+        callbackUrl: callbackUrl
+      };
+
+      const response = await axios.post(walletUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        timeout: 10000,
+      });
+
+      return {
+        success: true,
+        message: 'Watcher registered successfully',
+        data: response.data
+      };
+    } catch (error) {
+      Logger.error('E-Wallet watcher registration error:', error?.response?.data ?? error.message);
+      return {
+        success: false,
+        message: error?.response?.data?.message ?? error.message ?? 'Watcher registration failed',
+        data: error?.response?.data
+      };
+    }
+  }
+
+  // Register watcher for QR Code (Dhiway)
+  private async registerWatcherForQRCode(
+    identifier: string,
+    recordPublicId: string,
+    email: string,
+    callbackUrl: string
+  ): Promise<{ success: boolean; message?: string; data?: any }> {
+    try {
+      const dhiwayUrl = process.env.DHIWAY_WATCHER_URL;
+
+      if (!dhiwayUrl) {
+        return { success: false, message: 'DHIWAY_WATCHER_URL env variable not set' };
+      }
+
+      const payload = {
+        identifier: identifier,
+        recordPublicId: recordPublicId,
+        email: email,
+        callbackUrl: callbackUrl
+      };
+
+      const response = await axios.post(dhiwayUrl, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000,
+      });
+
+      return {
+        success: true,
+        message: 'Watcher registered successfully',
+        data: response.data
+      };
+    } catch (error) {
+      Logger.error('QR Code watcher registration error:', error?.response?.data ?? error.message);
+      return {
+        success: false,
+        message: error?.response?.data?.message ?? error.message ?? 'Watcher registration failed',
+        data: error?.response?.data
+      };
+    }
+  }
+
+  // Register watcher based on imported_from
+  private async registerWatcher(
+    importedFrom: string,
+    docData: any,
+    docPath: string,
+    email: string,
+    callbackUrl: string,
+    userDetails: any,
+  ): Promise<{ success: boolean; message?: string; data?: any }> {
+    try {
+      // Normalize docPath to ensure it ends with .json
+      let normalizedDocPath = docPath;
+      if (normalizedDocPath.endsWith('.vc')) {
+        normalizedDocPath = normalizedDocPath.replace('.vc', '.json');
+      } else if (!normalizedDocPath.endsWith('.json')) {
+        normalizedDocPath = normalizedDocPath + '.json';
+      }
+
+      // Fetch document details from the path
+      let fetchedDocData;
+      try {
+        const response = await axios.get(normalizedDocPath, {
+          timeout: 10000,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        fetchedDocData = response.data;
+      } catch (fetchError) {
+        Logger.error('Failed to fetch document from path:', normalizedDocPath, fetchError);
+        return {
+          success: false,
+          message: `Failed to fetch document from path: ${normalizedDocPath}`
+        };
+      }
+
+      // Extract vcPublicId from fetched document data
+      const identifier = fetchedDocData?.identifier || '';
+      const recordPublicId = fetchedDocData?.publicId || '';
+      const walletCallbackUrl = process.env.BASE_URL + '/users/wallet-callback';
+
+      if (!identifier || !recordPublicId) {
+        return {
+          success: false,
+          message: 'identifier or recordPublicId not found in fetched document data'
+        };
+      }
+
+      if (importedFrom.toLowerCase() === 'e-wallet') {
+        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, walletCallbackUrl, userDetails);
+      } else if (importedFrom.toLowerCase() === 'qr code') {
+        return await this.registerWatcherForQRCode(identifier, recordPublicId, email, walletCallbackUrl);
+      } else {
+        return {
+          success: false,
+          message: `Watcher registration not supported for imported_from: ${importedFrom}`
+        };
+      }
+    } catch (error) {
+      Logger.error('Watcher registration error:', error);
+      return {
+        success: false,
+        message: error.message || 'Watcher registration failed'
+      };
+    }
+  }
+
   async deleteUser(userId: string): Promise<void> {
     const user = await this.userRepository.findOne({
       where: { user_id: userId },
@@ -1061,5 +1426,387 @@ export class UserService {
     }
 
     await this.userRepository.delete(userId);
+  }
+
+  // Application Status Update Methods
+
+  async getApplications(userId?: string) {
+    try {
+      const whereCondition: any = {
+        status: Not(In(['amount received', 'rejected', 'disbursed'])),
+      };
+
+      if (userId) {
+        whereCondition.user_id = userId;
+      }
+
+      const applications = await this.userApplicationRepository.find({
+        where: whereCondition,
+      });
+
+      return applications;
+    } catch (error) {
+      Logger.error(`Error while getting user applications: ${error}`);
+      throw new InternalServerErrorException(  'Failed to fetch user applications');
+    }
+  }
+
+  async updateStatus(
+    application: any,
+    statusData: { status: string; comment: string },
+  ) {
+    try {
+      if (!statusData?.status) return;
+
+      application.status = statusData.status.toLowerCase(); // e.g., "approved"
+      application.remark = statusData.comment || ''; // Save the comment
+
+      const queryRunner =
+        this.userApplicationRepository.manager.connection.createQueryRunner();
+      await queryRunner.connect();
+      try {
+        await queryRunner.startTransaction();
+        await queryRunner.manager.save(application);
+        await queryRunner.commitTransaction();
+      } catch (error) {
+        await queryRunner.rollbackTransaction();
+        Logger.error(`Error in query runner: ${error}`);
+        throw new Error('Error in query runner');
+      } finally {
+        await queryRunner.release();
+      }
+    } catch (error) {
+      Logger.error(`Error while updating application status: ${error}`);
+    }
+  }
+
+  async getStatus(orderId: string) {
+    const bapId = this.configService.get<string>('BAP_ID'); 
+    const bapUri = this.configService.get<string>('BAP_URI'); 
+    const bppId = this.configService.get<string>('BPP_ID');  
+    const bppUri = this.configService.get<string>('BPP_URI'); 
+    if (!bapId || !bapUri || !bppId || !bppUri) {  
+      throw new Error('Missing required configuration for BAP/BPP');
+    }
+    
+    const body = {
+      context: {
+        domain: this.configService.get<string>('DOMAIN'),
+        action: 'status',
+        timestamp: new Date().toISOString(),
+        ttl: 'PT10M',
+        version: '1.1.0',
+        bap_id: bapId,
+        bap_uri: bapUri,
+        bpp_id: bppId,
+        bpp_uri: bppUri,
+        transaction_id: uuidv4(),
+        message_id: uuidv4(),
+        location: {
+					country: {
+						name: 'India',
+						code: 'IND',
+					},
+					city: {
+						name: 'Bangalore',
+						code: 'std:080',
+					},
+				},
+      },
+      message: {
+        order_id: orderId,
+      },
+    };
+
+    const response = await this.proxyService.bapCLientApi2('status', body);
+
+    try {
+      const rawStatus =
+        response?.responses[0]?.message?.order?.fulfillments[0]?.state
+          ?.descriptor?.name;
+
+      if (!rawStatus) return null;
+
+      // Parse status stringified JSON
+      const parsedStatus = JSON.parse(rawStatus);
+      return parsedStatus; // { status: '...', comment: '...' }
+    } catch (error) {
+      console.error(`Error while getting status from response: ${error}`);
+      throw new Error('Error while getting status from response');
+    }
+  }
+
+  async processApplications(applications: any) {
+    try {
+      const results = await Promise.allSettled(
+        applications.map(async (application: any) => {
+          const statusData = await this.getStatus(
+            application.external_application_id,
+          );
+          await this.updateStatus(application, statusData);
+        }),
+      );
+      const failures = results.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        Logger.error(`Failed to process ${failures.length} out of ${applications.length} applications`);
+      }
+      return {
+        total: applications.length,
+        succeeded: results.filter(r => r.status === 'fulfilled').length,
+      };
+    } catch (error) {
+      Logger.error(`Error while processing applications: ${error}`);
+      throw new InternalServerErrorException(
+        'Failed to process applications',
+      );
+    }
+  }
+
+  async updateApplicationStatuses(req?: any) {
+    try {
+      let userId: string | undefined;
+      
+      // If req is provided, extract user_id from token
+      if (req) {
+        userId = req.mw_userid;
+      }
+
+      // Get user application records from database
+      const applications = await this.getApplications(userId);
+
+      if (applications.length === 0) {
+        Logger.log(`No applications found for user: ${userId || 'all users'}`);
+        return {
+          success: true,
+          message: `No applications found for ${userId ? 'user' : 'any users'}`,
+          processedCount: 0,
+        };
+      }
+
+      // Update status of each application
+      await this.processApplications(applications);
+
+      Logger.log(
+        `Successfully processed ${applications.length} applications for ${userId || 'all users'}`,
+      );
+
+      return {
+        success: true,
+        message: `Successfully processed ${applications.length} applications`,
+        processedCount: applications.length,
+      };
+    } catch (error) {
+      Logger.error(`Error in update application statuses: ${error}`);
+      throw new InternalServerErrorException(
+        'Failed to update application statuses',
+      );
+    }
+  }
+
+  private async validateUserDocuments(userDocs: any[], recordPublicId: string) {
+    if (!userDocs || userDocs.length === 0) {
+      Logger.warn(`No user documents found for recordPublicId: ${recordPublicId}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.NOT_FOUND,
+        errorMessage: `No documents found for recordPublicId: ${recordPublicId}`,
+      });
+    }
+
+    // Check if any document has empty doc_data_link
+    const invalidDocs = userDocs.filter(doc => 
+      !doc.doc_data_link || doc.doc_data_link === '' || doc.doc_data_link === null
+    );
+    
+    if (invalidDocs.length > 0) {
+      Logger.warn(`Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: `Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`,
+      });
+    }
+
+    return null; // No error
+  }
+
+  private async fetchAndValidateWalletData(docDataLink: string) {
+    let updatedDocData;
+
+    try {
+      updatedDocData = await this.fetchVcJsonFromVcUrl(docDataLink);
+    } catch (error) {
+      Logger.error(`Failed to fetch updated data from wallet: ${error}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'Failed to fetch updated data from wallet',
+      });
+    }
+
+    updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
+
+    if (!updatedDocData?.credentialSubject) {
+      Logger.error(`Not a valid VC: ${updatedDocData}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'Not a valid VC',
+      });
+    }
+
+    return updatedDocData;
+  }
+
+  private async verifyVcData(vcData: any) {
+    let verificationResult;
+    try {
+      verificationResult = await this.verifyVcWithApi(vcData);
+    } catch (error) {
+      Logger.error(`VC Verification failed for wallet callback: ${error}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'VC Verification failed for updated data',
+      });
+    }
+
+    if (!verificationResult.success) {
+      Logger.error(`VC Verification failed for wallet callback: ${verificationResult.message}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: verificationResult.message ?? 'VC Verification failed for updated data',
+      });
+    }
+
+    return null; // No error
+  }
+
+  private async updateDocumentsData(userDocs: any[], updatedDocData: any) {
+    const updatedUserDocs = [];
+    for (const userDoc of userDocs) {
+      userDoc.doc_data = JSON.stringify(updatedDocData) as any;
+      userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
+      
+      // Save the updated document
+      const updatedUserDoc = await this.userDocsRepository.save(userDoc);
+      updatedUserDocs.push(updatedUserDoc);
+    }
+    return updatedUserDocs;
+  }
+
+  private async writeDocumentsToFiles(updatedUserDocs: any[], updatedDocData: any) {
+    const baseFolder = path.join(__dirname, 'userData');
+    
+    for (const updatedUserDoc of updatedUserDocs) {
+      const userFilePath = path.join(baseFolder, "undefined.json");
+
+      try {
+        await this.writeToFile(
+          {
+            user_id: updatedUserDoc.user_id,
+            doc_type: updatedUserDoc.doc_type,
+            doc_subtype: updatedUserDoc.doc_subtype,
+            doc_name: updatedUserDoc.doc_name,
+            imported_from: updatedUserDoc.imported_from,
+            doc_path: updatedUserDoc.doc_path,
+            doc_data_link: updatedUserDoc.doc_data_link,
+            doc_data: updatedDocData,
+            doc_datatype: updatedUserDoc.doc_datatype,
+            watcher_registered: updatedUserDoc.watcher_registered,
+            watcher_email: updatedUserDoc.watcher_email,
+            watcher_callback_url: updatedUserDoc.watcher_callback_url,
+          },
+          userFilePath,
+          updatedUserDoc
+        );
+        Logger.log(`Successfully wrote updated data to file for user: ${updatedUserDoc.user_id}`);
+      } catch (fileError) {
+        Logger.error(`Error writing updated data to file: ${fileError}`);
+        // Don't fail the entire operation if file writing fails
+      }
+    }
+  }
+
+  private async updateUserProfiles(updatedUserDocs: any[]) {
+    // Get unique user IDs to avoid duplicate profile updates
+    const uniqueUserIds = [...new Set(updatedUserDocs.map(doc => doc.user_id))];
+    
+    for (const userId of uniqueUserIds) {
+      try {
+        const userDetails = await this.userRepository.findOne({
+          where: { user_id: userId },
+        });
+
+        if (userDetails) {
+          await this.updateProfile(userDetails);
+          Logger.log(`Successfully updated profile for user: ${userId}`);
+        } else {
+          Logger.warn(`User not found for profile update: ${userId}`);
+        }
+      } catch (profileError) {
+        Logger.error(`Error updating user profile for wallet callback: ${profileError}`);
+        // Don't fail the entire operation if profile update fails
+      }
+    }
+  }
+
+  async handleWalletCallback(callbackData: {
+    identifier: string;
+    message: string;
+    type: string;
+    recordPublicId: string;
+  }) {
+    try {
+      Logger.log(`Processing wallet callback for recordPublicId: ${callbackData.recordPublicId}`);
+
+      // Find all user documents that match the recordPublicId
+      const userDocs = await this.userDocsRepository.find({
+        where: {
+          doc_data_link: ILike(`%/${callbackData.recordPublicId}.json`),
+        },
+      });
+
+      // Validate user documents
+      const validationError = await this.validateUserDocuments(userDocs, callbackData.recordPublicId);
+      if (validationError) return validationError;
+
+      Logger.log(`Found ${userDocs.length} documents to update for recordPublicId: ${callbackData.recordPublicId}`);
+
+      // Fetch and validate wallet data
+      const updatedDocData = await this.fetchAndValidateWalletData(userDocs[0].doc_data_link);
+      if (updatedDocData instanceof ErrorResponse) return updatedDocData;
+
+      // Verify VC data
+      const verificationError = await this.verifyVcData(updatedDocData);
+      if (verificationError) return verificationError;
+
+      // Update all documents with the new data
+      const updatedUserDocs = await this.updateDocumentsData(userDocs, updatedDocData);
+
+      // Write updated data to files for all documents
+      await this.writeDocumentsToFiles(updatedUserDocs, updatedDocData);
+
+      // Update user profiles based on updated documents
+      await this.updateUserProfiles(updatedUserDocs);
+
+      Logger.log(`Successfully updated ${updatedUserDocs.length} documents with wallet callback data`);
+
+      return new SuccessResponse({
+        statusCode: HttpStatus.OK,
+        message: `${updatedUserDocs.length} documents updated successfully from wallet callback`,
+        data: {
+          updated_documents_count: updatedUserDocs.length,
+          documents: updatedUserDocs.map(doc => ({
+            doc_id: doc.doc_id,
+            doc_name: doc.doc_name,
+            doc_type: doc.doc_type,
+            doc_subtype: doc.doc_subtype,
+            user_id: doc.user_id,
+          })),
+        },
+      });
+    } catch (error) {
+      Logger.error(`Error processing wallet callback: ${error}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: 'Failed to process wallet callback',
+      });
+    }
   }
 }

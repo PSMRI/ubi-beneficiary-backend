@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main    
+      - feat-custom-fields    
 jobs:
   Deploy_on_UBA_DEV:
     runs-on: ubuntu-latest
@@ -25,3 +25,12 @@ jobs:
             echo '${{ secrets.DEV_ENV }}' > .env
             ls -ltra
             ./deploy.sh
+
+      ## Notify on Slack
+      - name: Notify on Slack channel
+        uses: iRoachie/slack-github-actions@v2.3.2
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          status: ${{ job.status }}
+        if: ${{ always() }}

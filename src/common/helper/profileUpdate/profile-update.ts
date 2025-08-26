@@ -1,24 +1,27 @@
 import { User } from '@entities/user.entity';
 import { UserDoc } from '@entities/user_docs.entity';
-import { UserInfo } from '@entities/user_info.entity';
 import { Injectable, Logger } from '@nestjs/common';
-import { readFile } from 'fs/promises';
-import * as path from 'path';
-import { InjectRepository } from '@nestjs/typeorm'; 
+import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { parse, format, isValid } from 'date-fns';
 import { KeycloakService } from '@services/keycloak/keycloak.service';
+import { CustomFieldsService } from '@modules/customfields/customfields.service';
+import { FieldContext } from '@modules/customfields/entities/field.entity';
+import { FieldValue } from '@modules/customfields/entities/field-value.entity';
+import { AdminService } from '@modules/admin/admin.service';
+import { Setting } from '@modules/admin/entities/setting.entity';
 
 @Injectable()
 export default class ProfilePopulator {
+  private readonly logger = new Logger(ProfilePopulator.name);
   constructor(
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(UserDoc)
     private readonly userDocRepository: Repository<UserDoc>,
-    @InjectRepository(UserInfo)
-    private readonly userInfoRepository: Repository<UserInfo>,
     private readonly keycloakService: KeycloakService,
-  ) {}
+    private readonly customFieldsService: CustomFieldsService,
+    private readonly adminService: AdminService
+  ) { }
 
   private formatDateToISO(inputDate: string): string | null {
     // Try native Date parsing (handles formats like "Thu, 08 May 2003 00:00:00 GMT")
@@ -46,6 +49,7 @@ export default class ProfilePopulator {
 
     return null;
   }
+
   private romanToInt(roman: string): number {
     const romanMap: { [key: string]: number } = {
       I: 1,
@@ -74,7 +78,7 @@ export default class ProfilePopulator {
   }
 
   // Build Vcs in required format based on user documents
-  async buildVCs(userDocs: any) {
+  async buildVCs(userDocs: UserDoc[]) {
     const vcs = [];
 
     // Build VC array
@@ -95,8 +99,8 @@ export default class ProfilePopulator {
   }
 
   // Get user documents from database
-  private async getUserDocs(user: any) {
-    const userDocs = await this.userDocRepository.find({
+  private async getUserDocs(user: any): Promise<UserDoc[]> {
+    const userDocs: UserDoc[] = await this.userDocRepository.find({
       where: {
         user_id: user.user_id,
       },
@@ -161,6 +165,7 @@ export default class ProfilePopulator {
     if (!intValue) return value;
     return intValue;
   }
+
   private handleDisabilityTypeField(vc: any, pathValue: any) {
     const value = this.getValue(vc, pathValue);
     if (!value) return null;
@@ -202,59 +207,55 @@ export default class ProfilePopulator {
   }
 
   // For a field, get its value from given vc
-  private async getFieldValueFromVC(vc: any, field: any) {
-    const filePath = path.join(
-      __dirname,
-      `../../../../src/common/helper/profileUpdate/vcPaths/${vc.docType}.json`,
+  private async getFieldValueFromVC(vc: any, field: any, fieldConfig: any) {
+    // Find the document mapping for this field and document type
+
+    const documentMapping = fieldConfig.documentMappings?.find(
+      (mapping: any) => mapping.document === vc.docType
     );
-    const vcPaths = JSON.parse(await readFile(filePath, 'utf-8'));
 
-    if (!vcPaths) return null;
+    if (!documentMapping) return null;
 
-    // If it is one of the name fields, then get values accordingly
-    // if (['firstName', 'lastName', 'middleName', 'fatherName'].includes(field))
-    //   return this.handleNameFields(vc, vcPaths, field);
+    // Prepend 'credentialSubject.' to the document field path
+    const pathValue = `credentialSubject.${documentMapping.documentField}`;
+    let value = this.getValue(vc, pathValue);
 
-    // If it is gender, value will be 'M' or 'F' from aadhaar, so adjust the value accordingly
-    // if (field === 'gender') return this.handleGenderField(vc, vcPaths[field]);
-    if (field === 'disabilityType')
-      return this.handleDisabilityTypeField(vc, vcPaths[field]);
-    // If it is class, value will be roman number, so convert value accordingly
-    if (field === 'class') return this.handleClassField(vc, vcPaths[field]);
-
-    // If it is dob, then adjust format as per database
-    if (field === 'dob') return this.handleDobValue(vc, vcPaths[field]);
-
-    // If it is income, need to check for commas or spaces etc.
-    if (field === 'annualIncome')
-      return this.handleIncomeValue(vc, vcPaths[field]);
-
-    return this.getValue(vc, vcPaths[field]);
+    // Apply field value normalization if present
+    if (fieldConfig.fieldValueNormalizationMapping && Array.isArray(fieldConfig.fieldValueNormalizationMapping) && value) {
+      const normalizedMapping = fieldConfig.fieldValueNormalizationMapping.find(
+        (mapping: any) => mapping.rawValue.includes(value.toString())
+      );
+      if (normalizedMapping) {
+        value = normalizedMapping.transformedValue;
+      }
+    }
+    return value;
   }
 
   // Build user profile data based on array of fields and available vcs
-  async buildProfile(vcs: any) {
+  async buildProfile(vcs: any[]) {
     const userProfile = {};
     const validationData = {};
 
-    // Get profile fields & corresponding arrays of VC names
-    const profileFieldsFilePath = path.join(
-      __dirname,
-      '../../../../src/common/helper/profileUpdate/configFiles/vcArray.json',
-    );
-    const profileFields = JSON.parse(
-      await readFile(profileFieldsFilePath, 'utf-8'),
-    );
-
-    for (const field in profileFields) {
+    // Get profile fields configuration from settings table
+    const configResponse: Setting = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
+    if (!configResponse) {
+      this.logger.error('Failed to get profile field configuration from settings');
+      return { userProfile, validationData };
+    }
+    const profileFields = configResponse.value;
+    for (const fieldConfig of profileFields) {
+      const fieldName = fieldConfig.fieldName;
       const docsUsed = [];
-      const vcArray = profileFields[field];
+      const documentMappings = fieldConfig.documentMappings || [];
 
       let value = null;
-      for (const docType of vcArray) {
-        const vc = vcs.find((vc: any) => vc.docType === docType);
+      for (const mapping of documentMappings) {
+        const vc = vcs.find((vc: any) =>
+          vc.docType === mapping.document
+        );
         if (vc) {
-          value = await this.getFieldValueFromVC(vc, field);
+          value = await this.getFieldValueFromVC(vc, fieldName, fieldConfig);
           if (value) {
             docsUsed.push(vc.docType);
             break;
@@ -262,132 +263,57 @@ export default class ProfilePopulator {
         }
       }
 
-      userProfile[field] = value;
-      validationData[field] = docsUsed;
+      userProfile[fieldName] = value;
+      validationData[fieldName] = docsUsed;
     }
 
     return { userProfile, validationData };
   }
 
   // Build user data and info based on built profile
-  private buildUserDataAndInfo(profile: any) {
+  private async buildUserDataAndInfo(profile: any) {
     const userData = {
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-      middleName: profile.middleName,
-      dob: profile.dob,
+      firstName: profile?.firstName,
+      lastName: profile?.lastName,
+      middleName: profile?.middleName,
+      phoneNumber: profile?.phoneNumber,
+      email: profile?.email,
+      dob: profile?.dob,
     };
-    ///update added fields
-    const userInfo = {
-      fatherName: profile.fatherName,
-      gender: profile.gender,
-      caste: profile.caste,
-      aadhaar: profile.aadhaar,
-      annualIncome: profile.annualIncome ? Number(profile.annualIncome) : null,
-      class: profile.class ? Number(profile.class) : null,
-      studentType: profile.studentType,
-      previousYearMarks: profile.previousYearMarks,
-      dob: profile.dob,
-      state: profile.state,
-      udid: profile.udid,
-      disabilityType: profile.disabilityType,
-      disabilityRange: profile.disabilityRange,
-      bankAccountHolderName: profile.bankAccountHolderName,
-      bankAccountNumber: profile.bankAccountNumber,
-      bankIfscCode: profile.bankIfscCode,
-      bankName: profile.bankName,
-      bankAddress: profile.bankAddress,
-      branchCode: profile.branchCode,
-      nspOtr: profile.nspOtr,
-      tuitionAndAdminFeePaid: profile.tuitionAndAdminFeePaid,
-      miscFeePaid: profile.miscFeePaid,
-      currentSchoolName: profile.currentSchoolName,
-    };
+    // update added fields
+    const fieldList = await this.customFieldsService.findFields({
+      context: FieldContext.USERS
+    });
 
+    const userInfo = [];
+    for (const field of fieldList) {
+      // only add fields that are not already present in userData as custom fields
+      if (profile[field.name] && !['firstName', 'lastName', 'middleName', 'dob', 'phoneNumber', 'email'].includes(field.name)) {
+
+        userInfo.push(
+          {
+            name: field.name,
+            fieldId: field.fieldId,
+            value: profile[field.name]
+          }
+        )
+      }
+    }
     return { userData, userInfo };
   }
 
   // Handle rows from 'user_info' table in database
-  private async handleUserInfo(user: any, userInfo: any) {
-    const queryRunner =
-      this.userInfoRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+  private async handleUserInfo(user: any, userInfo: any): Promise<FieldValue[]> {
     try {
-      const userRows = await queryRunner.manager.find(UserInfo, {
-        where: {
-          user_id: user.user_id,
-        },
-      });
-
-      let row: UserInfo;
-      ///update added filleds
-      if (userRows.length === 0) {
-        row = this.userInfoRepository.create({
-          user_id: user.user_id,
-          fatherName: userInfo.fatherName,
-          gender: userInfo.gender,
-          caste: userInfo.caste,
-          annualIncome: userInfo.annualIncome,
-          class: userInfo.class,
-          aadhaar: userInfo?.aadhaar?.toString(),
-          studentType: userInfo.studentType,
-          previousYearMarks: userInfo?.previousYearMarks?.toString(),
-          dob: userInfo?.dob?.toString(),
-          state: userInfo.state,
-          udid: userInfo?.udid?.toString(),
-          disabilityType: userInfo.disabilityType,
-          disabilityRange: userInfo.disabilityRange,
-          bankAccountHolderName: userInfo.bankAccountHolderName,
-          bankAccountNumber: userInfo.bankAccountNumber,
-          bankIfscCode: userInfo.bankIfscCode,
-          bankName: userInfo.bankName,
-          bankAddress: userInfo.bankAddress,
-          branchCode: userInfo.branchCode,
-          nspOtr: userInfo.nspOtr,
-          tuitionAndAdminFeePaid: userInfo.tuitionAndAdminFeePaid,
-          miscFeePaid: userInfo.miscFeePaid,
-          currentSchoolName: userInfo.currentSchoolName,
-        });
-      } else {
-        row = userRows[0];
-        row.fatherName = userInfo.fatherName;
-        row.gender = userInfo.gender;
-        row.caste = userInfo.caste;
-        row.annualIncome = userInfo.annualIncome;
-        row.class = userInfo.class;
-        row.aadhaar = userInfo?.aadhaar?.toString();
-        row.studentType = userInfo?.studentType;
-        row.previousYearMarks = userInfo?.previousYearMarks?.toString();
-        row.dob = userInfo?.dob?.toString();
-        row.state = userInfo.state;
-        row.udid = userInfo?.udid?.toString();
-        row.disabilityType = userInfo.disabilityType;
-        row.disabilityRange = userInfo.disabilityRange;
-        row.bankAccountHolderName = userInfo.bankAccountHolderName;
-        row.bankAccountNumber = userInfo.bankAccountNumber;
-        row.bankIfscCode = userInfo.bankIfscCode;
-        row.bankName = userInfo.bankName;
-        row.bankAddress = userInfo.bankAddress;
-        row.branchCode = userInfo.branchCode;
-        row.nspOtr = userInfo.nspOtr;
-        row.tuitionAndAdminFeePaid = userInfo.tuitionAndAdminFeePaid;
-        row.miscFeePaid = userInfo.miscFeePaid;
-        row.currentSchoolName = userInfo.currentSchoolName;
-      }
-      await queryRunner.manager.save(row);
-      await queryRunner.commitTransaction();
-      return row;
-    } catch (err) {
-      await queryRunner.rollbackTransaction();
-      throw err;
-    } finally {
-      await queryRunner.release();
+      return await this.customFieldsService.saveCustomFields(user.user_id, FieldContext.USERS, userInfo);
+    } catch (error) {
+      Logger.error(`Error while saving user info: ${error}`);
+      return [];
     }
   }
 
   // Update values in database based on built profile
-  async updateDatabase(profile: any, validationData: any, user: any , adminResultData: any) {
+  async updateDatabase(profile: any, validationData: any, user: User, adminResultData: any) {
     // ===Reset user verification status===
     user.fieldsVerified = false;
     user.fieldsVerifiedAt = new Date();
@@ -406,9 +332,8 @@ export default class ProfilePopulator {
     } finally {
       await queryRunner1.release();
     }
-    // ===================================
 
-    const { userData, userInfo } = this.buildUserDataAndInfo(profile);
+    const { userData, userInfo } = await this.buildUserDataAndInfo(profile);
 
     let cnt = 0;
     for (const field in profile) {
@@ -439,7 +364,8 @@ export default class ProfilePopulator {
         await this.keycloakService.updateUser(user.sso_id, {
           firstName: profile.firstName,
           lastName: profile.lastName,
-        } , adminResultData);
+        }, adminResultData);
+        this.logger.log("user updated in keycloak")
       } catch (keycloakError) {
         Logger.error('Failed to update user in Keycloak: ', keycloakError?.response);
       }
@@ -452,15 +378,14 @@ export default class ProfilePopulator {
     }
   }
 
-  async populateProfile(users: any) {
+  async populateProfile(users: User[]) {
     try {
       const adminResultData = await this.keycloakService.getAdminKeycloakToken();
-    
+
       for (const user of users) {
         try {
           // Get documents from database
-          const userDocs = await this.getUserDocs(user);
-
+          const userDocs: UserDoc[] = await this.getUserDocs(user);
           // Build VCs in required format
           const vcs = await this.buildVCs(userDocs);
 
@@ -468,7 +393,7 @@ export default class ProfilePopulator {
           const { userProfile, validationData } = await this.buildProfile(vcs);
 
           // update entries in database
-          await this.updateDatabase(userProfile, validationData, user ,adminResultData);
+          await this.updateDatabase(userProfile, validationData, user, adminResultData);
         } catch (error) {
           Logger.error(`Failed to process user ${user.user_id}:`, error);
           continue;

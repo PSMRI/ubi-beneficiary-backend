@@ -9,13 +9,18 @@ import { UserService } from '@modules/users/users.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '@entities/user.entity';
 import { UserDoc } from '@entities/user_docs.entity';
-import { UserInfo } from '@entities/user_info.entity';
 import { EncryptionService } from 'src/common/helper/encryptionService';
 import { Consent } from '@entities/consent.entity';
 import { UserApplication } from '@entities/user_applications.entity';
 import { LoggerService } from 'src/logger/logger.service';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { WalletService } from 'src/services/wallet/wallet.service';
+import { Field } from '@modules/customfields/entities/field.entity';
+import { FieldValue } from '@modules/customfields/entities/field-value.entity';
+import { CustomFieldsModule } from '@modules/customfields/customfields.module';
+import { RoleGuard } from '../../common/guards/role.guard';
+import { AdminModule } from '@modules/admin/admin.module';
+import { ProxyService } from '@services/proxy/proxy.service';
 
 @Module({
   imports: [
@@ -24,10 +29,13 @@ import { WalletService } from 'src/services/wallet/wallet.service';
     TypeOrmModule.forFeature([
       User,
       UserDoc,
-      UserInfo,
       Consent,
       UserApplication,
+      Field,
+      FieldValue,
     ]),
+    CustomFieldsModule,
+    AdminModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -39,7 +47,9 @@ import { WalletService } from 'src/services/wallet/wallet.service';
     LoggerService,
     ProfilePopulator,
     WalletService,
+    RoleGuard,
+    ProxyService,
   ],
-  exports: [AuthService, UserService, EncryptionService, WalletService],
+  exports: [AuthService, UserService, EncryptionService, WalletService, RoleGuard],
 })
 export class AuthModule {}

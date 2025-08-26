@@ -18,7 +18,9 @@ export class AuthService {
   public keycloak_admin_cli_client_secret = this.configService.get<string>(
     'KEYCLOAK_ADMIN_CLI_CLIENT_SECRET',
   );
-
+  private readonly defaultGroupPath = this.configService.get<string>(
+    'KEYCLOAK_DEFAULT_GROUP_PATH',
+  );
   constructor(
     private readonly configService: ConfigService,
     private readonly keycloakService: KeycloakService,
@@ -30,11 +32,10 @@ export class AuthService {
   public async login(body: LoginDTO) {
 
     const token = await this.keycloakService.getUserKeycloakToken(body);
-
+    
     if (token) {
       // First try to get Keycloak user details
       const keycloakUser = await this.keycloakService.getUserByUsername(body.username);
-      
       if (keycloakUser?.user?.id) {
         // Try to find user by Keycloak ID (sso_id)
         const user = await this.userService.findBySsoId(keycloakUser.user.id);
@@ -134,7 +135,6 @@ export class AuthService {
       // Step 2: Get Keycloak admin token
       const token = await this.keycloakService.getAdminKeycloakToken();
       this.validateToken(token);
-
       // Step 3: Register user in Keycloak
       const keycloakId = await this.registerUserInKeycloak(
         rest,
@@ -247,6 +247,7 @@ export class AuthService {
         firstName: body?.firstName,
         lastName: body?.lastName,
       },
+      groups: this.defaultGroupPath ? [this.defaultGroupPath] : [],
     };
   }
 
@@ -282,6 +283,7 @@ export class AuthService {
         firstName: trimmedFirstName,
         lastName: trimmedLastName,
       },
+      groups: this.defaultGroupPath ? [this.defaultGroupPath] : [],
     };
   }
 
@@ -292,6 +294,38 @@ export class AuthService {
         errorMessage: 'Unable to get Keycloak token',
       });
     }
+  }
+
+  /**
+   * Format user info by converting all values to strings and handling null/undefined values
+   * @param user - User object with any data types
+   * @returns Formatted user object with all values as strings
+   */
+  public formatUserInfo(user: any): Record<string, string> {
+    // Convert main user properties to strings
+    const userInfo = Object.fromEntries(
+      Object.entries(user).map(([key, value]) => [
+        key,
+        value !== null && value !== undefined ? String(value) : '',
+      ]),
+    );
+
+    // Handle custom fields if they exist
+    if (user.customFields && Array.isArray(user.customFields)) {
+      const customFieldsObj = Object.fromEntries(
+        user.customFields.map(field => [
+          field.name,
+          field.value !== null && field.value !== undefined ? String(field.value) : '',
+        ])
+      );
+      
+      return {
+        ...userInfo,
+        ...customFieldsObj
+      };
+    }
+
+    return userInfo;
   }
 
   private async registerUserInKeycloak(userData, accessToken) {
@@ -363,7 +397,7 @@ export class AuthService {
     });
   }
 
-  public async logout(req, response) {
+  public async logout(req) {
     const accessToken = req.body.access_token;
     const refreshToken = req.body.refresh_token; // Optional: if provided
 
