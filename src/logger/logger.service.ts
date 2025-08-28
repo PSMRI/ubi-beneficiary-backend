@@ -34,9 +34,10 @@ export class LoggerService implements NestLoggerService {
     this.logger.log({ level: 'info', message, context });
   }
 
-  error(message: string, trace?: string, context?: string) {
+  error(message: any, ...optionalParams: any[]) {
+    const [trace, context] = optionalParams as [string?, string?];
     this.logger.error({ message, trace, context });
-    this.sendToSentry('error', message, context, trace);
+    this.sendToSentry('error', String(message), context, trace);
   }
 
   warn(message: string, context?: string) {
@@ -60,15 +61,8 @@ export class LoggerService implements NestLoggerService {
 
   // New method for capturing exceptions with more context
   captureException(error: Error, context?: string, extra?: any) {
-    this.error(error.message, error.stack, context);
-    
-    if (process.env.SENTRY_DSN) {
-      Sentry.withScope((scope) => {
-        if (context) scope.setTag('context', context);
-        if (extra) scope.setContext('extra', extra);
-        Sentry.captureException(error);
-      });
-    }
+    this.logger.error({ message: error.message, trace: error.stack, context, extra }); 
+    this.sendToSentry('error', error.message, context, error.stack);
   }
 
   // New method for capturing messages with specific levels

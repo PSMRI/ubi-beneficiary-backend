@@ -9,21 +9,12 @@ Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.SENTRY_ENVIRONMENT,
   
-  // Set tracesSampleRate to 1.0 to capture 100%
-  // of transactions for tracing.
-  // We recommend adjusting this value in production
-  // Learn more at
-  // https://docs.sentry.io/platforms/javascript/guides/nestjs/configuration/options/#tracesSampleRate
+  // Set tracesSampleRate to 1.0 to capture 100% of transactions for tracing.
+  // Learn more at https://docs.sentry.io/platforms/javascript/guides/nestjs/configuration/options/#tracesSampleRate
   tracesSampleRate: 0.1,
   
   // Additional configuration options
-  debug: process.env.NODE_ENV === 'development',
-  
-  // Automatically capture console errors
-  integrations: [
-    // Add any additional integrations here
-    Sentry.nestIntegration(),
-  ],
+  debug: process.env.NODE_ENV === 'development'
 });
 
 // Test Sentry initialization
