@@ -1,3 +1,7 @@
+// Import this first!
+import "./common/tools/sentry.tools";
+
+// Now import other modules
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import {
@@ -8,16 +12,16 @@ import {
 } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ResponseInterceptor } from './common/Interceptors/response.interceptor';
+import { LoggerService } from './logger/logger.service';
 import * as bodyParser from 'body-parser';
-import * as Sentry from '@sentry/nestjs';
 
 async function bootstrap() {
-	Sentry.init({
-		dsn: process.env.SENTRY_DSN,
-		environment: process.env.SENTRY_ENVIRONMENT,
-	});
 
 	const app = await NestFactory.create(AppModule);
+	
+	// Replace NestJS default logger with our Sentry-enabled logger
+	const customLogger = app.get(LoggerService);
+	app.useLogger(customLogger);
 	app.enableCors();
 	app.enableVersioning({
 		type: VersioningType.URI,
