@@ -389,7 +389,6 @@ export class UserService {
         // Create the new document entity for the database
         const savedDoc = await this.saveDoc(createUserDocDto);
         savedDocs.push(savedDoc);
-
         await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
       }
     }
@@ -582,7 +581,7 @@ export class UserService {
       await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
 
       // Register watcher if imported_from is e-wallet or QR Code
-      await this.handleWatcherRegistrationIfNeeded(createUserDocDto, savedDoc);
+      await this.handleWatcherRegistrationIfNeeded(createUserDocDto, savedDoc, userDetails);
 
       return savedDoc;
     } catch (error) {
@@ -946,7 +945,7 @@ export class UserService {
     }
   }
 
-  private async handleWatcherRegistrationIfNeeded(createUserDocDto: CreateUserDocDTO, savedDoc: UserDoc): Promise<void> {
+  private async handleWatcherRegistrationIfNeeded(createUserDocDto: CreateUserDocDTO, savedDoc: UserDoc, userDetails: any): Promise<void> {
     const importSource = createUserDocDto.imported_from?.trim().toLowerCase();
     if (!importSource || (importSource !== 'e-wallet' && importSource !== 'qr code')) {
       return;
@@ -974,7 +973,8 @@ export class UserService {
         createUserDocDto.doc_data,
         createUserDocDto.doc_data_link,
         email,
-        callbackUrl
+        callbackUrl,
+        userDetails,
       );
 
       if (watcherResult.success) {
@@ -1066,35 +1066,143 @@ export class UserService {
   }
 
   /**
-   * Fetches a Verifiable Credential JSON from a given URL.
-   * Handles both dway.io and haqdarshak.com style URLs.
-   * Follows redirects and appends .vc if needed.
-   * @param url The URL from the QR code
+   * Private helper method to fetch and validate VC JSON from a URL
+   * @param url The VC URL to fetch data from
+   * @returns Promise containing validated VC data or error
    */
-  async fetchVcJsonFromUrl(url: string): Promise<any> {
+  private async fetchAndValidateVcJson(url: string): Promise<any> {
     try {
-      const vcJsonResponse = {
-        status: 200,
-        message: 'VC JSON fetched successfully',
+      // Validate URL scheme to prevent SSRF attacks
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid VC URL scheme', status: 400 };
+      }
+
+      // Fetch the VC JSON with proper headers
+      const vcResponse = await axios.get(url, {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        timeout: 8000,
+      });
+
+      // Validate that we received JSON data
+      let vcData;
+      try {
+        if (typeof vcResponse.data === 'string') {
+          vcData = JSON.parse(vcResponse.data);
+        } else {
+          vcData = vcResponse.data;
+        }
+      } catch (_parseError) {
+        Logger.error('Invalid JSON response from VC endpoint', _parseError);
+        return {
+          error: true,
+          message: 'Invalid JSON response from VC endpoint',
+          status: 422,
+        };
+      }
+
+      // Basic validation that it looks like a VC
+      if (!vcData || typeof vcData !== 'object') {
+        return {
+          error: true,
+          message: 'Invalid VC data structure received',
+          status: 422,
+        };
+      }
+
+      // Return in format expected by frontend
+      return {
         data: {
-          vcData: {},
-          url: '',
+          vcData: vcData,
+          url: url,
         },
       };
-
-      // 1. Fetch the VC JSON
-      const vcResponse = await axios.get(url, { headers: { Accept: 'application/json' } });
-      vcJsonResponse.data.vcData = vcResponse.data;
-      vcJsonResponse.data.url = url;
-
-      return vcJsonResponse;
     }
     catch (error) {
       // Handle errors and return a meaningful message
       if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
         return {
           error: true,
-          message: error.response?.data ?? error.message,
+          message: msg,
+          status: error.response?.status ?? 500,
+        };
+      }
+      return {
+        error: true,
+        message: 'Unknown error occurred while fetching VC data',
+        status: 500,
+      };
+    }
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a URL that already ends with .vc
+   * Used for wallet callbacks and direct VC URLs
+   * @param vcUrl The direct VC URL (already ending with .vc)
+   * @returns Object containing vcData and vcUrl in format expected by frontend
+   */
+  async fetchVcJsonFromVcUrl(vcUrl: string): Promise<any> {
+    return this.fetchAndValidateVcJson(vcUrl);
+  }
+
+  /**
+   * Fetches a Verifiable Credential JSON from a given URL.
+   * Handles both dway.io and haqdarshak.com style URLs.
+   * Follows redirects and appends .vc if needed.
+   * @param url The URL from the QR code
+   * @returns Object containing vcData and vcUrl in format expected by frontend
+   */
+  async fetchVcJsonFromUrl(url: string): Promise<any> {
+    try {
+      // Basic scheme validation before the first network call
+      const initialParsed = new URL(url);
+      if (initialParsed.protocol !== 'http:' && initialParsed.protocol !== 'https:') {
+        return { error: true, message: 'Invalid URL scheme', status: 400 };
+      }
+
+      // 1. Follow redirects to get the final URL (without downloading the VC yet)
+      const response = await axios.get(url, {
+        maxRedirects: 5,
+        timeout: 8000,
+        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
+      });
+      // Try multiple known locations for the resolved URL (follow-redirects runtime)
+      let finalUrl = url;
+      if (response.request?.res?.responseUrl) {
+        finalUrl = response.request.res.responseUrl;
+      } else if (response.request?._redirectable?._currentUrl) {
+        finalUrl = response.request._redirectable._currentUrl;
+      }
+
+      // 2. Append/normalize to .vc while preserving query and hash
+      const parsedFinal = new URL(finalUrl);
+      if (!parsedFinal.pathname.endsWith('.vc')) {
+        if (parsedFinal.pathname.endsWith('.json')) {
+          parsedFinal.pathname = parsedFinal.pathname.replace(/\.json$/, '.vc');
+        } else {
+          parsedFinal.pathname = parsedFinal.pathname.replace(/\/$/, '') + '.vc';
+        }
+      }
+      finalUrl = parsedFinal.toString();
+
+      // 3. Use the common method to fetch and validate VC data
+      return this.fetchAndValidateVcJson(finalUrl);
+    }
+    catch (error) {
+      // Handle errors and return a meaningful message
+      if (axios.isAxiosError(error)) {
+        const msg = typeof error.response?.data === 'string'
+          ? error.response.data
+          : error.message;
+        return {
+          error: true,
+          message: msg,
           status: error.response?.status ?? 500,
         };
       }
@@ -1154,11 +1262,20 @@ export class UserService {
     identifier: string,
     recordPublicId: string,
     email: string,
-    callbackUrl: string
+    callbackUrl: string,
+    userDetails: any,
   ): Promise<{ success: boolean; message?: string; data?: any }> {
     try {
       const walletUrl = process.env.WALLET_BASE_URL+ '/api/wallet/vcs/watch';
-      const authToken = process.env.WALLET_AUTH_TOKEN || '';
+      const authToken = userDetails.walletToken || '';
+
+      if (!authToken) {
+        return {
+          success: false,
+          message: 'Wallet token not found',
+          data: null,
+        };
+      }
 
       const payload = {
         vcPublicId: recordPublicId,
@@ -1238,7 +1355,8 @@ export class UserService {
     docData: any,
     docPath: string,
     email: string,
-    callbackUrl: string
+    callbackUrl: string,
+    userDetails: any,
   ): Promise<{ success: boolean; message?: string; data?: any }> {
     try {
       // Normalize docPath to ensure it ends with .json
@@ -1280,7 +1398,7 @@ export class UserService {
       }
 
       if (importedFrom.toLowerCase() === 'e-wallet') {
-        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, walletCallbackUrl);
+        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, walletCallbackUrl, userDetails);
       } else if (importedFrom.toLowerCase() === 'qr code') {
         return await this.registerWatcherForQRCode(identifier, recordPublicId, email, walletCallbackUrl);
       } else {
@@ -1485,6 +1603,149 @@ export class UserService {
     }
   }
 
+  private async validateUserDocuments(userDocs: any[], recordPublicId: string) {
+    if (!userDocs || userDocs.length === 0) {
+      Logger.warn(`No user documents found for recordPublicId: ${recordPublicId}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.NOT_FOUND,
+        errorMessage: `No documents found for recordPublicId: ${recordPublicId}`,
+      });
+    }
+
+    // Check if any document has empty doc_data_link
+    const invalidDocs = userDocs.filter(doc => 
+      !doc.doc_data_link || doc.doc_data_link === '' || doc.doc_data_link === null
+    );
+    
+    if (invalidDocs.length > 0) {
+      Logger.warn(`Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: `Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`,
+      });
+    }
+
+    return null; // No error
+  }
+
+  private async fetchAndValidateWalletData(docDataLink: string) {
+    let updatedDocData;
+
+    try {
+      updatedDocData = await this.fetchVcJsonFromVcUrl(docDataLink);
+    } catch (error) {
+      Logger.error(`Failed to fetch updated data from wallet: ${error}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'Failed to fetch updated data from wallet',
+      });
+    }
+
+    updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
+
+    if (!updatedDocData?.credentialSubject) {
+      Logger.error(`Not a valid VC: ${updatedDocData}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'Not a valid VC',
+      });
+    }
+
+    return updatedDocData;
+  }
+
+  private async verifyVcData(vcData: any) {
+    let verificationResult;
+    try {
+      verificationResult = await this.verifyVcWithApi(vcData);
+    } catch (error) {
+      Logger.error(`VC Verification failed for wallet callback: ${error}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'VC Verification failed for updated data',
+      });
+    }
+
+    if (!verificationResult.success) {
+      Logger.error(`VC Verification failed for wallet callback: ${verificationResult.message}`);
+      return new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: verificationResult.message ?? 'VC Verification failed for updated data',
+      });
+    }
+
+    return null; // No error
+  }
+
+  private async updateDocumentsData(userDocs: any[], updatedDocData: any) {
+    const updatedUserDocs = [];
+    for (const userDoc of userDocs) {
+      userDoc.doc_data = JSON.stringify(updatedDocData) as any;
+      userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
+      
+      // Save the updated document
+      const updatedUserDoc = await this.userDocsRepository.save(userDoc);
+      updatedUserDocs.push(updatedUserDoc);
+    }
+    return updatedUserDocs;
+  }
+
+  private async writeDocumentsToFiles(updatedUserDocs: any[], updatedDocData: any) {
+    const baseFolder = path.join(__dirname, 'userData');
+    
+    for (const updatedUserDoc of updatedUserDocs) {
+      const userFilePath = path.join(baseFolder, "undefined.json");
+
+      try {
+        await this.writeToFile(
+          {
+            user_id: updatedUserDoc.user_id,
+            doc_type: updatedUserDoc.doc_type,
+            doc_subtype: updatedUserDoc.doc_subtype,
+            doc_name: updatedUserDoc.doc_name,
+            imported_from: updatedUserDoc.imported_from,
+            doc_path: updatedUserDoc.doc_path,
+            doc_data_link: updatedUserDoc.doc_data_link,
+            doc_data: updatedDocData,
+            doc_datatype: updatedUserDoc.doc_datatype,
+            watcher_registered: updatedUserDoc.watcher_registered,
+            watcher_email: updatedUserDoc.watcher_email,
+            watcher_callback_url: updatedUserDoc.watcher_callback_url,
+          },
+          userFilePath,
+          updatedUserDoc
+        );
+        Logger.log(`Successfully wrote updated data to file for user: ${updatedUserDoc.user_id}`);
+      } catch (fileError) {
+        Logger.error(`Error writing updated data to file: ${fileError}`);
+        // Don't fail the entire operation if file writing fails
+      }
+    }
+  }
+
+  private async updateUserProfiles(updatedUserDocs: any[]) {
+    // Get unique user IDs to avoid duplicate profile updates
+    const uniqueUserIds = [...new Set(updatedUserDocs.map(doc => doc.user_id))];
+    
+    for (const userId of uniqueUserIds) {
+      try {
+        const userDetails = await this.userRepository.findOne({
+          where: { user_id: userId },
+        });
+
+        if (userDetails) {
+          await this.updateProfile(userDetails);
+          Logger.log(`Successfully updated profile for user: ${userId}`);
+        } else {
+          Logger.warn(`User not found for profile update: ${userId}`);
+        }
+      } catch (profileError) {
+        Logger.error(`Error updating user profile for wallet callback: ${profileError}`);
+        // Don't fail the entire operation if profile update fails
+      }
+    }
+  }
+
   async handleWalletCallback(callbackData: {
     identifier: string;
     message: string;
@@ -1494,134 +1755,50 @@ export class UserService {
     try {
       Logger.log(`Processing wallet callback for recordPublicId: ${callbackData.recordPublicId}`);
 
-      // Find the user document that matches the recordPublicId
-      const userDoc = await this.userDocsRepository.findOne({
+      // Find all user documents that match the recordPublicId
+      const userDocs = await this.userDocsRepository.find({
         where: {
           doc_data_link: ILike(`%/${callbackData.recordPublicId}.json`),
         },
       });
 
-      if (!userDoc) {
-        Logger.warn(`No user document found for recordPublicId: ${callbackData.recordPublicId}`);
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `No document found for recordPublicId: ${callbackData.recordPublicId}`,
-        });
-      }
+      // Validate user documents
+      const validationError = await this.validateUserDocuments(userDocs, callbackData.recordPublicId);
+      if (validationError) return validationError;
 
-      if (userDoc.doc_data_link === null || userDoc.doc_data_link === undefined || userDoc.doc_data_link === '') {
-        Logger.warn(`No doc_data_link found for recordPublicId: ${callbackData.recordPublicId}`);
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `No doc_data_link found for recordPublicId: ${callbackData.recordPublicId}`,
-        });
-      }
+      Logger.log(`Found ${userDocs.length} documents to update for recordPublicId: ${callbackData.recordPublicId}`);
 
-      // Fetch updated data from the wallet using the recordPublicId
-      let updatedDocData;
+      // Fetch and validate wallet data
+      const updatedDocData = await this.fetchAndValidateWalletData(userDocs[0].doc_data_link);
+      if (updatedDocData instanceof ErrorResponse) return updatedDocData;
 
-      try {
-        updatedDocData = await this.fetchVcJsonFromUrl(userDoc.doc_data_link);
-      } catch (error) {
-        Logger.error(`Failed to fetch updated data from wallet: ${error}`);
-        return new ErrorResponse({
-          statusCode: HttpStatus.BAD_REQUEST,
-          errorMessage: 'Failed to fetch updated data from wallet',
-        });
-      }
+      // Verify VC data
+      const verificationError = await this.verifyVcData(updatedDocData);
+      if (verificationError) return verificationError;
 
-      updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
+      // Update all documents with the new data
+      const updatedUserDocs = await this.updateDocumentsData(userDocs, updatedDocData);
 
-      if (!updatedDocData?.credentialSubject) {
-        Logger.error(`Not a valid VC: ${updatedDocData}`);
-        return new ErrorResponse({
-          statusCode: HttpStatus.BAD_REQUEST,
-          errorMessage: 'Not a valid VC',
-        });
-      }
+      // Write updated data to files for all documents
+      await this.writeDocumentsToFiles(updatedUserDocs, updatedDocData);
 
-      // Verify the updated VC data using the same verification process as user_docs API
-      let verificationResult;
-      try {
-        verificationResult = await this.verifyVcWithApi(updatedDocData);
-      } catch (error) {
-        Logger.error(`VC Verification failed for wallet callback: ${error}`);
-        return new ErrorResponse({
-          statusCode: HttpStatus.BAD_REQUEST,
-          errorMessage: 'VC Verification failed for updated data',
-        });
-      }
+      // Update user profiles based on updated documents
+      await this.updateUserProfiles(updatedUserDocs);
 
-      if (!verificationResult.success) {
-        Logger.error(`VC Verification failed for wallet callback: ${verificationResult.message}`);
-        return new ErrorResponse({
-          statusCode: HttpStatus.BAD_REQUEST,
-          errorMessage: verificationResult.message ?? 'VC Verification failed for updated data',
-        });
-      }
-
-      // Update the document data in the database
-      userDoc.doc_data = updatedDocData;
-      userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
-
-      // Save the updated document
-      const updatedUserDoc = await this.userDocsRepository.save(userDoc);
-
-      // Write updated data to file (same as user_docs API)
-      const baseFolder = path.join(__dirname, 'userData');
-      const userFilePath = path.join(baseFolder, `${userDoc.user_id}.json`);
-      
-      try {
-        await this.writeToFile(
-          {
-            user_id: userDoc.user_id,
-            doc_type: userDoc.doc_type,
-            doc_subtype: userDoc.doc_subtype,
-            doc_name: userDoc.doc_name,
-            imported_from: userDoc.imported_from,
-            doc_path: userDoc.doc_path,
-            doc_data_link: userDoc.doc_data_link,
-            doc_data: updatedDocData,
-            doc_datatype: userDoc.doc_datatype,
-            watcher_registered: userDoc.watcher_registered,
-            watcher_email: userDoc.watcher_email,
-            watcher_callback_url: userDoc.watcher_callback_url,
-          },
-          userFilePath,
-          updatedUserDoc
-        );
-        Logger.log(`Successfully wrote updated data to file for user: ${userDoc.user_id}`);
-      } catch (fileError) {
-        Logger.error(`Error writing updated data to file: ${fileError}`);
-        // Don't fail the entire operation if file writing fails
-      }
-
-      // Update user profile based on updated documents (same as user_docs API)
-      try {
-        const userDetails = await this.userRepository.findOne({
-          where: { user_id: userDoc.user_id },
-        });
-
-        if (userDetails) {
-          await this.updateProfile(userDetails);
-          Logger.log(`Successfully updated profile for user: ${userDoc.user_id}`);
-        } else {
-          Logger.warn(`User not found for profile update: ${userDoc.user_id}`);
-        }
-      } catch (profileError) {
-        Logger.error(`Error updating user profile for wallet callback: ${profileError}`);
-        // Don't fail the entire operation if profile update fails
-      }
-
-      Logger.log(`Successfully updated document ${userDoc.doc_id} with wallet callback data`);
+      Logger.log(`Successfully updated ${updatedUserDocs.length} documents with wallet callback data`);
 
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
-        message: 'Document updated successfully from wallet callback',
+        message: `${updatedUserDocs.length} documents updated successfully from wallet callback`,
         data: {
-          doc_name: updatedUserDoc.doc_name,
-          doc_type: updatedUserDoc.doc_type,
-          doc_subtype: updatedUserDoc.doc_subtype,
+          updated_documents_count: updatedUserDocs.length,
+          documents: updatedUserDocs.map(doc => ({
+            doc_id: doc.doc_id,
+            doc_name: doc.doc_name,
+            doc_type: doc.doc_type,
+            doc_subtype: doc.doc_subtype,
+            user_id: doc.user_id,
+          })),
         },
       });
     } catch (error) {

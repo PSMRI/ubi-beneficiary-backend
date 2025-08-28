@@ -13,10 +13,15 @@ ADD COLUMN IF NOT EXISTS watcher_email VARCHAR(255);
 ALTER TABLE user_docs
 ADD COLUMN IF NOT EXISTS watcher_callback_url VARCHAR(500);
 
+-- Add doc_data_link column
+ALTER TABLE user_docs
+ADD COLUMN IF NOT EXISTS doc_data_link text;
+
 -- Add comments for documentation
 COMMENT ON COLUMN user_docs.watcher_registered IS 'Indicates if a watcher is registered for this document';
 COMMENT ON COLUMN user_docs.watcher_email IS 'Email address used for watcher registration';
 COMMENT ON COLUMN user_docs.watcher_callback_url IS 'Callback URL for watcher notifications';
+COMMENT ON COLUMN user_docs.doc_data_link IS 'Link to the document data, if applicable';
 
 -- Create index for better query performance
 CREATE INDEX IF NOT EXISTS idx_user_docs_watcher_registered ON user_docs(watcher_registered);

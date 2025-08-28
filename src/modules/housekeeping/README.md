@@ -149,7 +149,6 @@ curl -X GET http://localhost:3000/housekeeping/migration-status \
 1. **User Wallet Tokens**: Users must have valid wallet tokens stored in the `users` table
 2. **Wallet Configuration**: The following environment variables must be set:
    - `WALLET_BASE_URL`
-   - `WALLET_AUTH_TOKEN`
    - `DHIWAY_WATCHER_EMAIL`
    - `BASE_URL`
 
