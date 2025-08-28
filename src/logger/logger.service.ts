@@ -29,9 +29,9 @@ export class LoggerService implements NestLoggerService {
     });
   }
 
-  log(message: string, context?: string, level: string = 'info') {
-    this.logger.log({ level, message, context });
-    // Don't send debug messages to Sentry by default
+  log(message: any, ...optionalParams: any[]) {
+    const [context] = optionalParams as [string?];
+    this.logger.log({ level: 'info', message, context });
   }
 
   error(message: string, trace?: string, context?: string) {
@@ -58,7 +58,6 @@ export class LoggerService implements NestLoggerService {
     this.error(message, undefined, context);
   }
 
-
   // New method for capturing exceptions with more context
   captureException(error: Error, context?: string, extra?: any) {
     this.error(error.message, error.stack, context);
@@ -76,16 +75,17 @@ export class LoggerService implements NestLoggerService {
   captureMessage(message: string, level: 'info' | 'warning' | 'error' = 'info', context?: string) {
     // Map Sentry levels to Winston levels
     const winstonLevel = level === 'warning' ? 'warn' : level;
-    this.log(message, context, winstonLevel);
-    
-    // Directly capture to Sentry with proper level
-    if (process.env.SENTRY_DSN) {
-      Sentry.withScope((scope) => {
-        if (context) scope.setTag('context', context);
-        scope.setLevel(level as any);
-        Sentry.captureMessage(message);
-      });
+    this.logger.log({ level: winstonLevel, message, context });
+
+    if (!process.env.SENTRY_DSN) {
+      return;
     }
+
+    Sentry.withScope((scope) => {
+      if (context) scope.setTag('context', context);
+      scope.setLevel(level as any);
+      Sentry.captureMessage(message);
+    });
   }
 
   private sendToSentry(level: string, message: string, context?: string, trace?: string) {
@@ -93,21 +93,24 @@ export class LoggerService implements NestLoggerService {
 
     try {
       if (level === 'error') {
-        Sentry.captureException(new Error(message), {
-          contexts: {
-            winston: {
-              level,
-              message,
-              context,
-              trace,
-              timestamp: new Date().toISOString(),
-            }
-          },
-          level: 'error',
-          tags: {
-            logger: 'winston',
-            context: context || 'unknown'
+        const err = new Error(message);
+        if (trace) {
+          err.stack = trace;
+        }
+        Sentry.withScope((scope) => {
+          scope.setLevel('error' as any);
+          scope.setTag('logger', 'winston');
+          if (context) {
+            scope.setTag('context', context);
           }
+          scope.setContext(
+            'winston', { 
+              level, 
+              message, 
+              context, 
+              timestamp: new Date().toISOString() 
+          });
+          Sentry.captureException(err);
         });
       } else if (level === 'warn') {
         Sentry.captureMessage(message, 'warning');
@@ -120,7 +123,7 @@ export class LoggerService implements NestLoggerService {
         }
       }
     } catch (error) {
-      console.error('❌ Error sending to Sentry:', error);
+      this.logger.warn({ message: 'Error sending to Sentry', context: 'LoggerService', error });
     }
   }
 }
