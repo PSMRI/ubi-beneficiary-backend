@@ -1,4 +1,8 @@
 import * as Sentry from "@sentry/nestjs";
+import { config } from 'dotenv';
+
+// Load environment variables from .env file
+config();
 
 // Ensure to call this before requiring any other modules!
 Sentry.init({

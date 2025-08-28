@@ -16,7 +16,7 @@ import { LoggerService } from './logger/logger.service';
 import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
-	const app = await NestFactory.create(AppModule, { bufferLogs: true });
+	const app = await NestFactory.create(AppModule);
 	
 	// Replace NestJS default logger with our Sentry-enabled logger
 	const customLogger = app.get(LoggerService);
