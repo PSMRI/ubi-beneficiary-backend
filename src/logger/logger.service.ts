@@ -58,9 +58,6 @@ export class LoggerService implements NestLoggerService {
     this.error(message, undefined, context);
   }
 
-  setLogLevels?(levels: string[]) {
-    // Implementation not needed for our use case
-  }
 
   // New method for capturing exceptions with more context
   captureException(error: Error, context?: string, extra?: any) {
@@ -83,7 +80,6 @@ export class LoggerService implements NestLoggerService {
     
     // Directly capture to Sentry with proper level
     if (process.env.SENTRY_DSN) {
-      console.log('🎯 Direct Sentry capture:', { level, message, context });
       Sentry.withScope((scope) => {
         if (context) scope.setTag('context', context);
         scope.setLevel(level as any);
@@ -94,8 +90,6 @@ export class LoggerService implements NestLoggerService {
 
   private sendToSentry(level: string, message: string, context?: string, trace?: string) {
     if (!process.env.SENTRY_DSN) return;
-
-    console.log('🚀 Sending to Sentry:', { level, message, context });
 
     try {
       if (level === 'error') {

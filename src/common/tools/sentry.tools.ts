@@ -1,8 +1,4 @@
 import * as Sentry from "@sentry/nestjs";
-import { config } from 'dotenv';
-
-// Load environment variables from .env file
-config();
 
 // Ensure to call this before requiring any other modules!
 Sentry.init({
@@ -28,11 +24,7 @@ Sentry.init({
 
 // Test Sentry initialization
 if (process.env.SENTRY_DSN) {
-  console.log('Sentry initialized with DSN:', process.env.SENTRY_DSN.substring(0, 50) + '...');
-  console.log('Sentry environment:', process.env.SENTRY_ENVIRONMENT);
-  
-  // Send a test message to verify Sentry is working
-  // Sentry.captureMessage('Sentry initialized successfully', 'info');
+  console.log('Sentry initialized with environment:', process.env.SENTRY_ENVIRONMENT);
 } else {
   console.warn('⚠️ SENTRY_DSN not found - Sentry will not capture events');
 }
