@@ -1,7 +1,7 @@
 // @ts-check
 import eslint from '@eslint/js';
 import jsdoc from 'eslint-plugin-jsdoc';
-import prettierPlugin from 'eslint-plugin-prettier';
+import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import securityPlugin from 'eslint-plugin-security';
 import sonarjs from 'eslint-plugin-sonarjs';
 import globals from 'globals';
@@ -23,6 +23,9 @@ export default tseslint.config(
 	...tseslint.configs.recommendedTypeChecked,
 
 	// ESLint Plugins
+	// Prettier plugin
+	eslintPluginPrettierRecommended,
+
 	// JSdoc plugin
 	jsdoc.configs['flat/recommended'],
 
@@ -49,9 +52,7 @@ export default tseslint.config(
 		},
 	},
 	{
-		plugins: {
-			prettier: prettierPlugin,
-		},
+		plugins: {},
 		rules: {
 			// TypeScript Rules
 			'@typescript-eslint/no-explicit-any': 'off',
@@ -67,6 +68,9 @@ export default tseslint.config(
 			'no-trailing-spaces': 'error',
 			indent: ['error', 'tab', { SwitchCase: 1 }],
 
+			// Trailing Comma Rules - Allow trailing commas to match Prettier
+			'comma-dangle': ['error', 'always-multiline'],
+
 			// Prettier and Indentation Rules
 			'prettier/prettier': [
 				'error',
@@ -76,7 +80,7 @@ export default tseslint.config(
 					semi: true,
 					singleQuote: true,
 					tabWidth: 4,
-					trailingComma: 'es5',
+					trailingComma: 'all',
 					useTabs: true,
 				},
 			],

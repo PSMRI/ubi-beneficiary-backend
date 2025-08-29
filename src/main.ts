@@ -1,77 +1,90 @@
+// Import this first!
+import './common/tools/sentry.tools';
+
+// Now import other modules
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import {
-  VERSION_NEUTRAL,
-  VersioningType,
-  ValidationPipe,
-  BadRequestException,
+	VERSION_NEUTRAL,
+	VersioningType,
+	ValidationPipe,
+	BadRequestException,
 } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ResponseInterceptor } from './common/Interceptors/response.interceptor';
+import { LoggerService } from './logger/logger.service';
 import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors();
-  app.enableVersioning({
-    type: VersioningType.URI,
-    defaultVersion: VERSION_NEUTRAL,
-  });
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
+	const app = await NestFactory.create(AppModule);
 
-      // Automatically transforms payloads to be objects typed according to their DTO classes
-      transform: true,
+	// Replace NestJS default logger with our Sentry-enabled logger
+	const customLogger = app.get(LoggerService);
+	app.useLogger(customLogger);
 
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-      validationError: {
-        target: false,
-        value: false,
-      },
-      exceptionFactory: (errors) => {
-        // Customize the error response format
-        const messages = errors.map(
-          (error) => `${Object.values(error.constraints).join(', ')}`,
-        );
-        return new BadRequestException({ statusCode: 400, error: messages });
-      },
-    }),
-  );
-  app.useGlobalInterceptors(new ResponseInterceptor());
+	app.enableCors();
+	app.enableVersioning({
+		type: VersioningType.URI,
+		defaultVersion: VERSION_NEUTRAL,
+	});
+	app.useGlobalPipes(
+		new ValidationPipe({
+			whitelist: true,
+			forbidNonWhitelisted: true,
 
-  // Configure Swagger
-  const config = new DocumentBuilder()
-    .setTitle('UBI Beneficiary API')
-    .setDescription('API documentation for UBI Beneficiary')
-    .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Enter your Bearer token in the format: Bearer {token}',
-      },
-      'access-token',
-    )
-    .build();
+			// Automatically transforms payloads to be objects typed according to their DTO classes
+			transform: true,
 
-  const document = SwaggerModule.createDocument(app, config);
-  // Route for Swagger UI
-  SwaggerModule.setup('/docs', app, document);
+			transformOptions: {
+				enableImplicitConversion: true,
+			},
+			validationError: {
+				target: false,
+				value: false,
+			},
+			exceptionFactory: (errors) => {
+				// Customize the error response format
+				const messages = errors.map(
+					(error) => `${Object.values(error.constraints).join(', ')}`,
+				);
+				return new BadRequestException({
+					statusCode: 400,
+					error: messages,
+				});
+			},
+		}),
+	);
+	app.useGlobalInterceptors(new ResponseInterceptor());
 
-  // Increase the request body size limit
-  app.use(bodyParser.json({ limit: '50mb' }));
-  app.use(
-    bodyParser.urlencoded({
-      limit: '50mb',
-      extended: true,
-    }),
-  );
+	// Configure Swagger
+	const config = new DocumentBuilder()
+		.setTitle('UBI Beneficiary API')
+		.setDescription('API documentation for UBI Beneficiary')
+		.setVersion('1.0')
+		.addBearerAuth(
+			{
+				type: 'http',
+				scheme: 'bearer',
+				bearerFormat: 'JWT',
+				description: 'Enter your Bearer token in the format: Bearer {token}',
+			},
+			'access-token',
+		)
+		.build();
 
-  await app.listen(process.env.PORT);
+	const document = SwaggerModule.createDocument(app, config);
+	// Route for Swagger UI
+	SwaggerModule.setup('/docs', app, document);
+
+	// Increase the request body size limit
+	app.use(bodyParser.json({ limit: '50mb' }));
+	app.use(
+		bodyParser.urlencoded({
+			limit: '50mb',
+			extended: true,
+		}),
+	);
+
+	await app.listen(process.env.PORT);
 }
 bootstrap();
