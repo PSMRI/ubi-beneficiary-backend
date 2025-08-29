@@ -1,5 +1,5 @@
 // Import this first!
-import "./common/tools/sentry.tools";
+import './common/tools/sentry.tools';
 
 // Now import other modules
 import { NestFactory } from '@nestjs/core';
@@ -17,7 +17,7 @@ import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
-	
+
 	// Replace NestJS default logger with our Sentry-enabled logger
 	const customLogger = app.get(LoggerService);
 	app.useLogger(customLogger);
@@ -47,7 +47,10 @@ async function bootstrap() {
 				const messages = errors.map(
 					(error) => `${Object.values(error.constraints).join(', ')}`,
 				);
-				return new BadRequestException({ statusCode: 400, error: messages });
+				return new BadRequestException({
+					statusCode: 400,
+					error: messages,
+				});
 			},
 		}),
 	);
