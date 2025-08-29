@@ -34,12 +34,12 @@ export class LoggerService implements NestLoggerService {
 
 	log(message: any, ...optionalParams: any[]) {
 		const [context] = optionalParams as [string?];
-		this.logger.log({ level: 'info', message, context });
+		this.logger.log({ level: 'info', message: String(message), context });
 	}
 
 	error(message: any, ...optionalParams: any[]) {
 		const [trace, context] = optionalParams as [string?, string?];
-		this.logger.error({ message, trace, context });
+		this.logger.error({ message: String(message), trace, context });
 		this.sendToSentry('error', String(message), context, trace);
 	}
 
@@ -55,7 +55,7 @@ export class LoggerService implements NestLoggerService {
 
 	// NestJS LoggerService interface methods
 	verbose(message: any, context?: string) {
-		this.debug(message, context);
+		this.debug(String(message), context);
 	}
 
 	fatal(message: any, context?: string) {
@@ -70,7 +70,7 @@ export class LoggerService implements NestLoggerService {
 			context,
 			extra,
 		});
-		this.sendToSentry('error', error.message, context, error.stack);
+		this.sendToSentry('error', error.message, context, error.stack, extra);
 	}
 
 	// New method for capturing messages with specific levels
@@ -99,6 +99,7 @@ export class LoggerService implements NestLoggerService {
 		message: string,
 		context?: string,
 		trace?: string,
+		extra?: Record<string, unknown>,
 	) {
 		if (!process.env.SENTRY_DSN) return;
 
@@ -113,6 +114,9 @@ export class LoggerService implements NestLoggerService {
 					scope.setTag('logger', 'winston');
 					if (context) {
 						scope.setTag('context', context);
+					}
+					if (extra) {
+						scope.setContext('extra', extra);
 					}
 					scope.setContext('winston', {
 						level,
