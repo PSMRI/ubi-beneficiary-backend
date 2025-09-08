@@ -20,6 +20,20 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 
+-- Ensure function exists for updatedAt stamp
+
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_TABLE_NAME IN ('fields','fieldValues') THEN
+  NEW."updatedAt" := now();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
 --
 -- TOC entry 228 (class 1259 OID 61183)
 -- Name: audit_logs; Type: TABLE; Schema: public; Owner: postgres
