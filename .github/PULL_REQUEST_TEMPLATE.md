@@ -23,7 +23,7 @@ Fixes # (issue)
 
 ## Additional context
 
-### Summary of Changes
+### Summary of Changes:
 
 
 
@@ -31,16 +31,12 @@ Fixes # (issue)
 
 
 
-### Actual result BEFORE applying this Pull Request
+### Actual result BEFORE applying this Pull Request:
 
 
 
-### Expected result AFTER applying this Pull Request
+### Expected result AFTER applying this Pull Request:
 
 
 
-### Screenshots (if applicable):
-
-
-
-### Testing Instructions
+### Testing Instructions:

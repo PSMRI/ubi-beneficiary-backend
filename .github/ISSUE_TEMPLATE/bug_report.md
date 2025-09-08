@@ -4,20 +4,20 @@ about: Create a report to help us improve
 labels: bug
 ---
 
-### Steps to reproduce the issue
+### Steps to reproduce the issue:
 
 
 
-### Expected result
+### Expected result:
 
 
 
-### Actual result
+### Actual result:
 
 
 
-### System information (as much as possible)
+### System information (as much as possible):
 
 
 
-### Additional comments
+### Additional comments:
