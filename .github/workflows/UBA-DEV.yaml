@@ -1,14 +1,26 @@
 name: Deploy to UBA-DEV
+
 on:
   workflow_dispatch:
+    inputs:
+      TAG:
+        description: 'Docker image tag to deploy'
+        required: true
+        default: 'latest'
+      BRANCH:
+        description: 'Git branch to deploy'
+        required: true
+        default: 'feat-custom-fields'
   push:
-    branches:
-      - feat-custom-fields    
+    tags:
+      - '*'  # Trigger on any tag push
+
 jobs:
   Deploy_on_UBA_DEV:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: UBA-DEV
+
     steps:
       - name: Deploy Stack via SSH
         uses: appleboy/ssh-action@master
@@ -17,16 +29,23 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: ${{ secrets.PORT }}
-          script: |    
-            cd ${{ secrets.TARGET_DIR }}
-            if [ -f .env ]; then
-              rm .env
-            fi
-            echo '${{ secrets.DEV_ENV }}' > .env
-            ls -ltra
-            ./deploy.sh
+          script: |
+            # ----- Export environment variables from secrets & workflow inputs -----
+            export BASE_DIR="${{ secrets.TARGET_DIR }}"
+            export TAG="${{ github.event.inputs.TAG || github.ref_name || 'latest' }}"
+            export BRANCH="${{ github.event.inputs.BRANCH || 'feat-custom-fields' }}"
+            export SERVICE_NAME="beneficiary-backend"
 
-      ## Notify on Slack
+            # ----- Run deployment -----
+            cd "$BASE_DIR" || exit 1
+
+            # Prepare .env
+            if [ -f .env ]; then rm .env; fi
+            echo '${{ secrets.DEV_ENV }}' > .env
+
+            # Run deploy script from base dir
+            bash deploy.sh
+
       - name: Notify on Slack channel
         uses: iRoachie/slack-github-actions@v2.3.2
         env:
