@@ -10,7 +10,7 @@ on:
       BRANCH:
         description: 'Git branch to deploy'
         required: true
-        default: 'feat-custom-fields'
+        default: 'main'
   push:
     tags:
       - '*'  # Trigger on any tag push
@@ -33,8 +33,8 @@ jobs:
             # ----- Export environment variables from secrets & workflow inputs -----
             export BASE_DIR="${{ secrets.TARGET_DIR }}"
             export TAG="${{ github.event.inputs.TAG || github.ref_name || 'latest' }}"
-            export BRANCH="${{ github.event.inputs.BRANCH || 'feat-custom-fields' }}"
-            export SERVICE_NAME="beneficiary-backend"
+            export BRANCH="${{ github.event.inputs.BRANCH || 'main' }}"
+            export SERVICE_NAME="ubi-beneficiary-backend"
 
             # ----- Run deployment -----
             cd "$BASE_DIR" || exit 1
