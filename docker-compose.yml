@@ -1,42 +1,57 @@
 version: "3.3"
 
 services:
-  beneficiary-backend:
-    image: beneficiary-backend:latest
-    restart: unless-stopped
-    container_name: beneficiary-backend
-    ports:
-      - 3000:3000
-    env_file:
-      - ./.env
-  #refer env https://piramal-swasthya.gitbook.io/uba/toasters/beneficiary-toaster/developer-guide/backend-guide/build-and-deploy-steps#example-.env-for-docker file for below environment variables
+   # DB Service
    postgres:
     image: postgres:14.17
-    #container_name: strapi-db
+    # container_name: ubi-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DATABASE_NAME}
       POSTGRES_USER: ${DATABASE_USERNAME}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
     volumes:
-      - strapi_pg_data:/var/lib/postgresql/data
+      - ubi_pg_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     networks:
-      - strapi_nw
+      - ubi_nw
 
+  # PGAdmin Service
   pgadmin:
     image: dpage/pgadmin4:latest
-    #container_name: pgadmin
+    # container_name: pgadmin
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
       - "8082:80"
+    depends_on:
+      - postgres
     networks:
-      - strapi_nw
+      - ubi_nw
 
+  # Hasura service
+  hasura:
+    image: hasura/graphql-engine
+    #container_name: Hasura-Dev
+    ports:
+      - "8081:8080"
+    environment:
+      - HASURA_GRAPHQL_DATABASE_URL=${HASURA_GRAPHQL_DATABASE_URL}
+      - HASURA_GRAPHQL_ENABLE_CONSOLE=true
+      - HASURA_GRAPHQL_ENABLED_LOG_TYPES=startup, http-log, webhook-log, websocket-log, query-log
+      - HASURA_GRAPHQL_ADMIN_SECRET=${HASURA_GRAPHQL_ADMIN_SECRET}
+    volumes:
+      - ./metadata:/hasura-metadata
+      - ./migrations:/hasura-migrations
+    depends_on:
+      - postgres
+    networks:
+      - ubi_nw
+
+  # Keycloak Service
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.1
     #container_name: keycloak
@@ -59,40 +74,29 @@ services:
       - ./keycloak-import:/opt/keycloak/data/import
     ports:
       - 8080:8080
-    networks:
-      - strapi_nw
     depends_on:
       - postgres
+    networks:
+      - ubi_nw
 
-  # Hasura service
-  hasura:
-    image: hasura/graphql-engine
-    #container_name: Hasura-Dev
+  ubi-beneficiary-backend:
+    image: ubi-beneficiary-backend:latest
+    restart: unless-stopped
+    container_name: ubi-beneficiary-backend
     ports:
-      - "8081:8080"
-    environment:
-      - HASURA_GRAPHQL_DATABASE_URL=${HASURA_GRAPHQL_DATABASE_URL}
-      - HASURA_GRAPHQL_ENABLE_CONSOLE=true
-      - HASURA_GRAPHQL_ENABLED_LOG_TYPES=startup, http-log, webhook-log, websocket-log, query-log
-      - HASURA_GRAPHQL_ADMIN_SECRET=${HASURA_GRAPHQL_ADMIN_SECRET}
-
-    volumes:
-      - ./metadata:/hasura-metadata
-      - ./migrations:/hasura-migrations
-    networks:
-      - strapi_nw
+      - 3000:3000
+    # Refer env https://piramal-swasthya.gitbook.io/uba/toasters/beneficiary-toaster/developer-guide/backend-guide/build-and-deploy-steps#example-.env-for-docker file for below environment variables
+    env_file:
+      - ./.env
     depends_on:
       - postgres
-      
-  
+    networks:
+      - ubi_nw
 
 volumes:
-  strapi_pg_data:
-  strapi_node_modules:
-  strapi_build:
-  strapi_npm_cache:
+  ubi_pg_data:
 
 networks:
-  strapi_nw:
-    name: strapi
+  ubi_nw:
+    name: ubi_nw
     driver: bridge
