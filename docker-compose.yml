@@ -17,8 +17,8 @@ services:
     networks:
       - ubi_nw
 
-  # PGAdmin Service
-  pgadmin:
+   # PGAdmin Service
+   pgadmin:
     image: dpage/pgadmin4:latest
     # container_name: pgadmin
     restart: unless-stopped
@@ -32,8 +32,8 @@ services:
     networks:
       - ubi_nw
 
-  # Hasura service
-  hasura:
+   # Hasura service
+   hasura:
     image: hasura/graphql-engine
     #container_name: Hasura-Dev
     ports:
@@ -51,8 +51,8 @@ services:
     networks:
       - ubi_nw
 
-  # Keycloak Service
-  keycloak:
+   # Keycloak Service
+   keycloak:
     image: quay.io/keycloak/keycloak:24.0.1
     #container_name: keycloak
     restart: unless-stopped
