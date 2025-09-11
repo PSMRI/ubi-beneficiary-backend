@@ -5,7 +5,7 @@
 -- Dumped from database version 17.5 (Debian 17.5-1.pgdg120+1)
 -- Dumped by pg_dump version 17.4
 
--- Started on 2025-09-07 18:43:54 UTC
+-- Started on 2025-09-09 10:44:48 UTC
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -19,24 +19,45 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+--
+-- TOC entry 6 (class 2615 OID 2200)
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
 
--- Ensure function exists for updatedAt stamp
+CREATE SCHEMA public;
 
-CREATE OR REPLACE FUNCTION public.update_updated_at_column()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
+
+--
+-- TOC entry 3589 (class 0 OID 0)
+-- Dependencies: 6
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON SCHEMA public IS 'standard public schema';
+
+
+--
+-- TOC entry 299 (class 1255 OID 54842)
+-- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_updated_at_column() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
 BEGIN
-  IF TG_TABLE_NAME IN ('fields','fieldValues') THEN
-  NEW."updatedAt" := now();
-  END IF;
-  RETURN NEW;
+    NEW."updatedAt" = NOW();
+    RETURN NEW;
 END;
 $$;
 
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
 --
--- TOC entry 228 (class 1259 OID 61183)
--- Name: audit_logs; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 220 (class 1259 OID 18640)
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.audit_logs (
@@ -53,11 +74,9 @@ CREATE TABLE public.audit_logs (
 );
 
 
-ALTER TABLE public.audit_logs OWNER TO postgres;
-
 --
--- TOC entry 229 (class 1259 OID 61188)
--- Name: audit_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 221 (class 1259 OID 18645)
+-- Name: audit_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.audit_logs_id_seq
@@ -69,20 +88,18 @@ CREATE SEQUENCE public.audit_logs_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.audit_logs_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3648 (class 0 OID 0)
--- Dependencies: 229
--- Name: audit_logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3590 (class 0 OID 0)
+-- Dependencies: 221
+-- Name: audit_logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.audit_logs_id_seq OWNED BY public.audit_logs.id;
 
 
 --
--- TOC entry 230 (class 1259 OID 61189)
--- Name: consent; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 222 (class 1259 OID 18646)
+-- Name: consent; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.consent (
@@ -95,11 +112,9 @@ CREATE TABLE public.consent (
 );
 
 
-ALTER TABLE public.consent OWNER TO postgres;
-
 --
--- TOC entry 231 (class 1259 OID 61195)
--- Name: consent_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 223 (class 1259 OID 18652)
+-- Name: consent_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.consent_id_seq
@@ -111,20 +126,18 @@ CREATE SEQUENCE public.consent_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.consent_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3649 (class 0 OID 0)
--- Dependencies: 231
--- Name: consent_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3591 (class 0 OID 0)
+-- Dependencies: 223
+-- Name: consent_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.consent_id_seq OWNED BY public.consent.id;
 
 
 --
--- TOC entry 232 (class 1259 OID 61196)
--- Name: fieldValues; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 251 (class 1259 OID 54821)
+-- Name: fieldValues; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public."fieldValues" (
@@ -138,65 +151,63 @@ CREATE TABLE public."fieldValues" (
 );
 
 
-ALTER TABLE public."fieldValues" OWNER TO postgres;
-
 --
--- TOC entry 3650 (class 0 OID 0)
--- Dependencies: 232
--- Name: TABLE "fieldValues"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3592 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: TABLE "fieldValues"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public."fieldValues" IS 'Stores the value of each custom field for a specific entity instance. The itemId is a generic reference that can point to a User, Cohort, etc.';
 
 
 --
--- TOC entry 3651 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN "fieldValues".id; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3593 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN "fieldValues".id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public."fieldValues".id IS 'Unique identifier for the field value (UUID v4 generated automatically on creation)';
 
 
 --
--- TOC entry 3652 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN "fieldValues"."itemId"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3594 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN "fieldValues"."itemId"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public."fieldValues"."itemId" IS 'Generic entity instance ID (ID of the entity instance e.g., userId, cohortId, etc.)';
 
 
 --
--- TOC entry 3653 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN "fieldValues"."fieldId"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3595 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN "fieldValues"."fieldId"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public."fieldValues"."fieldId" IS 'Reference to the field definition (foreign key to the Field entity)';
 
 
 --
--- TOC entry 3654 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN "fieldValues".value; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3596 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN "fieldValues".value; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public."fieldValues".value IS 'The field value (the actual value stored for this field instance)';
 
 
 --
--- TOC entry 3655 (class 0 OID 0)
--- Dependencies: 232
--- Name: COLUMN "fieldValues".metadata; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3597 (class 0 OID 0)
+-- Dependencies: 251
+-- Name: COLUMN "fieldValues".metadata; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public."fieldValues".metadata IS 'Additional metadata for the field value (JSON object containing value-specific metadata)';
 
 
 --
--- TOC entry 233 (class 1259 OID 61204)
--- Name: fields; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 250 (class 1259 OID 54808)
+-- Name: fields; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.fields (
@@ -218,137 +229,135 @@ CREATE TABLE public.fields (
 );
 
 
-ALTER TABLE public.fields OWNER TO postgres;
-
 --
--- TOC entry 3656 (class 0 OID 0)
--- Dependencies: 233
--- Name: TABLE fields; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3598 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: TABLE fields; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.fields IS 'Stores the definition/metadata of each custom field that can be associated with various entities like User, Cohort, etc.';
 
 
 --
--- TOC entry 3657 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields."fieldId"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3599 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields."fieldId"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields."fieldId" IS 'Unique identifier for the field (UUID v4 generated automatically on creation)';
 
 
 --
--- TOC entry 3658 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields.name; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3600 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields.name; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields.name IS 'Internal name of the field (machine-readable name for the field)';
 
 
 --
--- TOC entry 3659 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields.label; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3601 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields.label; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields.label IS 'Display label for the field (human-readable label shown in UI)';
 
 
 --
--- TOC entry 3660 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields.type; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3602 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields.type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields.type IS 'Field data type (determines how the field value should be stored and validated)';
 
 
 --
--- TOC entry 3661 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields.context; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3603 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields.context; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields.context IS 'Entity context this field belongs to (defines which entity type this field can be associated with)';
 
 
 --
--- TOC entry 3662 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields."contextType"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3604 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields."contextType"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields."contextType" IS 'Context subtype or role (optional subtype for more specific categorization)';
 
 
 --
--- TOC entry 3663 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields.ordering; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3605 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields.ordering; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields.ordering IS 'Display order for the field (used for ordering fields in UI)';
 
 
 --
--- TOC entry 3664 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields."isRequired"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3606 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields."isRequired"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields."isRequired" IS 'Whether the field is required (determines if the field must have a value)';
 
 
 --
--- TOC entry 3665 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields."isHidden"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3607 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields."isHidden"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields."isHidden" IS 'Whether the field is hidden from UI (controls field visibility in forms)';
 
 
 --
--- TOC entry 3666 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields."fieldParams"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3608 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields."fieldParams"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields."fieldParams" IS 'Additional field parameters (JSON object containing field-specific configuration)';
 
 
 --
--- TOC entry 3667 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields."fieldAttributes"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3609 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields."fieldAttributes"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields."fieldAttributes" IS 'Field attributes and metadata (additional attributes like isEditable, isEncrypted, etc.)';
 
 
 --
--- TOC entry 3668 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields."sourceDetails"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3610 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields."sourceDetails"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields."sourceDetails" IS 'Source details for dynamic fields (information about data source for dynamically populated fields)';
 
 
 --
--- TOC entry 3669 (class 0 OID 0)
--- Dependencies: 233
--- Name: COLUMN fields."dependsOn"; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3611 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: COLUMN fields."dependsOn"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.fields."dependsOn" IS 'Field dependencies (information about field dependencies and conditional logic)';
 
 
 --
--- TOC entry 234 (class 1259 OID 61215)
--- Name: roles; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 224 (class 1259 OID 18653)
+-- Name: roles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.roles (
@@ -362,11 +371,9 @@ CREATE TABLE public.roles (
 );
 
 
-ALTER TABLE public.roles OWNER TO postgres;
-
 --
--- TOC entry 235 (class 1259 OID 61222)
--- Name: roles_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 225 (class 1259 OID 18660)
+-- Name: roles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.roles_id_seq
@@ -378,20 +385,18 @@ CREATE SEQUENCE public.roles_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.roles_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3670 (class 0 OID 0)
--- Dependencies: 235
--- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3612 (class 0 OID 0)
+-- Dependencies: 225
+-- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.roles_id_seq OWNED BY public.roles.id;
 
 
 --
--- TOC entry 236 (class 1259 OID 61223)
--- Name: settings; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 249 (class 1259 OID 32439)
+-- Name: settings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.settings (
@@ -405,11 +410,9 @@ CREATE TABLE public.settings (
 );
 
 
-ALTER TABLE public.settings OWNER TO postgres;
-
 --
--- TOC entry 237 (class 1259 OID 61230)
--- Name: settings_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 248 (class 1259 OID 32438)
+-- Name: settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.settings_id_seq
@@ -421,20 +424,18 @@ CREATE SEQUENCE public.settings_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.settings_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3671 (class 0 OID 0)
--- Dependencies: 237
--- Name: settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3613 (class 0 OID 0)
+-- Dependencies: 248
+-- Name: settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.settings_id_seq OWNED BY public.settings.id;
 
 
 --
--- TOC entry 238 (class 1259 OID 61231)
--- Name: ubi_network_cache_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 226 (class 1259 OID 18661)
+-- Name: ubi_network_cache_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.ubi_network_cache_id_seq
@@ -445,11 +446,9 @@ CREATE SEQUENCE public.ubi_network_cache_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.ubi_network_cache_id_seq OWNER TO postgres;
-
 --
--- TOC entry 239 (class 1259 OID 61232)
--- Name: ubi_network_cache; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 227 (class 1259 OID 18662)
+-- Name: ubi_network_cache; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.ubi_network_cache (
@@ -474,11 +473,9 @@ CREATE TABLE public.ubi_network_cache (
 );
 
 
-ALTER TABLE public.ubi_network_cache OWNER TO postgres;
-
 --
--- TOC entry 240 (class 1259 OID 61239)
--- Name: user_applications; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 228 (class 1259 OID 18669)
+-- Name: user_applications; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_applications (
@@ -498,11 +495,9 @@ CREATE TABLE public.user_applications (
 );
 
 
-ALTER TABLE public.user_applications OWNER TO postgres;
-
 --
--- TOC entry 241 (class 1259 OID 61246)
--- Name: user_applications_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 229 (class 1259 OID 18676)
+-- Name: user_applications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.user_applications_id_seq
@@ -514,20 +509,18 @@ CREATE SEQUENCE public.user_applications_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.user_applications_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3672 (class 0 OID 0)
--- Dependencies: 241
--- Name: user_applications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3614 (class 0 OID 0)
+-- Dependencies: 229
+-- Name: user_applications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.user_applications_id_seq OWNED BY public.user_applications.id;
 
 
 --
--- TOC entry 242 (class 1259 OID 61247)
--- Name: user_docs; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 230 (class 1259 OID 18677)
+-- Name: user_docs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_docs (
@@ -552,47 +545,45 @@ CREATE TABLE public.user_docs (
 );
 
 
-ALTER TABLE public.user_docs OWNER TO postgres;
-
 --
--- TOC entry 3673 (class 0 OID 0)
--- Dependencies: 242
--- Name: COLUMN user_docs.watcher_registered; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3615 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: COLUMN user_docs.watcher_registered; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.user_docs.watcher_registered IS 'Indicates if a watcher is registered for this document';
 
 
 --
--- TOC entry 3674 (class 0 OID 0)
--- Dependencies: 242
--- Name: COLUMN user_docs.watcher_email; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3616 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: COLUMN user_docs.watcher_email; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.user_docs.watcher_email IS 'Email address used for watcher registration';
 
 
 --
--- TOC entry 3675 (class 0 OID 0)
--- Dependencies: 242
--- Name: COLUMN user_docs.watcher_callback_url; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3617 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: COLUMN user_docs.watcher_callback_url; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.user_docs.watcher_callback_url IS 'Callback URL for watcher notifications';
 
 
 --
--- TOC entry 3676 (class 0 OID 0)
--- Dependencies: 242
--- Name: COLUMN user_docs.doc_data_link; Type: COMMENT; Schema: public; Owner: postgres
+-- TOC entry 3618 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: COLUMN user_docs.doc_data_link; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.user_docs.doc_data_link IS 'Link to the document data, if applicable';
 
 
 --
--- TOC entry 243 (class 1259 OID 61256)
--- Name: user_docs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 231 (class 1259 OID 18685)
+-- Name: user_docs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.user_docs_id_seq
@@ -604,20 +595,18 @@ CREATE SEQUENCE public.user_docs_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.user_docs_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3677 (class 0 OID 0)
--- Dependencies: 243
--- Name: user_docs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3619 (class 0 OID 0)
+-- Dependencies: 231
+-- Name: user_docs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.user_docs_id_seq OWNED BY public.user_docs.id;
 
 
 --
--- TOC entry 244 (class 1259 OID 61257)
--- Name: user_info; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 232 (class 1259 OID 18686)
+-- Name: user_info; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_info (
@@ -662,11 +651,9 @@ CREATE TABLE public.user_info (
 );
 
 
-ALTER TABLE public.user_info OWNER TO postgres;
-
 --
--- TOC entry 245 (class 1259 OID 61264)
--- Name: user_info_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 233 (class 1259 OID 18693)
+-- Name: user_info_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.user_info_id_seq
@@ -678,20 +665,18 @@ CREATE SEQUENCE public.user_info_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.user_info_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3678 (class 0 OID 0)
--- Dependencies: 245
--- Name: user_info_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3620 (class 0 OID 0)
+-- Dependencies: 233
+-- Name: user_info_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.user_info_id_seq OWNED BY public.user_info.id;
 
 
 --
--- TOC entry 246 (class 1259 OID 61265)
--- Name: user_roles; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 234 (class 1259 OID 18694)
+-- Name: user_roles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_roles (
@@ -705,11 +690,9 @@ CREATE TABLE public.user_roles (
 );
 
 
-ALTER TABLE public.user_roles OWNER TO postgres;
-
 --
--- TOC entry 247 (class 1259 OID 61269)
--- Name: user_roles_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 235 (class 1259 OID 18698)
+-- Name: user_roles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.user_roles_id_seq
@@ -721,20 +704,18 @@ CREATE SEQUENCE public.user_roles_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.user_roles_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3679 (class 0 OID 0)
--- Dependencies: 247
--- Name: user_roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3621 (class 0 OID 0)
+-- Dependencies: 235
+-- Name: user_roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.user_roles_id_seq OWNED BY public.user_roles.id;
 
 
 --
--- TOC entry 248 (class 1259 OID 61270)
--- Name: user_wallets; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 236 (class 1259 OID 18699)
+-- Name: user_wallets; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_wallets (
@@ -749,11 +730,9 @@ CREATE TABLE public.user_wallets (
 );
 
 
-ALTER TABLE public.user_wallets OWNER TO postgres;
-
 --
--- TOC entry 249 (class 1259 OID 61276)
--- Name: user_wallets_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 237 (class 1259 OID 18705)
+-- Name: user_wallets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.user_wallets_id_seq
@@ -765,20 +744,18 @@ CREATE SEQUENCE public.user_wallets_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.user_wallets_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3680 (class 0 OID 0)
--- Dependencies: 249
--- Name: user_wallets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3622 (class 0 OID 0)
+-- Dependencies: 237
+-- Name: user_wallets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.user_wallets_id_seq OWNED BY public.user_wallets.id;
 
 
 --
--- TOC entry 250 (class 1259 OID 61277)
--- Name: users; Type: TABLE; Schema: public; Owner: postgres
+-- TOC entry 238 (class 1259 OID 18706)
+-- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.users (
@@ -802,11 +779,9 @@ CREATE TABLE public.users (
 );
 
 
-ALTER TABLE public.users OWNER TO postgres;
-
 --
--- TOC entry 251 (class 1259 OID 61284)
--- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- TOC entry 239 (class 1259 OID 18713)
+-- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.users_id_seq
@@ -818,181 +793,98 @@ CREATE SEQUENCE public.users_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.users_id_seq OWNER TO postgres;
-
 --
--- TOC entry 3681 (class 0 OID 0)
--- Dependencies: 251
--- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- TOC entry 3623 (class 0 OID 0)
+-- Dependencies: 239
+-- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
--- TOC entry 3371 (class 2604 OID 61285)
--- Name: audit_logs id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3343 (class 2604 OID 18714)
+-- Name: audit_logs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs ALTER COLUMN id SET DEFAULT nextval('public.audit_logs_id_seq'::regclass);
 
 
 --
--- TOC entry 3372 (class 2604 OID 61286)
--- Name: consent id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3344 (class 2604 OID 18715)
+-- Name: consent id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.consent ALTER COLUMN id SET DEFAULT nextval('public.consent_id_seq'::regclass);
 
 
 --
--- TOC entry 3383 (class 2604 OID 61287)
--- Name: roles id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3346 (class 2604 OID 18716)
+-- Name: roles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles ALTER COLUMN id SET DEFAULT nextval('public.roles_id_seq'::regclass);
 
 
 --
--- TOC entry 3386 (class 2604 OID 61288)
--- Name: settings id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3369 (class 2604 OID 32442)
+-- Name: settings id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.settings ALTER COLUMN id SET DEFAULT nextval('public.settings_id_seq'::regclass);
 
 
 --
--- TOC entry 3391 (class 2604 OID 61289)
--- Name: user_applications id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3351 (class 2604 OID 18717)
+-- Name: user_applications id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_applications ALTER COLUMN id SET DEFAULT nextval('public.user_applications_id_seq'::regclass);
 
 
 --
--- TOC entry 3394 (class 2604 OID 61290)
--- Name: user_docs id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3354 (class 2604 OID 18718)
+-- Name: user_docs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_docs ALTER COLUMN id SET DEFAULT nextval('public.user_docs_id_seq'::regclass);
 
 
 --
--- TOC entry 3399 (class 2604 OID 61291)
--- Name: user_info id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3359 (class 2604 OID 18719)
+-- Name: user_info id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_info ALTER COLUMN id SET DEFAULT nextval('public.user_info_id_seq'::regclass);
 
 
 --
--- TOC entry 3402 (class 2604 OID 61292)
--- Name: user_roles id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3362 (class 2604 OID 18720)
+-- Name: user_roles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles ALTER COLUMN id SET DEFAULT nextval('public.user_roles_id_seq'::regclass);
 
 
 --
--- TOC entry 3404 (class 2604 OID 61293)
--- Name: user_wallets id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3364 (class 2604 OID 18721)
+-- Name: user_wallets id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_wallets ALTER COLUMN id SET DEFAULT nextval('public.user_wallets_id_seq'::regclass);
 
 
 --
--- TOC entry 3406 (class 2604 OID 61294)
--- Name: users id; Type: DEFAULT; Schema: public; Owner: postgres
+-- TOC entry 3366 (class 2604 OID 18722)
+-- Name: users id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
 
 
 --
--- TOC entry 3414 (class 2606 OID 61296)
--- Name: hdb_action_log hdb_action_log_pkey; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_action_log
-    ADD CONSTRAINT hdb_action_log_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3417 (class 2606 OID 61298)
--- Name: hdb_cron_event_invocation_logs hdb_cron_event_invocation_logs_pkey; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_cron_event_invocation_logs
-    ADD CONSTRAINT hdb_cron_event_invocation_logs_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3420 (class 2606 OID 61300)
--- Name: hdb_cron_events hdb_cron_events_pkey; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_cron_events
-    ADD CONSTRAINT hdb_cron_events_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3423 (class 2606 OID 61302)
--- Name: hdb_metadata hdb_metadata_pkey; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_metadata
-    ADD CONSTRAINT hdb_metadata_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3425 (class 2606 OID 61304)
--- Name: hdb_metadata hdb_metadata_resource_version_key; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_metadata
-    ADD CONSTRAINT hdb_metadata_resource_version_key UNIQUE (resource_version);
-
-
---
--- TOC entry 3427 (class 2606 OID 61306)
--- Name: hdb_scheduled_event_invocation_logs hdb_scheduled_event_invocation_logs_pkey; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_scheduled_event_invocation_logs
-    ADD CONSTRAINT hdb_scheduled_event_invocation_logs_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3430 (class 2606 OID 61308)
--- Name: hdb_scheduled_events hdb_scheduled_events_pkey; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_scheduled_events
-    ADD CONSTRAINT hdb_scheduled_events_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3432 (class 2606 OID 61310)
--- Name: hdb_schema_notifications hdb_schema_notifications_pkey; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_schema_notifications
-    ADD CONSTRAINT hdb_schema_notifications_pkey PRIMARY KEY (id);
-
-
---
--- TOC entry 3435 (class 2606 OID 61312)
--- Name: hdb_version hdb_version_pkey; Type: CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_version
-    ADD CONSTRAINT hdb_version_pkey PRIMARY KEY (hasura_uuid);
-
-
---
--- TOC entry 3437 (class 2606 OID 61314)
--- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3382 (class 2606 OID 18742)
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs
@@ -1000,8 +892,8 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
--- TOC entry 3439 (class 2606 OID 61316)
--- Name: consent consent_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3384 (class 2606 OID 18744)
+-- Name: consent consent_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.consent
@@ -1009,8 +901,8 @@ ALTER TABLE ONLY public.consent
 
 
 --
--- TOC entry 3444 (class 2606 OID 61318)
--- Name: fieldValues fieldValues_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3428 (class 2606 OID 54830)
+-- Name: fieldValues fieldValues_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."fieldValues"
@@ -1018,8 +910,8 @@ ALTER TABLE ONLY public."fieldValues"
 
 
 --
--- TOC entry 3449 (class 2606 OID 61320)
--- Name: fields fields_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3423 (class 2606 OID 54820)
+-- Name: fields fields_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.fields
@@ -1027,8 +919,8 @@ ALTER TABLE ONLY public.fields
 
 
 --
--- TOC entry 3451 (class 2606 OID 61322)
--- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3386 (class 2606 OID 18746)
+-- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -1036,8 +928,8 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- TOC entry 3453 (class 2606 OID 61324)
--- Name: roles roles_role_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3388 (class 2606 OID 18748)
+-- Name: roles roles_role_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -1045,8 +937,8 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- TOC entry 3455 (class 2606 OID 61326)
--- Name: roles roles_slug_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3390 (class 2606 OID 18750)
+-- Name: roles roles_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -1054,8 +946,8 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- TOC entry 3457 (class 2606 OID 61328)
--- Name: settings settings_key_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3416 (class 2606 OID 32450)
+-- Name: settings settings_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.settings
@@ -1063,8 +955,8 @@ ALTER TABLE ONLY public.settings
 
 
 --
--- TOC entry 3459 (class 2606 OID 61330)
--- Name: settings settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3418 (class 2606 OID 32448)
+-- Name: settings settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.settings
@@ -1072,8 +964,8 @@ ALTER TABLE ONLY public.settings
 
 
 --
--- TOC entry 3461 (class 2606 OID 61332)
--- Name: ubi_network_cache ubi_network_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3392 (class 2606 OID 18752)
+-- Name: ubi_network_cache ubi_network_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ubi_network_cache
@@ -1081,8 +973,8 @@ ALTER TABLE ONLY public.ubi_network_cache
 
 
 --
--- TOC entry 3463 (class 2606 OID 61334)
--- Name: user_applications unique_user_benefit; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3394 (class 2606 OID 18754)
+-- Name: user_applications unique_user_benefit; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_applications
@@ -1090,8 +982,8 @@ ALTER TABLE ONLY public.user_applications
 
 
 --
--- TOC entry 3465 (class 2606 OID 61336)
--- Name: user_applications user_applications_internal_application_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3396 (class 2606 OID 18756)
+-- Name: user_applications user_applications_internal_application_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_applications
@@ -1099,8 +991,8 @@ ALTER TABLE ONLY public.user_applications
 
 
 --
--- TOC entry 3467 (class 2606 OID 61338)
--- Name: user_applications user_applications_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3398 (class 2606 OID 18758)
+-- Name: user_applications user_applications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_applications
@@ -1108,8 +1000,8 @@ ALTER TABLE ONLY public.user_applications
 
 
 --
--- TOC entry 3471 (class 2606 OID 61340)
--- Name: user_docs user_docs_doc_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3402 (class 2606 OID 18760)
+-- Name: user_docs user_docs_doc_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_docs
@@ -1117,8 +1009,8 @@ ALTER TABLE ONLY public.user_docs
 
 
 --
--- TOC entry 3473 (class 2606 OID 61342)
--- Name: user_docs user_docs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3404 (class 2606 OID 18762)
+-- Name: user_docs user_docs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_docs
@@ -1126,8 +1018,8 @@ ALTER TABLE ONLY public.user_docs
 
 
 --
--- TOC entry 3475 (class 2606 OID 61344)
--- Name: user_info user_info_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3406 (class 2606 OID 18764)
+-- Name: user_info user_info_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_info
@@ -1135,8 +1027,8 @@ ALTER TABLE ONLY public.user_info
 
 
 --
--- TOC entry 3477 (class 2606 OID 61346)
--- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3408 (class 2606 OID 18766)
+-- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -1144,8 +1036,8 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- TOC entry 3479 (class 2606 OID 61348)
--- Name: user_wallets user_wallets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3410 (class 2606 OID 18768)
+-- Name: user_wallets user_wallets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_wallets
@@ -1153,8 +1045,8 @@ ALTER TABLE ONLY public.user_wallets
 
 
 --
--- TOC entry 3481 (class 2606 OID 61350)
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3412 (class 2606 OID 18770)
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -1162,8 +1054,8 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 3483 (class 2606 OID 61352)
--- Name: users users_user_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3414 (class 2606 OID 18772)
+-- Name: users users_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -1171,146 +1063,88 @@ ALTER TABLE ONLY public.users
 
 
 --
--- TOC entry 3415 (class 1259 OID 61353)
--- Name: hdb_cron_event_invocation_event_id; Type: INDEX; Schema: hdb_catalog; Owner: postgres
---
-
-CREATE INDEX hdb_cron_event_invocation_event_id ON hdb_catalog.hdb_cron_event_invocation_logs USING btree (event_id);
-
-
---
--- TOC entry 3418 (class 1259 OID 61354)
--- Name: hdb_cron_event_status; Type: INDEX; Schema: hdb_catalog; Owner: postgres
---
-
-CREATE INDEX hdb_cron_event_status ON hdb_catalog.hdb_cron_events USING btree (status);
-
-
---
--- TOC entry 3421 (class 1259 OID 61355)
--- Name: hdb_cron_events_unique_scheduled; Type: INDEX; Schema: hdb_catalog; Owner: postgres
---
-
-CREATE UNIQUE INDEX hdb_cron_events_unique_scheduled ON hdb_catalog.hdb_cron_events USING btree (trigger_name, scheduled_time) WHERE (status = 'scheduled'::text);
-
-
---
--- TOC entry 3428 (class 1259 OID 61356)
--- Name: hdb_scheduled_event_status; Type: INDEX; Schema: hdb_catalog; Owner: postgres
---
-
-CREATE INDEX hdb_scheduled_event_status ON hdb_catalog.hdb_scheduled_events USING btree (status);
-
-
---
--- TOC entry 3433 (class 1259 OID 61357)
--- Name: hdb_version_one_row; Type: INDEX; Schema: hdb_catalog; Owner: postgres
---
-
-CREATE UNIQUE INDEX hdb_version_one_row ON hdb_catalog.hdb_version USING btree (((version IS NOT NULL)));
-
-
---
--- TOC entry 3440 (class 1259 OID 61358)
--- Name: IDX_fieldValues_fieldId; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 3424 (class 1259 OID 54839)
+-- Name: IDX_fieldValues_fieldId; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX "IDX_fieldValues_fieldId" ON public."fieldValues" USING btree ("fieldId");
 
 
 --
--- TOC entry 3441 (class 1259 OID 61359)
--- Name: IDX_fieldValues_fieldId_itemId; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 3425 (class 1259 OID 54841)
+-- Name: IDX_fieldValues_fieldId_itemId; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX "IDX_fieldValues_fieldId_itemId" ON public."fieldValues" USING btree ("fieldId", "itemId");
 
 
 --
--- TOC entry 3442 (class 1259 OID 61360)
--- Name: IDX_fieldValues_itemId; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 3426 (class 1259 OID 54840)
+-- Name: IDX_fieldValues_itemId; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX "IDX_fieldValues_itemId" ON public."fieldValues" USING btree ("itemId");
 
 
 --
--- TOC entry 3445 (class 1259 OID 61361)
--- Name: IDX_fields_context; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 3419 (class 1259 OID 54836)
+-- Name: IDX_fields_context; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX "IDX_fields_context" ON public.fields USING btree (context);
 
 
 --
--- TOC entry 3446 (class 1259 OID 61362)
--- Name: IDX_fields_context_contextType; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 3420 (class 1259 OID 54837)
+-- Name: IDX_fields_context_contextType; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX "IDX_fields_context_contextType" ON public.fields USING btree (context, "contextType");
 
 
 --
--- TOC entry 3447 (class 1259 OID 61363)
--- Name: IDX_fields_name_context_unique; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 3421 (class 1259 OID 54838)
+-- Name: IDX_fields_name_context_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX "IDX_fields_name_context_unique" ON public.fields USING btree (name, context);
 
 
 --
--- TOC entry 3468 (class 1259 OID 61364)
--- Name: idx_user_docs_imported_from; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 3399 (class 1259 OID 354431)
+-- Name: idx_user_docs_imported_from; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_docs_imported_from ON public.user_docs USING btree (imported_from);
 
 
 --
--- TOC entry 3469 (class 1259 OID 61365)
--- Name: idx_user_docs_watcher_registered; Type: INDEX; Schema: public; Owner: postgres
+-- TOC entry 3400 (class 1259 OID 354430)
+-- Name: idx_user_docs_watcher_registered; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_docs_watcher_registered ON public.user_docs USING btree (watcher_registered);
 
 
 --
--- TOC entry 3495 (class 2620 OID 61366)
--- Name: fields update_fields_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- TOC entry 3437 (class 2620 OID 54843)
+-- Name: fields update_fields_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_fields_updated_at BEFORE UPDATE ON public.fields FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- TOC entry 3494 (class 2620 OID 61367)
--- Name: fieldValues update_fieldvalues_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+-- TOC entry 3438 (class 2620 OID 54844)
+-- Name: fieldValues update_fieldvalues_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_fieldvalues_updated_at BEFORE UPDATE ON public."fieldValues" FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- TOC entry 3484 (class 2606 OID 61368)
--- Name: hdb_cron_event_invocation_logs hdb_cron_event_invocation_logs_event_id_fkey; Type: FK CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_cron_event_invocation_logs
-    ADD CONSTRAINT hdb_cron_event_invocation_logs_event_id_fkey FOREIGN KEY (event_id) REFERENCES hdb_catalog.hdb_cron_events(id) ON UPDATE CASCADE ON DELETE CASCADE;
-
-
---
--- TOC entry 3485 (class 2606 OID 61373)
--- Name: hdb_scheduled_event_invocation_logs hdb_scheduled_event_invocation_logs_event_id_fkey; Type: FK CONSTRAINT; Schema: hdb_catalog; Owner: postgres
---
-
-ALTER TABLE ONLY hdb_catalog.hdb_scheduled_event_invocation_logs
-    ADD CONSTRAINT hdb_scheduled_event_invocation_logs_event_id_fkey FOREIGN KEY (event_id) REFERENCES hdb_catalog.hdb_scheduled_events(id) ON UPDATE CASCADE ON DELETE CASCADE;
-
-
---
--- TOC entry 3488 (class 2606 OID 61378)
--- Name: fieldValues FK_fieldValues_fieldId; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3436 (class 2606 OID 54831)
+-- Name: fieldValues FK_fieldValues_fieldId; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."fieldValues"
@@ -1318,8 +1152,8 @@ ALTER TABLE ONLY public."fieldValues"
 
 
 --
--- TOC entry 3486 (class 2606 OID 61383)
--- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3429 (class 2606 OID 18788)
+-- Name: audit_logs audit_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs
@@ -1327,8 +1161,8 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
--- TOC entry 3487 (class 2606 OID 61388)
--- Name: consent consent_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3430 (class 2606 OID 18793)
+-- Name: consent consent_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.consent
@@ -1336,8 +1170,8 @@ ALTER TABLE ONLY public.consent
 
 
 --
--- TOC entry 3489 (class 2606 OID 61393)
--- Name: user_applications user_applications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3431 (class 2606 OID 18798)
+-- Name: user_applications user_applications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_applications
@@ -1345,8 +1179,8 @@ ALTER TABLE ONLY public.user_applications
 
 
 --
--- TOC entry 3490 (class 2606 OID 61398)
--- Name: user_info user_info_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3432 (class 2606 OID 18808)
+-- Name: user_info user_info_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_info
@@ -1354,8 +1188,8 @@ ALTER TABLE ONLY public.user_info
 
 
 --
--- TOC entry 3491 (class 2606 OID 61403)
--- Name: user_roles user_roles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3433 (class 2606 OID 18813)
+-- Name: user_roles user_roles_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -1363,8 +1197,8 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- TOC entry 3492 (class 2606 OID 61408)
--- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3434 (class 2606 OID 18818)
+-- Name: user_roles user_roles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_roles
@@ -1372,15 +1206,15 @@ ALTER TABLE ONLY public.user_roles
 
 
 --
--- TOC entry 3493 (class 2606 OID 61413)
--- Name: user_wallets user_wallets_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- TOC entry 3435 (class 2606 OID 18823)
+-- Name: user_wallets user_wallets_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_wallets
     ADD CONSTRAINT user_wallets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id);
 
 
--- Completed on 2025-09-07 18:43:54 UTC
+-- Completed on 2025-09-09 10:44:48 UTC
 
 --
 -- PostgreSQL database dump complete
