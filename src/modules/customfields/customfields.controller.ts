@@ -39,7 +39,7 @@ import { UserRole } from 'src/common/enums/roles.enum';
  * @description Provides API endpoints for CRUD operations on fields
  * and field values, supporting dynamic field management
  */
-@ApiTags('4. Custom Fields')
+@ApiTags('Custom Fields')
 @Controller('fields')
 @ApiBearerAuth('access-token')
 @UsePipes(new ValidationPipe({ transform: true }))

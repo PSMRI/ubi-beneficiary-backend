@@ -35,7 +35,7 @@ import { FetchVcUrlDto } from './dto/fetch-vc-url.dto';
 import { WalletCallbackDto } from './dto/wallet-callback.dto';
 import { UploadDocDTO } from './dto/upload-doc.dto';
 
-@ApiTags('3. Users')
+@ApiTags('Users')
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}

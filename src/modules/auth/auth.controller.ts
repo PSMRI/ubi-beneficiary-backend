@@ -13,7 +13,7 @@ import { AuthService } from './auth.service';
 import { RegisterDTO } from './dto/register.dto';
 import { LoginDTO } from './dto/login.dto';
 
-@ApiTags('1. Auth')
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(public authService: AuthService) {}
