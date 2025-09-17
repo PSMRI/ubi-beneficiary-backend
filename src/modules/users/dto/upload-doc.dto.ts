@@ -1,43 +1,64 @@
 import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  MaxLength,
-  IsBoolean,
-  IsEmail,
-  IsObject,
+    IsString,
+    IsNotEmpty,
+    IsOptional,
+    MaxLength,
+    IsBoolean,
+    IsEmail,
+    IsObject,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
+// Helper function to reduce duplication for required string fields
+function RequiredStringField(description: string, example: string, maxLength: number = 255) {
+  return function (target: any, propertyKey: string) {
+    ApiProperty({
+      description,
+      example,
+      maxLength,
+    })(target, propertyKey);
+    IsString()(target, propertyKey);
+    IsNotEmpty()(target, propertyKey);
+    MaxLength(maxLength)(target, propertyKey);
+  };
+}
+
+// Helper function for optional string fields
+function OptionalStringField(description: string, example: string, maxLength: number = 255) {
+  return function (target: any, propertyKey: string) {
+    ApiProperty({
+      description,
+      example,
+      maxLength,
+      required: false,
+    })(target, propertyKey);
+    IsString()(target, propertyKey);
+    IsOptional()(target, propertyKey);
+    MaxLength(maxLength)(target, propertyKey);
+  };
+}
+
+// Helper function for optional boolean fields
+function OptionalBooleanField(description: string, example: boolean) {
+  return function (target: any, propertyKey: string) {
+    ApiProperty({
+      description,
+      example,
+      required: false,
+    })(target, propertyKey);
+    IsOptional()(target, propertyKey);
+    IsBoolean()(target, propertyKey);
+  };
+}
+
 export class UploadDocDTO {
-  @ApiProperty({
-    description: 'The name of the document',
-    example: 'Enrollment Certificate',
-    maxLength: 255,
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
+  @RequiredStringField('The name of the document', 'Enrollment Certificate')
   doc_name: string;
 
-  @ApiProperty({
-    description: 'The type of the document',
-    example: 'associationProof',
-    maxLength: 50,
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(50)
+  @RequiredStringField('The type of the document', 'associationProof', 50)
   doc_type: string;
 
-  @ApiProperty({
-    description: 'The subtype of the document',
-    example: 'enrollmentCertificate',
-    maxLength: 255,
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
+  @RequiredStringField('The subtype of the document', 'enrollmentCertificate')
   doc_subtype: string;
 
   @ApiProperty({
@@ -73,44 +94,16 @@ export class UploadDocDTO {
   @IsObject()
   doc_data?: any;
 
-  @ApiProperty({
-    description: 'Source where the document was imported from',
-    example: 'QR Code',
-    maxLength: 255,
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
+  @RequiredStringField('Source where the document was imported from', 'QR Code')
   imported_from: string;
 
-  @ApiProperty({
-    description: 'The datatype of the document',
-    example: 'Application/JSON',
-    maxLength: 100,
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
+  @RequiredStringField('The datatype of the document', 'Application/JSON', 100)
   doc_datatype: string;
 
-  @ApiProperty({
-    description: 'URL link to the document data source',
-    example: 'https://example.com/verify/test-document.vc',
-    maxLength: 1500,
-    required: false,
-  })
-  @IsString()
-  @IsOptional()
-  @MaxLength(1500)
+  @OptionalStringField('URL link to the document data source', 'https://example.com/verify/test-document.vc', 1500)
   doc_data_link?: string;
 
-  @ApiProperty({
-    description: 'Whether the watcher is registered for this document',
-    example: false,
-    required: false,
-  })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBooleanField('Whether the watcher is registered for this document', false)
   watcher_registered?: boolean;
 
   @ApiProperty({
@@ -123,13 +116,6 @@ export class UploadDocDTO {
   @MaxLength(500)
   watcher_email?: string;
 
-  @ApiProperty({
-    description: 'Callback URL for watcher registration',
-    example: 'https://testschool.edu/api/watcher/callback',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(1500)
+  @OptionalStringField('Callback URL for watcher registration', 'https://testschool.edu/api/watcher/callback', 1500)
   watcher_callback_url?: string;
 } 
