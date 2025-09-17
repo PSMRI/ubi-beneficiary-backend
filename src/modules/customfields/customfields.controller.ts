@@ -28,7 +28,6 @@ import { CreateFieldDto } from './dto/create-field.dto';
 import { UpdateFieldDto } from './dto/update-field.dto';
 import { QueryFieldsDto } from './dto/query-fields.dto';
 import { Field, FieldContext } from './entities/field.entity';
-import { CustomFieldDto } from './dto/custom-field.dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { RoleGuard } from 'src/common/guards/role.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';

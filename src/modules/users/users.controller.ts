@@ -8,7 +8,6 @@ import {
 	Query,
 	UseGuards,
 	Req,
-	ParseUUIDPipe,
 	Delete,
 	InternalServerErrorException,
 	UnauthorizedException,
@@ -23,9 +22,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
-import { CreateUserInfoDto } from './dto/create-user-info.dto';
 import { CreateConsentDto } from './dto/create-consent.dto';
 import { UserApplication } from '@entities/user_applications.entity';
 import { CreateUserApplicationDto } from './dto/create-user-application-dto';
