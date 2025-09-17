@@ -69,6 +69,7 @@ export class AppController {
       const result = await this.proxyService.bapCLientApi2('select', body);
       return result;
     } catch (error) {
+      this.logger.error('Select request failed', error);
       throw error;
     }
   }
