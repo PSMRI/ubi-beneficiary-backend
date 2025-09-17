@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Post,
   Request,
   UseGuards,
@@ -11,7 +12,7 @@ import { LoggerService } from './logger/logger.service';
 import { ProxyService } from './services/proxy/proxy.service';
 import { ContentService } from './content/content.service';
 import { AuthGuard } from '@modules/auth/auth.guard';
-import { ApiTags, ApiOperation, ApiResponse, ApiExcludeEndpoint, ApiBasicAuth, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiExcludeEndpoint, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { 
   SelectRequestDto, 
   InitRequestDto, 
@@ -47,11 +48,10 @@ export class AppController {
   @ApiBody({ type: SearchRequestDto })
   @ApiResponse(COMMON_RESPONSES.SUCCESS)
   @ApiResponse(COMMON_RESPONSES.BAD_REQUEST)
+  @HttpCode(200)
   async searchContent(@Request() request, @Body() body) {
     try {
-      this.logger.log('Search request received', { body });
       const result = await this.proxyService.bapCLientApi2('search', body);
-      this.logger.log('Search request completed successfully');
       return result;
     } catch (error) {
       this.logger.error('Search request failed', error);
@@ -76,7 +76,7 @@ export class AppController {
 
   @Post('/init')
   @UseGuards(AuthGuard)
-  @ApiBasicAuth('access-token')
+  @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Initialize benefit application process' })
   @ApiBody({ type: InitRequestDto })
   @ApiResponse(COMMON_RESPONSES.SUCCESS)
@@ -90,7 +90,7 @@ export class AppController {
 
   @Post('/confirm')
   @UseGuards(AuthGuard)
-  @ApiBasicAuth('access-token')
+  @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Confirm benefit application' })
   @ApiBody({ type: ConfirmRequestDto })
   @ApiResponse(COMMON_RESPONSES.SUCCESS)
