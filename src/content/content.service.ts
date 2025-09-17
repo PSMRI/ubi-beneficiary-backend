@@ -3,7 +3,6 @@ import { LoggerService } from 'src/logger/logger.service';
 import { HasuraService } from 'src/services/hasura/hasura.service';
 import { ProxyService } from 'src/services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
-import { CreateOrderDto } from './dto/create-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ResponseCache } from 'src/entity/response.entity';
