@@ -133,7 +133,6 @@ export class ContentService {
 
 			// Fetch jobs from Hasura
 			const filteredData = await this.hasuraService.findJobsCache(body);
-
 			let filteredJobs: any[] = [];
 			if (
 				!(filteredData instanceof ErrorResponse) &&
@@ -262,8 +261,6 @@ export class ContentService {
 				version: '1.1.0',
 				bap_id: this.bap_id,
 				bap_uri: this.bap_uri,
-				bpp_id: this.bpp_id,
-				bpp_uri: this.bpp_uri,
 				transaction_id: uuidv4(),
 				message_id: uuidv4(),
 				timestamp: new Date().toISOString(),
