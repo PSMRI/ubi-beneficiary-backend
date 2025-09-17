@@ -4,16 +4,15 @@ import {
   Get,
   Param,
   Post,
-  Query,
   Request,
   UseGuards
 } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { ContentService } from './content.service';
-import { CreateOrderDto } from './dto/create-user.dto';
+/* import { CreateOrderDto } from './dto/create-user.dto'; */
 import { ApiResponse, ApiTags, ApiExcludeEndpoint, ApiBody, ApiOperation } from '@nestjs/swagger';
-import { promises as fs } from 'fs';
-import * as path from 'path';
+/* import { promises as fs } from 'fs';
+import * as path from 'path'; */
 import { AuthGuard } from '@modules/auth/auth.guard';
 
 @ApiTags('Content')

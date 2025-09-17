@@ -10,7 +10,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
 import { User } from '../../entity/user.entity';
-import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
 import { Consent } from '@entities/consent.entity';

@@ -7,7 +7,7 @@ import {
 	ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere, In, DeleteResult, UpdateResult, DataSource } from 'typeorm';
+import { Repository, FindOptionsWhere, In, UpdateResult, DataSource } from 'typeorm';
 import { Field, FieldContext } from './entities/field.entity';
 import { FieldValue } from './entities/field-value.entity';
 import { CreateFieldDto } from './dto/create-field.dto';
