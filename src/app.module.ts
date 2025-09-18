@@ -22,6 +22,7 @@ import { AuthMiddleware } from './common/middlewares/auth.middleware';
 import { CustomFieldsModule } from './modules/customfields/customfields.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
+import { NetworkCache } from './entity/network-cache.entity';
 
 @Module({
 	imports: [
@@ -45,7 +46,7 @@ import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
 				// logging: true,
 			}),
 		}),
-		TypeOrmModule.forFeature([ResponseCache, User, UserRole, Role]),
+		TypeOrmModule.forFeature([ResponseCache, User, UserRole, Role, NetworkCache]),
 		{
 			...HttpModule.register({}),
 			global: true,
