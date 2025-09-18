@@ -28,7 +28,6 @@ import { CreateFieldDto } from './dto/create-field.dto';
 import { UpdateFieldDto } from './dto/update-field.dto';
 import { QueryFieldsDto } from './dto/query-fields.dto';
 import { Field, FieldContext } from './entities/field.entity';
-import { CustomFieldDto } from './dto/custom-field.dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { RoleGuard } from 'src/common/guards/role.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -41,7 +40,7 @@ import { UserRole } from 'src/common/enums/roles.enum';
  */
 @ApiTags('Custom Fields')
 @Controller('fields')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UsePipes(new ValidationPipe({ transform: true }))
 export class CustomFieldsController {
 	constructor(private readonly customFieldsService: CustomFieldsService) {}
@@ -197,7 +196,7 @@ export class CustomFieldsController {
 	 * @param fieldId
 	 * @description Retrieves a single field definition by its ID
 	 */
-	@Get(':fieldId')
+	/* @Get(':fieldId')
 	@ApiOperation({
 		summary: 'Get field by ID',
 		description:
@@ -222,7 +221,7 @@ export class CustomFieldsController {
 		@Param('fieldId', ParseUUIDPipe) fieldId: string
 	): Promise<Field> {
 		return this.customFieldsService.findFieldById(fieldId);
-	}
+	} */
 
 	/**
 	 * Update a field definition
@@ -366,7 +365,8 @@ export class CustomFieldsController {
 	 * @param itemId
 	 * @description Retrieves all custom fields and their values for a specific entity instance
 	 */
-	@Get('values/:context/:itemId')
+	
+/* 	@Get('values/:context/:itemId')
 	@ApiOperation({
 		summary: 'Get custom fields for entity',
 		description:
@@ -392,7 +392,7 @@ export class CustomFieldsController {
 		@Param('itemId', ParseUUIDPipe) itemId: string
 	): Promise<CustomFieldDto[]> {
 		return this.customFieldsService.getCustomFields(itemId, context);
-	}
+	} */
 
 	/**
 	 * Delete custom fields for a specific entity
@@ -401,7 +401,8 @@ export class CustomFieldsController {
 	 * @param fieldIds
 	 * @description Deletes all or specific custom field values for an entity instance
 	 */
-	@Delete('values/:context/:itemId')
+
+	/* @Delete('values/:context/:itemId')
 	@UseGuards(AuthGuard, RoleGuard)
 	@Roles(UserRole.ADMIN)
 	@HttpCode(HttpStatus.NO_CONTENT)
@@ -441,7 +442,7 @@ export class CustomFieldsController {
 			context,
 			fieldIdArray
 		);
-	}
+	} */
 
 	/**
 	 * Save custom field values for a specific entity (record)
@@ -450,7 +451,8 @@ export class CustomFieldsController {
 	 * @param customFields
 	 * @description Saves or updates custom field values for a specific entity instance
 	 */
-	@Post('values/:context/:itemId')
+	
+	/* @Post('values/:context/:itemId')
 	@UseGuards(AuthGuard, RoleGuard)
 	@Roles(UserRole.ADMIN)
 	@ApiOperation({
@@ -488,7 +490,7 @@ export class CustomFieldsController {
 			context,
 			customFields
 		);
-	}
+	} */
 
 	/**
 	 * Search entities by custom field values
@@ -497,7 +499,8 @@ export class CustomFieldsController {
 	 * @param searchDto.searchCriteria
 	 * @description Searches for entity IDs that match specific custom field criteria
 	 */
-	@Post('search/:context')
+	
+	/* @Post('search/:context')
 	@ApiOperation({
 		summary: 'Search entities by custom fields',
 		description:
@@ -586,13 +589,14 @@ export class CustomFieldsController {
 			total: itemIds.length,
 		};
 	}
-
+ */
 	/**
 	 * Get field usage statistics
 	 * @param context
 	 * @description Retrieves statistics about field usage in a specific context
 	 */
-	@Get('statistics/:context')
+	
+	/* @Get('statistics/:context')
 	@ApiOperation({
 		summary: 'Get field usage statistics',
 		description:
@@ -626,5 +630,5 @@ export class CustomFieldsController {
 		@Param('context') context: FieldContext
 	): Promise<any> {
 		return this.customFieldsService.getFieldStatistics(context);
-	}
+	} */
 }

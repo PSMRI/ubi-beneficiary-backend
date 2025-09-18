@@ -2,13 +2,11 @@ import {
 	Controller,
 	Get,
 	Post,
-	Put,
 	Body,
 	Param,
 	Query,
 	UseGuards,
 	Req,
-	ParseUUIDPipe,
 	Delete,
 	InternalServerErrorException,
 	UnauthorizedException,
@@ -17,14 +15,13 @@ import {
 import { UserService } from '../users/users.service';
 import {
   ApiBasicAuth,
+  ApiBody,
   ApiOperation,
   ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
-import { CreateUserInfoDto } from './dto/create-user-info.dto';
 import { CreateConsentDto } from './dto/create-consent.dto';
 import { UserApplication } from '@entities/user_applications.entity';
 import { CreateUserApplicationDto } from './dto/create-user-application-dto';
@@ -32,13 +29,15 @@ import { AuthGuard } from '@modules/auth/auth.guard';
 import { Request } from 'express';
 import { FetchVcUrlDto } from './dto/fetch-vc-url.dto';
 import { WalletCallbackDto } from './dto/wallet-callback.dto';
+import { UploadDocDTO } from './dto/upload-doc.dto';
 
-@ApiTags('users')
+@ApiTags('Users')
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
-  @Post('/create')
+  
+  /* @Post('/create')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({ status: 201, description: 'User successfully created' })
@@ -46,8 +45,8 @@ export class UserController {
   async create(@Body() createUserDto: CreateUserDto) {
     return this.userService.create(createUserDto);
   }
-
-  @UseGuards(AuthGuard)
+ */
+ /*  @UseGuards(AuthGuard)
   @Put('/update/:userId')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Update an existing user' })
@@ -58,12 +57,12 @@ export class UserController {
     @Body() updateUserDto: any,
   ) {
     return this.userService.update(userId, updateUserDto);
-  }
+  } */
 
   @UseGuards(AuthGuard)
   @Get('/get_one')
   @ApiBasicAuth('access-token')
-  @ApiResponse({ status: 200, description: 'User data' })
+  @ApiResponse({ status: 200, description: 'User retrieved successfully.' })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiQuery({
     name: 'decryptData',
@@ -93,7 +92,7 @@ export class UserController {
     return await this.userService.findConsentByUser(req);
   }
 
-  @UseGuards(AuthGuard)
+  /* @UseGuards(AuthGuard)
   @Post('/user_docs')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Save user docs' })
@@ -101,14 +100,17 @@ export class UserController {
   @ApiResponse({ status: 400, description: 'Bad Request' })
   async createUserDoc(@Body() createUserDocDto: CreateUserDocDTO) {
     return this.userService.createUserDoc(createUserDocDto);
-  }
+  } */
 
   @UseGuards(AuthGuard)
   @Post('/wallet/user_docs')
   @ApiBasicAuth('access-token')
+    @ApiBody({ type: [UploadDocDTO] 
+    })
   @ApiOperation({ summary: 'Save user docs' })
   @ApiResponse({ status: 200, description: 'User docs saved successfully' })
   @ApiResponse({ status: 400, description: 'Bad Request' })
+  
   async createUserDocs(
     @Req() req: Request,
     @Body() createUserDocDto: CreateUserDocDTO[],
@@ -174,11 +176,26 @@ export class UserController {
   @UseGuards(AuthGuard)
   @Post('/user_applications_list')
   @ApiBasicAuth('access-token')
+  @ApiBody({
+    description: 'User filter request',
+    schema: {
+      example: {
+        "filters": {
+          "user_id": "0deef2a1-90dd-49c7-90a5-fc293d89326a"
+        }
+      }
+    }
+  })
+  @ApiQuery({
+    name: 'filters',
+    required: false,
+    description: 'Filters for the user applications',
+    type: Object,
+  })
   @ApiOperation({ summary: 'Get all applications for a specific user' })
   @ApiResponse({
     status: 200,
     description: 'List of user applications',
-    type: [UserApplication],
   })
   async findAllApplicationsByUserId(
     @Body() requestBody: { filters: any; search: string },
@@ -210,6 +227,7 @@ export class UserController {
 
   @Post('/fetch-vc-json')
   @UseGuards(AuthGuard)
+  @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Fetch Verifiable Credential JSON from a QR code URL' })
   @ApiResponse({ status: 200, description: 'VC JSON fetched successfully' })
   @ApiResponse({ status: 400, description: 'Invalid URL or unable to fetch VC JSON' })

@@ -73,7 +73,7 @@ export class AuthService {
     }
   }
 
-  public async register(body) {
+/*   public async register(body) {
     try {
       // let wallet_api_url = process.env.WALLET_API_URL;
       // Step 1: Check if mobile number exists in the database
@@ -98,7 +98,7 @@ export class AuthService {
         keycloak_id: keycloakId,
         username: dataToCreateUser.username,
       };
-      const user = await this.userService.createKeycloakData(userData);
+      const user = await this.userService.createKeycloakData(userData); */
 
       /*
       if (user) {
@@ -115,7 +115,7 @@ export class AuthService {
       }*/
 
       // Step 6: Return success response
-      return new SuccessResponse({
+      /* return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User created successfully',
         data: user,
@@ -123,7 +123,7 @@ export class AuthService {
     } catch (error) {
       return this.handleRegistrationError(error, body?.keycloak_id);
     }
-  }
+  } */
 
   public async registerWithUsernamePassword(body) {
     try {

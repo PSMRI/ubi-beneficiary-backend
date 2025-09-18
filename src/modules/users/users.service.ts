@@ -10,7 +10,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
 import { User } from '../../entity/user.entity';
-import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
 import { Consent } from '@entities/consent.entity';
@@ -60,7 +59,7 @@ export class UserService {
   ) { }
 
 
-  async create(createUserDto: CreateUserDto) {
+ /*  async create(createUserDto: CreateUserDto) {
     const user = this.userRepository.create(createUserDto);
     try {
       const savedUser = await this.userRepository.save(user);
@@ -76,7 +75,7 @@ export class UserService {
         errorMessage: error.message,
       });
     }
-  }
+  } */
 
   async update(userId: string, updateUserDto: any) {
     // Destructure userInfo from the payload
@@ -279,7 +278,7 @@ export class UserService {
   }
 
   // User docs save
-  async createUserDoc(createUserDocDto: CreateUserDocDTO) {
+/*   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
     try {
       // Stringify the JSON doc_data before encryption
       const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
@@ -307,7 +306,7 @@ export class UserService {
         errorMessage: error,
       });
     }
-  }
+  } */
 
   async getDoc(createUserDocDto: CreateUserDocDTO) {
     const existingDoc = await this.userDocsRepository.findOne({

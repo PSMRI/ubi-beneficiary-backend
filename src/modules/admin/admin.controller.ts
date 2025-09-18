@@ -30,7 +30,7 @@ import { UserRole } from 'src/common/enums/roles.enum';
  */
 @ApiTags('Admin')
 @Controller('admin')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 export class AdminController {
 	constructor(private readonly adminService: AdminService) {}
 
@@ -50,36 +50,33 @@ export class AdminController {
 	@ApiBody({
 		type: CreateOrUpdateConfigDto,
 		examples: {
-			stringValue: {
-				summary: 'String Configuration',
-				value: {
-					key: 'app_name',
-					value: 'My Application Name'
-				}
-			},
-			numberValue: {
-				summary: 'Number Configuration',
-				value: {
-					key: 'max_users',
-					value: 1000
-				}
-			},
-			booleanValue: {
-				summary: 'Boolean Configuration',
-				value: {
-					key: 'maintenance_mode',
-					value: true
-				}
-			},
 			objectValue: {
 				summary: 'Object Configuration',
 				value: {
-					key: 'email_settings',
-					value: {
-						smtp_host: 'smtp.example.com',
-						smtp_port: 587,
-						from_email: 'noreply@example.com'
+					key: 'documentTypeConfig',
+					value:{
+						"documentType": [
+						  "associationProof",
+						  "bankAccountProof",
+						  "birthProof",
+						  "casteProof",
+						]
 					}
+				}
+			},
+			arrayValue: {
+				summary: 'Array Configuration',
+				value: {
+					key: 'vcConfigs',
+					value: [
+						{
+							name: 'Income Certificate',
+							label: 'Income Certificate',
+							documentSubType: 'incomeCertificate',
+							docType: 'incomeProof',
+							vcFields: '{\n  "studentuniqueid": {\n    "type": "string"\n  },\n  "firstname": {\n    "type": "string"\n  },\n  "annualincome": {\n    "type": "number"\n  }\n}'
+						}
+					]
 				}
 			}
 		}
@@ -145,7 +142,7 @@ export class AdminController {
 		name: 'key',
 		type: 'string',
 		description: 'Configuration key identifier',
-		example: 'app_name'
+		example: 'documentTypeConfig'
 	})
 	@ApiResponse({
 		status: 200,
