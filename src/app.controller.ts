@@ -19,6 +19,7 @@ export class AppController {
     private readonly proxyService: ProxyService,
     private readonly logger: LoggerService,
     private readonly contentService: ContentService,
+    
   ) {}
 
   @Get()
@@ -35,7 +36,7 @@ export class AppController {
 
   @Post('/select')
   async selectContent(@Request() request, @Body() body) {
-    return await this.appService.getselectContent(body);
+    return await this.contentService.getSelectContent('select', body);
   }
 
   @Post('/init')
