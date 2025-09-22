@@ -1,0 +1,55 @@
+name: Deploy to UBA-PILOT
+
+on:
+  workflow_dispatch:
+    inputs:
+      TAG:
+        description: 'Docker image tag to deploy'
+        required: true
+        default: 'v0.0.0'
+      BRANCH:
+        description: 'Git branch to deploy'
+        required: true
+        default: 'main'
+  push:
+    tags:
+      - '*'  # Trigger on any tag push
+
+jobs:
+  Deploy_on_UBA_DEV:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: UBA-DEPWD-PILOT
+
+    steps:
+      - name: Deploy Stack via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST_NAME_PILOT }}
+          username: ${{ secrets.USERNAME_PILOT }}
+          key: ${{ secrets.EC2_SSH_KEY_PILOT }}
+          port: ${{ secrets.PORT_PILOT }}
+          script: |
+            # ----- Export environment variables from secrets & workflow inputs -----
+            export BASE_DIR="${{ secrets.TARGET_DIR_PILOT }}"
+            export TAG="${{ github.event.inputs.TAG || github.ref_name || 'latest' }}"
+            export BRANCH="${{ github.event.inputs.BRANCH || 'main' }}"
+            export SERVICE_NAME="beneficiary-backend"
+
+            # ----- Run deployment -----
+            cd "$BASE_DIR" || exit 1
+
+            # Prepare .env
+            if [ -f .env ]; then rm .env; fi
+            echo '${{ secrets.ENV_PILOT }}' > .env
+
+            # Run deploy script from base dir
+            bash deploy.sh
+
+      - name: Notify on Slack channel
+        uses: iRoachie/slack-github-actions@v2.3.2
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          status: ${{ job.status }}
+        if: ${{ always() }}
