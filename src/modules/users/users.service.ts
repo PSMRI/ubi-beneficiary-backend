@@ -622,6 +622,7 @@ export class UserService {
         });
       } else {
         // Create a new application
+
         const userApplication = this.userApplicationRepository.create(
           createUserApplicationDto,
         );
@@ -1483,8 +1484,22 @@ export class UserService {
   async getStatus(orderId: string) {
     const bapId = this.configService.get<string>('BAP_ID'); 
     const bapUri = this.configService.get<string>('BAP_URI'); 
-    const bppId = this.configService.get<string>('BPP_ID');  
-    const bppUri = this.configService.get<string>('BPP_URI'); 
+  /*     const bppId = this.configService.get<string>('BPP_ID'); 
+      const bppUri = this.configService.get<string>('BPP_URI'); */ 
+
+    // Fetch BPP info from userApplication table
+    const userApplication = await this.userApplicationRepository.findOne({
+      where: { external_application_id: orderId },
+      select: ['benefit_provider_id', 'benefit_provider_uri']
+    });
+
+    if (!userApplication) {
+      throw new Error(`UserApplication not found for orderId: ${orderId}`);
+    }
+
+    const bppId = userApplication.benefit_provider_id;
+    const bppUri = userApplication.benefit_provider_uri;
+   
     if (!bapId || !bapUri || !bppId || !bppUri) {  
       throw new Error('Missing required configuration for BAP/BPP');
     }
@@ -1524,7 +1539,6 @@ export class UserService {
       const rawStatus =
         response?.responses[0]?.message?.order?.fulfillments[0]?.state
           ?.descriptor?.name;
-
       if (!rawStatus) return null;
 
       // Parse status stringified JSON
