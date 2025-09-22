@@ -1484,8 +1484,7 @@ export class UserService {
   async getStatus(orderId: string) {
     const bapId = this.configService.get<string>('BAP_ID'); 
     const bapUri = this.configService.get<string>('BAP_URI'); 
-  /*     const bppId = this.configService.get<string>('BPP_ID'); 
-      const bppUri = this.configService.get<string>('BPP_URI'); */ 
+
 
     // Fetch BPP info from userApplication table
     const userApplication = await this.userApplicationRepository.findOne({
