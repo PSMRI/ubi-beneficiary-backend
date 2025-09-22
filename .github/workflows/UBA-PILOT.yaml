@@ -16,7 +16,7 @@ on:
       - '*'  # Trigger on any tag push
 
 jobs:
-  Deploy_on_UBA_DEV:
+  Deploy_on_UBA_PILOT:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: UBA-DEPWD-PILOT
@@ -34,7 +34,7 @@ jobs:
             export BASE_DIR="${{ secrets.TARGET_DIR_PILOT }}"
             export TAG="${{ github.event.inputs.TAG || github.ref_name || 'latest' }}"
             export BRANCH="${{ github.event.inputs.BRANCH || 'main' }}"
-            export SERVICE_NAME="beneficiary-backend"
+            export SERVICE_NAME="ubi-beneficiary-backend"
 
             # ----- Run deployment -----
             cd "$BASE_DIR" || exit 1
