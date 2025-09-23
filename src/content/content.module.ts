@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerService } from 'src/logger/logger.service';
 import { HasuraService } from 'src/services/hasura/hasura.service';
@@ -15,7 +15,7 @@ import { AuthModule } from '../modules/auth/auth.module';
 @Module({
   imports: [ScheduleModule.forRoot(), TypeOrmModule.forFeature([ResponseCache]), UserModule, AuthModule],
   controllers: [ContentController],
-  providers: [ContentService, HasuraService, ProxyService, LoggerService, EncryptionService, NetworkCacheRefreshCron],
+  providers: [ContentService, HasuraService, ProxyService, LoggerService, EncryptionService, NetworkCacheRefreshCron]
 
 })
 export class ContentModule {}
