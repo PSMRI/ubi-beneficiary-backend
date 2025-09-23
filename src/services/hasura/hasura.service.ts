@@ -29,6 +29,8 @@ export class HasuraService {
             item_id
             provider_id
             provider_name
+            bpp_id
+            bpp_uri
             title
             description
             url
