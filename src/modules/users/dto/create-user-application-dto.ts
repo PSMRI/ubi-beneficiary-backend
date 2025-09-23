@@ -12,7 +12,6 @@ export class CreateUserApplicationDto {
     description: 'Unique identifier of the user',
     type: String,
     format: 'uuid',
-    example: '0deef2a1-90dd-49c7-90a5-fc293d89326a',
   })
   @IsUUID()
   user_id: string;
@@ -21,7 +20,6 @@ export class CreateUserApplicationDto {
     description: 'Unique identifier for the benefit',
     type: String,
     maxLength: 255,
-    example: 'qvpfldi73jgez6qf3rcd06a9',
   })
   @IsString()
   @IsNotEmpty()
@@ -31,7 +29,6 @@ export class CreateUserApplicationDto {
     description: 'Benefit provider ID',
     type: String,
     maxLength: 255,
-    example: 'bpp_id',
   })
   @IsString()
   @IsNotEmpty()
@@ -41,7 +38,6 @@ export class CreateUserApplicationDto {
     description: 'Benefit provider URI',
     type: String,
     maxLength: 255,
-    example: 'https://bpp.com',
   })
   @IsString()
   @IsNotEmpty()
@@ -51,7 +47,6 @@ export class CreateUserApplicationDto {
     description: 'External application ID',
     type: String,
     maxLength: 100,
-    example: 'TEST_C8C57A3E_1756888693643',
   })
   @IsString()
   @IsNotEmpty()
@@ -61,7 +56,6 @@ export class CreateUserApplicationDto {
     description: 'Application Name',
     type: String,
     required: false,
-    example: '[Tekdi Test 2] Post-Matric Scholarship for Students with Disabilities',
   })
   @IsOptional() // Optional
   @IsString() // Optional, if you want to validate it as a string
@@ -71,7 +65,7 @@ export class CreateUserApplicationDto {
     description: 'Status of the application',
     type: String,
     maxLength: 20,
-    example: 'application pending',
+    example: 'submitted',
   })
   @IsString()
   @IsIn(['submitted', 'approved', 'rejected', 'application pending'])

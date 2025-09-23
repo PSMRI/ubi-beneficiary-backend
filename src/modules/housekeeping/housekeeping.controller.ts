@@ -18,7 +18,7 @@ import {
 	MigrationStatusDto,
 } from './dto/housekeeping.dto';
 
-@ApiTags('Housekeeping')
+@ApiTags('housekeeping')
 @Controller('housekeeping')
 export class HousekeepingController {
 	private readonly logger = new Logger(HousekeepingController.name);

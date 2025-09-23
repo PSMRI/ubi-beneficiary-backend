@@ -6,7 +6,6 @@ export class CreateConsentDto {
     description: 'User Id',
     type: String,
     format: 'uuid',
-    example: '0deef2a1-90dd-49c7-90a5-fc293d89326a',
   })
   @IsUUID() // Validates that user_id is a UUID
   user_id: string;
@@ -15,7 +14,6 @@ export class CreateConsentDto {
     description: 'Purpose of the consent',
     type: String,
     maxLength: 255,
-    example: 'sign_up_tnc',
   })
   @IsString() // Validates that purpose is a string
   @IsNotEmpty() // Validates that purpose is not empty
@@ -24,7 +22,6 @@ export class CreateConsentDto {
   @ApiProperty({
     description: 'Detailed explanation of the consent purpose',
     type: String,
-    example: 'sign_up_tnc',
   })
   @IsString() // Validates that purpose_text is a string
   @IsNotEmpty() // Validates that purpose_text is not empty
@@ -33,7 +30,6 @@ export class CreateConsentDto {
   @ApiProperty({
     description: 'Indicates whether the consent was accepted',
     type: Boolean,
-    example: true,
   })
   @IsBoolean() // Validates that accepted is a boolean
   accepted: boolean;
