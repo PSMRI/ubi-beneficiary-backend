@@ -13,7 +13,6 @@ import { ErrorResponse } from 'src/common/responses/error-response';
 import { HttpService } from '@nestjs/axios';
 import { UserService } from '../modules/users/users.service';
 import { AuthService } from '../modules/auth/auth.service';
-
 const crypto = require('crypto');
 
 interface Job {

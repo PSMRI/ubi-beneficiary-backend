@@ -622,7 +622,6 @@ export class UserService {
         });
       } else {
         // Create a new application
-
         const userApplication = this.userApplicationRepository.create(
           createUserApplicationDto,
         );
