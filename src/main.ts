@@ -17,7 +17,7 @@ import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
-	app.setGlobalPrefix('api');
+
 	// Replace NestJS default logger with our Sentry-enabled logger
 	const customLogger = app.get(LoggerService);
 	app.useLogger(customLogger);
@@ -61,14 +61,6 @@ async function bootstrap() {
 		.setTitle('UBI Beneficiary API')
 		.setDescription('API documentation for UBI Beneficiary')
 		.setVersion('1.0')
-		.addTag('Auth')
-		.addTag('Admin')
-		.addTag('Custom Fields')
-		.addTag('Content')
-		.addTag('Users')
-		.addTag('Network API')
-		.addTag('Housekeeping')
-		
 		.addBearerAuth(
 			{
 				type: 'http',

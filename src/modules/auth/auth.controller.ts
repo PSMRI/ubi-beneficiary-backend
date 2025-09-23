@@ -19,16 +19,15 @@ export class AuthController {
   constructor(public authService: AuthService) {}
 
   // users/register on keycloak and postgres both side.
-
-  // @Post('/register')
-  // @UsePipes(new ValidationPipe())
-  // @ApiBody({ type: RegisterDTO })
-  // @ApiResponse({ status: 200, description: 'User registered successfully.' })
-  // @ApiResponse({ status: 409, description: 'Mobile number already exists.' })
-  // @ApiResponse({ status: 400, description: 'Bad Request.' })
-  // public async register(@Body() body: RegisterDTO) {
-  //   return await this.authService.register(body);
-  // }
+  @Post('/register')
+  @UsePipes(new ValidationPipe())
+  @ApiBody({ type: RegisterDTO })
+  @ApiResponse({ status: 200, description: 'User registered successfully.' })
+  @ApiResponse({ status: 409, description: 'Mobile number already exists.' })
+  @ApiResponse({ status: 400, description: 'Bad Request.' })
+  public async register(@Body() body: RegisterDTO) {
+    return await this.authService.register(body);
+  }
 
   @Post('/register_with_password')
   @UsePipes(new ValidationPipe())
@@ -43,9 +42,6 @@ export class AuthController {
   @Post('/login')
   @UsePipes(new ValidationPipe())
   @ApiBody({ type: LoginDTO })
-  @ApiResponse({ status: 200, description: 'LOGGEDIN_SUCCESSFULLY' })
-  @ApiResponse({ status: 409, description: 'INVALID_CREDENTIALS' })
-  @ApiResponse({ status: 400, description: 'BAD_REQUEST' })
   public async login(@Body() body: LoginDTO) {
     return await this.authService.login(body);
   }

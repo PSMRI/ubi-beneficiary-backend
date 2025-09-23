@@ -4,7 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class ConfigKeyDto {
 	@ApiProperty({
 		description: 'Configuration key identifier',
-		example: 'vcConfiguration',
+		example: 'app_name',
 		pattern: '^[a-zA-Z0-9_]+$'
 	})
 	@IsString({ message: 'key must be a string' })
@@ -16,7 +16,7 @@ export class ConfigKeyDto {
 export class CreateOrUpdateConfigDto {
 	@ApiProperty({
 		description: 'Configuration key identifier',
-		example: 'vcConfiguration',
+		example: 'app_name',
 		pattern: '^[a-zA-Z0-9_]+$'
 	})
 	@IsString({ message: 'key must be a string' })
@@ -25,19 +25,12 @@ export class CreateOrUpdateConfigDto {
 	key: string;
 
 	@ApiProperty({
-		description: 'Configuration value (can be object, array)',
-		example: [
-			{
-				"documentType": [
-					"associationProof",
-					"bankAccountProof",
-					"birthProof",
-					"casteProof",
-				]
-			}
-		],
+		description: 'Configuration value (can be string, number, boolean, or object)',
+		example: 'My Application Name',
 		oneOf: [
-			{ type: 'array' },
+			{ type: 'string' },
+			{ type: 'number' },
+			{ type: 'boolean' },
 			{ type: 'object' }
 		]
 	})
@@ -54,18 +47,13 @@ export class ConfigResponseDto {
 
 	@ApiProperty({
 		description: 'Configuration key identifier',
-		example: 'documentTypeConfiguration'
+		example: 'app_name'
 	})
 	key: string;
 
 	@ApiProperty({
 		description: 'Configuration value',
-		example: [
-			"associationProof",
-			"bankAccountProof",
-			"birthProof",
-			"casteProof"
-		  ]
+		example: 'My Application Name'
 	})
 	value: any;
 
