@@ -32,7 +32,8 @@ export class AppController {
 
   @Post('/select')
   async selectContent(@Request() request, @Body() body) {
-    return await this.appService.getSelectContent('select', body);
+    let endPoint = 'select';
+    return await this.proxyService.bapCLientApi2(endPoint, body);
   }
 
   @Post('/init')
