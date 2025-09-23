@@ -7,9 +7,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AppService } from './app.service';
-import { LoggerService } from './logger/logger.service';
 import { ProxyService } from './services/proxy/proxy.service';
-import { ContentService } from './content/content.service';
 import { AuthGuard } from '@modules/auth/auth.guard';
 
 @Controller()
@@ -17,8 +15,6 @@ export class AppController {
   constructor(
     private readonly appService: AppService,
     private readonly proxyService: ProxyService,
-    private readonly logger: LoggerService,
-    private readonly contentService: ContentService,
     
   ) {}
 
@@ -36,7 +32,7 @@ export class AppController {
 
   @Post('/select')
   async selectContent(@Request() request, @Body() body) {
-    return await this.contentService.getSelectContent('select', body);
+    return await this.appService.getSelectContent('select', body);
   }
 
   @Post('/init')
