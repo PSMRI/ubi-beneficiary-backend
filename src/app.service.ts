@@ -20,7 +20,7 @@ export class AppService {
 
   async getSelectContent(endpoint: string, body) {	
     try {
-      const benefitId = body.message.order.items[0].id;
+      const benefitId = body?.message?.order?.items[0]?.id;
       // Fetch bpp_id and bpp_uri from ubi_network_cache table using TypeORM
       this.logger.log('Fetching BPP info for benefitId:', benefitId);
       const cacheEntry = await this.networkCacheRepository.findOne({
