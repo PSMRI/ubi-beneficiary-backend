@@ -1138,20 +1138,18 @@ export class ContentService {
 
 		return eligibilityData;
 	}
-	async getSelectContent(endpoint: string, body) {
-		console.log(`${endpoint} method calling...`, body);
-		
+	async getSelectContent(endpoint: string, body) {	
 		try {
 			const benefitId = body.message.order.items[0].id;
 			// Fetch bpp_id and bpp_uri from ubi_network_cache table using TypeORM
-			console.log('Fetching BPP info for benefitId:', benefitId);
+			this.logger.log('Fetching BPP info for benefitId:', benefitId);
 			const cacheEntry = await this.networkCacheRepository.findOne({
 				where: { item_id: benefitId },
 				select: ['bpp_id', 'bpp_uri', 'item_id']
 			});
 			
 			if (cacheEntry && cacheEntry.bpp_id && cacheEntry.bpp_uri) {
-				console.log('BPP info retrieved successfully:', { 
+				this.logger.log('BPP info retrieved successfully:', { 
 					bpp_id: cacheEntry.bpp_id, 
 					bpp_uri: cacheEntry.bpp_uri 
 				});
@@ -1161,16 +1159,15 @@ export class ContentService {
 				body.context.bpp_id = cacheEntry.bpp_id;
 				body.context.bpp_uri = cacheEntry.bpp_uri;
 				
-				console.log('Updated body with BPP info:', JSON.stringify(body, null, 2));
 			} else {
-				console.warn('No BPP info found for benefitId:', benefitId);
+				this.logger.warn('No BPP info found for benefitId:', benefitId);
 				throw new Error(`BPP information not found for benefitId: ${benefitId}`);
 			}
 			
 			return await this.proxyService.bapCLientApi2(endpoint, body);
 			
 		} catch (error) {
-			console.error(`Error in ${endpoint} processing:`, error);
+			this.logger.error(`Error in ${endpoint} processing:`, error);
 			throw error;
 		}
 	}
