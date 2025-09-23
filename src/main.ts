@@ -17,7 +17,7 @@ import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
-	app.setGlobalPrefix('api');
+	
 	// Replace NestJS default logger with our Sentry-enabled logger
 	const customLogger = app.get(LoggerService);
 	app.useLogger(customLogger);
@@ -68,7 +68,7 @@ async function bootstrap() {
 		.addTag('Users')
 		.addTag('Network API')
 		.addTag('Housekeeping')
-		
+		.addServer('/api')
 		.addBearerAuth(
 			{
 				type: 'http',
