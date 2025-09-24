@@ -3,7 +3,6 @@ import { LoggerService } from 'src/logger/logger.service';
 import { HasuraService } from 'src/services/hasura/hasura.service';
 import { ProxyService } from 'src/services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
-import { CreateOrderDto } from './dto/create-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ResponseCache } from 'src/entity/response.entity';
@@ -217,7 +216,7 @@ export class ContentService {
 		return this.encrypt.decrypt(data);
 	}
 
-	async createOrder(createOrderDto: CreateOrderDto) {
+	/* async createOrder(createOrderDto: CreateOrderDto) {
 		const createUserDto = {
 			name: createOrderDto.name,
 			gender: createOrderDto.gender,
@@ -244,11 +243,11 @@ export class ContentService {
 			};
 			return this.hasuraService.createOrder(createOrder);
 		}
-	}
+	} */
 
-	searchOrderByOrderId(OredrId) {
+	/* searchOrderByOrderId(OredrId) {
 		return this.hasuraService.searchOrderByOrderId(OredrId);
-	}
+	} */
 
 	async jobsApiCall() {
 		this.logger.log('create jobs api calling');
@@ -356,9 +355,9 @@ export class ContentService {
 		}
 	}
 
-	async searchResponse(body) {
+	/* async searchResponse(body) {
 		return this.hasuraService.searchResponse(body);
-	}
+	} */
 
 	generateFixedId(...strings) {
 		const combinedString = strings.join('-'); // Combine strings using a separator
@@ -388,7 +387,7 @@ export class ContentService {
 	//     return result;
 	//  };
 
-	async getState() {
+	/* async getState() {
 		return this.hasuraService.getState();
 	}
 
@@ -633,7 +632,7 @@ export class ContentService {
 			transactionCount: totalDataCount,
 			transactions: transactionsData,
 		};
-	}
+	} */
 
 	convertToUTC(dateStr) {
 		// Parse the date string

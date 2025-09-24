@@ -1,11 +1,100 @@
 version: "3.3"
 
 services:
-  beneficiary-backend:
-    image: beneficiary-backend:latest
+  # DB Service
+  postgres:
+    image: postgres:14.17
+    # container_name: ubi-db
     restart: unless-stopped
-    container_name: beneficiary-backend
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+    volumes:
+      - ubi_pg_data:/var/lib/postgresql/data
     ports:
-      - 3000:3000
+      - "5432:5432"
+    networks:
+      - ubi_nw
+
+  # PGAdmin Service
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    # container_name: pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "8082:80"
+    depends_on:
+      - postgres
+    networks:
+      - ubi_nw
+
+  # Hasura service
+  hasura:
+    image: hasura/graphql-engine
+    # container_name: Hasura-Dev
+    ports:
+      - "8081:8080"
+    environment:
+      - HASURA_GRAPHQL_DATABASE_URL=${HASURA_GRAPHQL_DATABASE_URL}
+      - HASURA_GRAPHQL_ENABLE_CONSOLE=true
+      - HASURA_GRAPHQL_ENABLED_LOG_TYPES=startup,http-log,webhook-log,websocket-log,query-log
+      - HASURA_GRAPHQL_ADMIN_SECRET=${HASURA_GRAPHQL_ADMIN_SECRET}
+    volumes:
+      - ./metadata:/hasura-metadata
+      - ./migrations:/hasura-migrations
+    depends_on:
+      - postgres
+    networks:
+      - ubi_nw
+
+  # Keycloak Service
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.1
+    # container_name: keycloak
+    restart: unless-stopped
+    command: ["start-dev"]
+    environment:
+      KC_DB: ${KC_DB}
+      KC_DB_URL: ${KC_DB_URL}
+      KC_DB_USERNAME: ${KC_DB_USERNAME}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_URL: http://localhost:8080
+      KC_HOSTNAME_ADMIN_URL: http://localhost:8080
+      KEYCLOAK_FRONTEND_URL: http://localhost:8080
+      KC_HOSTNAME_STRICT: "false"
+      PROXY_ADDRESS_FORWARDING: "true"
+    volumes:
+      - ./keycloak-import:/opt/keycloak/data/import
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - ubi_nw
+
+  # Backend Service
+  ubi-beneficiary-backend:
+    image: ubi-beneficiary-backend:latest
+    restart: unless-stopped
+    container_name: ubi-beneficiary-backend
+    ports:
+      - "3000:3000"
     env_file:
       - ./.env
+    networks:
+      - ubi_nw
+
+volumes:
+  ubi_pg_data:
+
+networks:
+  ubi_nw:
+    name: ubi_nw
+    driver: bridge

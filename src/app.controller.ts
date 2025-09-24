@@ -2,20 +2,39 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Post,
   Request,
   UseGuards,
 } from '@nestjs/common';
 import { AppService } from './app.service';
 import { ProxyService } from './services/proxy/proxy.service';
-import { AuthGuard } from '@modules/auth/auth.guard';
 import { ContentService } from './content/content.service';
+import { AuthGuard } from '@modules/auth/auth.guard';
+import { ApiTags, ApiOperation, ApiResponse, ApiExcludeEndpoint, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { 
+  SelectRequestDto, 
+  InitRequestDto, 
+  ConfirmRequestDto, 
+  SearchRequestDto 
+} from './dto/network-api.dto';
+import { LoggerService } from './logger/logger.service';
 
+// Common response constants
+const COMMON_RESPONSES = {
+  SUCCESS: { status: 200, description: 'Operation completed successfully' },
+  BAD_REQUEST: { status: 400, description: 'Invalid request or schema validation failed' },
+  UNAUTHORIZED: { status: 401, description: 'Authentication required' },
+};
+
+@ApiTags('Network API')
 @Controller()
 export class AppController {
   constructor(
     private readonly appService: AppService,
     private readonly proxyService: ProxyService,
+    private readonly logger: LoggerService,
+    private readonly contentService: ContentService,
   ) {}
 
   @Get()
@@ -23,21 +42,42 @@ export class AppController {
     return this.appService.getHello();
   }
 
+  @ApiExcludeEndpoint()
   @Post('/search')
+  @ApiOperation({ summary: 'Search for benefits/services' })
+  @ApiBody({ type: SearchRequestDto })
+  @ApiResponse(COMMON_RESPONSES.SUCCESS)
+  @ApiResponse(COMMON_RESPONSES.BAD_REQUEST)
+  @HttpCode(200)
   async searchContent(@Request() request, @Body() body) {
-    let endPoint = 'search';
-    console.log('search method calling...', body);
-    return await this.proxyService.bapCLientApi2(endPoint, body);
+    try {
+      const result = await this.proxyService.bapCLientApi2('search', body);
+      return result;
+    } catch (error) {
+      this.logger.error('Search request failed', error);
+      throw error;
+    }
   }
 
   @Post('/select')
+  @ApiOperation({ summary: 'Select specific benefit/service items' })
+  @ApiBody({ type: SelectRequestDto })
+  @ApiResponse(COMMON_RESPONSES.SUCCESS)
+  @ApiResponse(COMMON_RESPONSES.BAD_REQUEST)
   async selectContent(@Request() request, @Body() body) {
     let endPoint = 'select';
     return await this.appService.getSelectContent(endPoint, body);
+  
   }
 
   @Post('/init')
   @UseGuards(AuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Initialize benefit application process' })
+  @ApiBody({ type: InitRequestDto })
+  @ApiResponse(COMMON_RESPONSES.SUCCESS)
+  @ApiResponse(COMMON_RESPONSES.BAD_REQUEST)
+  @ApiResponse(COMMON_RESPONSES.UNAUTHORIZED)
   async initContent(@Request() request, @Body() body) {
     let endPoint = 'init';
     console.log('init method calling...');
@@ -46,12 +86,19 @@ export class AppController {
 
   @Post('/confirm')
   @UseGuards(AuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Confirm benefit application' })
+  @ApiBody({ type: ConfirmRequestDto })
+  @ApiResponse(COMMON_RESPONSES.SUCCESS)
+  @ApiResponse(COMMON_RESPONSES.BAD_REQUEST)
+  @ApiResponse(COMMON_RESPONSES.UNAUTHORIZED)
   async confirmContent(@Request() request, @Body() body) {
     let endPoint = 'confirm';
     console.log('confirm method calling...');
     return await this.proxyService.bapCLientApi2(endPoint, body);
   }
 
+  @ApiExcludeEndpoint()
   @Post('/status')
   @UseGuards(AuthGuard)
   async statusContent(@Request() request, @Body() body) {
@@ -60,6 +107,7 @@ export class AppController {
     return await this.proxyService.bapCLientApi2(endPoint, body);
   }
 
+  @ApiExcludeEndpoint()
   @Post('/update')
   @UseGuards(AuthGuard)
   async updateContent(@Request() request, @Body() body) {

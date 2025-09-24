@@ -1,6 +1,8 @@
 import { Body, Controller, Post, Res } from '@nestjs/common';
 import { OtpService } from './otp.service';
+import { ApiExcludeController } from '@nestjs/swagger';
 
+@ApiExcludeController()
 @Controller('otp')
 export class OtpController {
   constructor(private readonly otpService: OtpService) {}

@@ -19,8 +19,8 @@ export class CreateUserDocDTO {
   user_id: string;
 
   @ApiProperty({
-    description: 'The type of the document (e.g.Marksheet)',
-    example: 'Marksheet',
+    description: 'The type of the document',
+    example: 'associationProof',
     maxLength: 50,
   })
   @IsString()
@@ -30,7 +30,7 @@ export class CreateUserDocDTO {
 
   @ApiProperty({
     description: 'The subtype of the document',
-    example: '10th  marksheet',
+    example: 'enrollmentCertificate',
     maxLength: 255,
   })
   @IsString()
@@ -40,7 +40,7 @@ export class CreateUserDocDTO {
 
   @ApiProperty({
     description: 'The name of the document',
-    example: 'Income Certificate for John Doe',
+    example: 'Enrollment Certificate',
     maxLength: 255,
   })
   @IsString()
@@ -50,7 +50,7 @@ export class CreateUserDocDTO {
 
   @ApiProperty({
     description: 'Source where the document was imported from',
-    example: 'Government Portal',
+    example: 'QR Code',
     maxLength: 255,
   })
   @IsString()
@@ -60,7 +60,7 @@ export class CreateUserDocDTO {
 
   @ApiProperty({
     description: 'The path where the document is stored',
-    example: '/documents/income_certificate.pdf',
+    example: '/documents/enrollmentCertificate.pdf',
     maxLength: 255,
     required: false,
   })
@@ -71,10 +71,10 @@ export class CreateUserDocDTO {
 
   @ApiProperty({
     description: 'The path where the document data fetched from',
-    example: '/documents/income_certificate.json',
+    example: '/documents/enrollmentCertificate.json',
     maxLength: 1500,
     required: false,
-  })
+  })  
   @IsString()
   @IsOptional()
   @MaxLength(1500)
