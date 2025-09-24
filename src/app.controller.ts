@@ -9,6 +9,7 @@ import {
 import { AppService } from './app.service';
 import { ProxyService } from './services/proxy/proxy.service';
 import { AuthGuard } from '@modules/auth/auth.guard';
+import { ContentService } from './content/content.service';
 
 @Controller()
 export class AppController {
@@ -32,7 +33,7 @@ export class AppController {
   @Post('/select')
   async selectContent(@Request() request, @Body() body) {
     let endPoint = 'select';
-    return await this.proxyService.bapCLientApi2(endPoint, body);
+    return await this.appService.getSelectContent(endPoint, body);
   }
 
   @Post('/init')
