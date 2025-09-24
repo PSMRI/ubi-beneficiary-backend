@@ -4,16 +4,15 @@ import {
   Get,
   Param,
   Post,
-  Query,
   Request,
   UseGuards
 } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { ContentService } from './content.service';
-import { CreateOrderDto } from './dto/create-user.dto';
-import { ApiResponse, ApiTags } from '@nestjs/swagger';
-import { promises as fs } from 'fs';
-import * as path from 'path';
+import { ApiResponse, ApiTags, ApiExcludeEndpoint, ApiBody, ApiOperation } from '@nestjs/swagger';
+//NO SONAR
+/* import { promises as fs } from 'fs';
+import * as path from 'path'; */ 
 import { AuthGuard } from '@modules/auth/auth.guard';
 
 @ApiTags('Content')
@@ -25,22 +24,77 @@ export class ContentController {
   ) {}
 
   @Post('/search')
+  @ApiOperation({ summary: 'Search for benefits/services with filters' })
+  @ApiResponse({ status: 200, description: 'Search results returned successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid request parameters' })
+  @ApiBody({
+    description: 'Search request payload with filters and pagination',
+    schema: {
+      type: 'object',
+      properties: {
+        filters: {
+          type: 'object',
+          properties: {
+            annualIncome: { 
+              type: 'string', 
+              example: '0-100000',
+              description: 'Annual income range filter'
+            },
+            gender: { 
+              type: 'string', 
+              example: '',
+              description: 'Gender filter (optional)'
+            },
+            caste: { 
+              type: 'string', 
+              example: '',
+              description: 'Caste filter (optional)'
+            }
+          }
+        },
+        search: { 
+          type: 'string', 
+          example: '',
+          description: 'Search term for text-based filtering'
+        },
+        page: { 
+          type: 'number', 
+          example: 1,
+          description: 'Page number for pagination'
+        },
+        limit: { 
+          type: 'number', 
+          example: 5,
+          description: 'Number of results per page'
+        },
+        strictCheck: { 
+          type: 'boolean', 
+          example: true,
+          description: 'Whether to apply strict eligibility checking'
+        }
+      }
+     
+    }
+  })
   async getContent(@Request() request, @Body() body) {
     this.logger.log('POST /search');
     return this.contentService.getJobs(body, request);
   }
 
+/*   @ApiExcludeEndpoint()
   @Post('/responseSearch')
   async searchResponse(@Request() request, @Body() body) {
     this.logger.log('POST /responseSearch');
     return this.contentService.searchResponse(body);
-  }
+  } */
 
-  @Get('/getState')
+
+  /* @Get('/getState')
   async getState() {
     this.logger.log('GET /getState');
     return this.contentService.getState();
   }
+
 
   @Get('/getCity')
   async getCity(@Query('state') state: string) {
@@ -48,13 +102,15 @@ export class ContentController {
     return this.contentService.getCity(state);
   }
 
+
   @Get('/getTitle')
   async getTitle() {
     this.logger.log('GET /getTitle');
     return this.contentService.getTitle();
-  }
+  } */
 
   // create jobs manually
+
   @Post('/create')
   async contentapi() {
     this.logger.log('POST /create');
@@ -62,15 +118,17 @@ export class ContentController {
     // return this.contentService.testApiCall()
   }
 
-  @Post('/createOrder')
+
+/*   @Post('/createOrder')
   createOrder(@Body() createOrderDto: CreateOrderDto) {
     return this.contentService.createOrder(createOrderDto);
   }
+ */
 
-  @Get('/searchOrder/:OredrId')
+/*   @Get('/searchOrder/:OredrId')
   searchOrderByOrderId(@Param('OredrId') OredrId) {
     return this.contentService.searchOrderByOrderId(OredrId);
-  }
+  } */
 
   // create jobs by cronjob
   // @Cron(CronExpression.EVERY_8_HOURS)
@@ -97,11 +155,13 @@ export class ContentController {
   //     return this.contentService.deleteResponse()
   // }
 
-  @Post('/telemetry')
+  
+ /*  @Post('/telemetry')
   async telemetry(@Request() request, @Body() body) {
     this.logger.log('POST /telemetry', JSON.stringify(body));
     return this.contentService.addTelemetry(body);
   }
+
 
   @Post('/analytics')
   async analytics(@Request() request, @Body() body) {
@@ -110,12 +170,13 @@ export class ContentController {
     return this.contentService.analytics(body);
   }
 
-  @Post('/telemetryAnalytics')
+  @ApiExcludeEndpoint()  @Post('/telemetryAnalytics')
   async telemetryAnalytics(@Request() request, @Body() body) {
     this.logger.log('GET /telemetryAnalytics');
     return this.contentService.telemetryAnalytics1(body);
   }
 
+ 
   @Get('/documents_list')
   @ApiResponse({
     status: 200,
@@ -144,10 +205,12 @@ export class ContentController {
       };
     }
   }
+ 
   @Post('/encrypt')
   async encrption(@Request() request, @Body() body) {
     return this.contentService.encryption(body);
   }
+
 
   @Post('/decrypt')
   async decryption(
@@ -155,8 +218,9 @@ export class ContentController {
     @Body() body: { encryptedData: string },
   ) {
     return this.contentService.decryption(body.encryptedData);
-  }
+  } */
 
+@ApiExcludeEndpoint()
 @UseGuards(AuthGuard)
 @Get('/eligibility-check/:benefitId')
 @ApiResponse({ status: 200, description: 'Eligibility result' })
