@@ -1,9 +1,10 @@
 import { NetworkCache } from '@entities/network-cache.entity';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { Repository } from 'typeorm';
 import { LoggerService } from './logger/logger.service';
 import { InjectRepository } from '@nestjs/typeorm';
+
 @Injectable()
 export class AppService {
   constructor(
@@ -17,8 +18,16 @@ export class AppService {
   }
   async getSelectContent(endpoint: string, body) {	
     try {
-      const benefitId = body.message.order.items[0].id;
-      const bpp_id = body.context.bpp_id;
+      const benefitId = body?.message?.order?.items[0]?.id;
+      if (!benefitId) {
+        this.logger.error('Benefit ID not found in the request');
+        throw new NotFoundException('Benefit ID not found in the request');
+      }
+      const bpp_id = body?.context?.bpp_id;
+      if (!bpp_id) {
+        this.logger.error('BPP ID not found in the request');
+        throw new NotFoundException('BPP ID not found in the request');
+      }
       // Fetch bpp_id and bpp_uri from ubi_network_cache table using TypeORM
       const cacheEntry = await this.networkCacheRepository.findOne({
         where: { item_id: benefitId, bpp_id: bpp_id },
@@ -32,14 +41,14 @@ export class AppService {
         body.context = body.context || {};
         body.context.bpp_uri = cacheEntry.bpp_uri;
         
-      } else {
-        this.logger.error('No BPP info found for benefitId:', benefitId);
-        throw new Error(`BPP information not found for benefitId: ${benefitId}`);
-      }
+      } else { 
+        this.logger.warn(`No BPP info found for item_id=${benefitId}${bpp_id ? `, bpp_id=${bpp_id}` : ''}`);  
+        throw new NotFoundException(`BPP information not found for item ${benefitId}`); 
+       }
       
       return await this.proxyService.bapCLientApi2(endpoint, body);
       
-    } catch (error) {
+    } catch (error) { 
       this.logger.error(`Error in ${endpoint} processing:`, error);
       throw error;
     }
