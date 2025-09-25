@@ -8,7 +8,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AppService } from './app.service';
-import { LoggerService } from './logger/logger.service';
 import { ProxyService } from './services/proxy/proxy.service';
 import { ContentService } from './content/content.service';
 import { AuthGuard } from '@modules/auth/auth.guard';
@@ -19,6 +18,7 @@ import {
   ConfirmRequestDto, 
   SearchRequestDto 
 } from './dto/network-api.dto';
+import { LoggerService } from './logger/logger.service';
 
 // Common response constants
 const COMMON_RESPONSES = {
@@ -65,13 +65,9 @@ export class AppController {
   @ApiResponse(COMMON_RESPONSES.SUCCESS)
   @ApiResponse(COMMON_RESPONSES.BAD_REQUEST)
   async selectContent(@Request() request, @Body() body) {
-    try {
-      const result = await this.proxyService.bapCLientApi2('select', body);
-      return result;
-    } catch (error) {
-      this.logger.error('Select request failed', error);
-      throw error;
-    }
+    let endPoint = 'select';
+    return await this.appService.getSelectContent(endPoint, body);
+  
   }
 
   @Post('/init')

@@ -106,8 +106,6 @@ export class ContentService {
 	private readonly domain = process.env.DOMAIN;
 	private readonly bap_id = process.env.BAP_ID;
 	private readonly bap_uri = process.env.BAP_URI;
-	private readonly bpp_id = process.env.BPP_ID;
-	private readonly bpp_uri = process.env.BPP_URI;
 	private readonly response_cache_db = process.env.RESPONSE_CACHE_DB;
 	private readonly telemetry_db = process.env.TELEMETRY_DB;
 	private readonly eligibility_base_uri = process.env.ELIGIBILITY_API_URL;
@@ -132,7 +130,6 @@ export class ContentService {
 
 			// Fetch jobs from Hasura
 			const filteredData = await this.hasuraService.findJobsCache(body);
-
 			let filteredJobs: any[] = [];
 			if (
 				!(filteredData instanceof ErrorResponse) &&
@@ -261,8 +258,6 @@ export class ContentService {
 				version: '1.1.0',
 				bap_id: this.bap_id,
 				bap_uri: this.bap_uri,
-				bpp_id: this.bpp_id,
-				bpp_uri: this.bpp_uri,
 				transaction_id: uuidv4(),
 				message_id: uuidv4(),
 				timestamp: new Date().toISOString(),
