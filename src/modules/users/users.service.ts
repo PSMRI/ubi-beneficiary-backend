@@ -21,7 +21,6 @@ import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { AdminService } from '@modules/admin/admin.service';
@@ -209,13 +208,13 @@ export class UserService {
 
   async findUserDocs(user_id: string, decryptData: boolean) {
     const userDocs = await this.userDocsRepository.find({ where: { user_id } });
-
+    
     // Retrieve the document subtypes set from the DocumentListProvider
-    const documentTypes = DocumentListProvider.getDocumentSubTypesSet();
-
+    const documentTypes =await this.adminService.getConfigByKey('vcConfiguration');
+   
     return userDocs.map((doc) => ({
       ...doc,
-      is_uploaded: documentTypes.has(doc.doc_subtype),
+      is_uploaded: documentTypes.value.some(obj => obj.documentSubType === doc.doc_subtype),
     }));
   }
 
