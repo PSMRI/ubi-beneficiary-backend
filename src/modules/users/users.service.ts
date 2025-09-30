@@ -215,7 +215,7 @@ export class UserService {
       const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
       docTypes = Array.isArray(vcConfig?.value) ? vcConfig.value : [];
     } catch (error) {
-      console.error('Failed to fetch vcConfiguration:', error);
+      Logger.error('Failed to fetch vcConfiguration:', error);
       docTypes = [];
     }
   
