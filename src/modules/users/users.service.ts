@@ -210,8 +210,14 @@ export class UserService {
     const userDocs = await this.userDocsRepository.find({ where: { user_id } });
     
     // Retrieve supported document subtypes from settings (vcConfiguration)
-    const vcConfig =await this.adminService.getConfigByKey('vcConfiguration');
-    const docTypes = Array.isArray(vcConfig?.value) ? vcConfig.value : [];
+    let docTypes = [];
+    try {
+      const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
+      docTypes = Array.isArray(vcConfig?.value) ? vcConfig.value : [];
+    } catch (error) {
+      console.error('Failed to fetch vcConfiguration:', error);
+      docTypes = [];
+    }
   
     return userDocs.map((doc) => ({
       ...doc,
