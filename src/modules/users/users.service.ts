@@ -209,12 +209,13 @@ export class UserService {
   async findUserDocs(user_id: string, decryptData: boolean) {
     const userDocs = await this.userDocsRepository.find({ where: { user_id } });
     
-    // Retrieve the document subtypes set from the DocumentListProvider
-    const documentTypes =await this.adminService.getConfigByKey('vcConfiguration');
-   
+    // Retrieve supported document subtypes from settings (vcConfiguration)
+    const vcConfig =await this.adminService.getConfigByKey('vcConfiguration');
+    const docTypes = Array.isArray(vcConfig?.value) ? vcConfig.value : [];
+  
     return userDocs.map((doc) => ({
       ...doc,
-      is_uploaded: documentTypes.value.some(obj => obj.documentSubType === doc.doc_subtype),
+      is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
     }));
   }
 
