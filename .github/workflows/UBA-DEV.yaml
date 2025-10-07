@@ -21,7 +21,7 @@ jobs:
           port: ${{ secrets.PORT }}
           script: |
             # ----- Export variables -----
-            export BASE_DIR="${{ secrets.SERVER_TARGET_DIR }}"
+            export BASE_DIR="${{ secrets.TARGET_DIR }}"
             export BRANCH="${GITHUB_REF#refs/heads/}"  # Extract branch name
             export SERVICE_NAME="beneficiary-backend"
 
