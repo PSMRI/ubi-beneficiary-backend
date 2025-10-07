@@ -25,8 +25,8 @@ jobs:
             export SERVICE_NAME="beneficiary-backend"
             export TAG="latest"
 
-            # Pass branch name from runner into remote script
-            BRANCH="${GITHUB_REF#refs/heads/}"
+            # Pass branch from runner to remote session
+            BRANCH="${{ github.ref_name }}"
             echo "Deploying branch: $BRANCH"
 
             # ----- Change to base directory -----
