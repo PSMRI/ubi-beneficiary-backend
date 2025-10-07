@@ -1,8 +1,8 @@
 version: "3.3"
 
 services:
-   # DB Service
-   postgres:
+  # DB Service
+  postgres:
     image: postgres:14.17
     # container_name: ubi-db
     restart: unless-stopped
@@ -17,8 +17,8 @@ services:
     networks:
       - ubi_nw
 
-   # PGAdmin Service
-   pgadmin:
+  # PGAdmin Service
+  pgadmin:
     image: dpage/pgadmin4:latest
     # container_name: pgadmin
     restart: unless-stopped
@@ -32,16 +32,16 @@ services:
     networks:
       - ubi_nw
 
-   # Hasura service
-   hasura:
+  # Hasura service
+  hasura:
     image: hasura/graphql-engine
-    #container_name: Hasura-Dev
+    # container_name: Hasura-Dev
     ports:
       - "8081:8080"
     environment:
       - HASURA_GRAPHQL_DATABASE_URL=${HASURA_GRAPHQL_DATABASE_URL}
       - HASURA_GRAPHQL_ENABLE_CONSOLE=true
-      - HASURA_GRAPHQL_ENABLED_LOG_TYPES=startup, http-log, webhook-log, websocket-log, query-log
+      - HASURA_GRAPHQL_ENABLED_LOG_TYPES=startup,http-log,webhook-log,websocket-log,query-log
       - HASURA_GRAPHQL_ADMIN_SECRET=${HASURA_GRAPHQL_ADMIN_SECRET}
     volumes:
       - ./metadata:/hasura-metadata
@@ -51,10 +51,10 @@ services:
     networks:
       - ubi_nw
 
-   # Keycloak Service
-   keycloak:
+  # Keycloak Service
+  keycloak:
     image: quay.io/keycloak/keycloak:24.0.1
-    #container_name: keycloak
+    # container_name: keycloak
     restart: unless-stopped
     command: ["start-dev"]
     environment:
@@ -73,23 +73,21 @@ services:
     volumes:
       - ./keycloak-import:/opt/keycloak/data/import
     ports:
-      - 8080:8080
+      - "8080:8080"
     depends_on:
       - postgres
     networks:
       - ubi_nw
 
+  # Backend Service
   ubi-beneficiary-backend:
     image: ubi-beneficiary-backend:latest
     restart: unless-stopped
     container_name: ubi-beneficiary-backend
     ports:
       - "3000:3000"
-    # See .env.example for required variables
     env_file:
       - ./.env
-    depends_on:
-      - postgres
     networks:
       - ubi_nw
 

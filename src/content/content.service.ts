@@ -3,7 +3,6 @@ import { LoggerService } from 'src/logger/logger.service';
 import { HasuraService } from 'src/services/hasura/hasura.service';
 import { ProxyService } from 'src/services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
-import { CreateOrderDto } from './dto/create-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ResponseCache } from 'src/entity/response.entity';
@@ -107,8 +106,6 @@ export class ContentService {
 	private readonly domain = process.env.DOMAIN;
 	private readonly bap_id = process.env.BAP_ID;
 	private readonly bap_uri = process.env.BAP_URI;
-	private readonly bpp_id = process.env.BPP_ID;
-	private readonly bpp_uri = process.env.BPP_URI;
 	private readonly response_cache_db = process.env.RESPONSE_CACHE_DB;
 	private readonly telemetry_db = process.env.TELEMETRY_DB;
 	private readonly eligibility_base_uri = process.env.ELIGIBILITY_API_URL;
@@ -133,7 +130,6 @@ export class ContentService {
 
 			// Fetch jobs from Hasura
 			const filteredData = await this.hasuraService.findJobsCache(body);
-
 			let filteredJobs: any[] = [];
 			if (
 				!(filteredData instanceof ErrorResponse) &&
@@ -220,7 +216,7 @@ export class ContentService {
 		return this.encrypt.decrypt(data);
 	}
 
-	async createOrder(createOrderDto: CreateOrderDto) {
+	/* async createOrder(createOrderDto: CreateOrderDto) {
 		const createUserDto = {
 			name: createOrderDto.name,
 			gender: createOrderDto.gender,
@@ -247,11 +243,11 @@ export class ContentService {
 			};
 			return this.hasuraService.createOrder(createOrder);
 		}
-	}
+	} */
 
-	searchOrderByOrderId(OredrId) {
+	/* searchOrderByOrderId(OredrId) {
 		return this.hasuraService.searchOrderByOrderId(OredrId);
-	}
+	} */
 
 	async jobsApiCall() {
 		this.logger.log('create jobs api calling');
@@ -262,8 +258,6 @@ export class ContentService {
 				version: '1.1.0',
 				bap_id: this.bap_id,
 				bap_uri: this.bap_uri,
-				bpp_id: this.bpp_id,
-				bpp_uri: this.bpp_uri,
 				transaction_id: uuidv4(),
 				message_id: uuidv4(),
 				timestamp: new Date().toISOString(),
@@ -361,9 +355,9 @@ export class ContentService {
 		}
 	}
 
-	async searchResponse(body) {
+	/* async searchResponse(body) {
 		return this.hasuraService.searchResponse(body);
-	}
+	} */
 
 	generateFixedId(...strings) {
 		const combinedString = strings.join('-'); // Combine strings using a separator
@@ -393,7 +387,7 @@ export class ContentService {
 	//     return result;
 	//  };
 
-	async getState() {
+	/* async getState() {
 		return this.hasuraService.getState();
 	}
 
@@ -638,7 +632,7 @@ export class ContentService {
 			transactionCount: totalDataCount,
 			transactions: transactionsData,
 		};
-	}
+	} */
 
 	convertToUTC(dateStr) {
 		// Parse the date string

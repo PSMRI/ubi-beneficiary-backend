@@ -11,7 +11,6 @@ import {
 	Repository,
 	FindOptionsWhere,
 	In,
-	DeleteResult,
 	UpdateResult,
 	DataSource,
 } from 'typeorm';
@@ -313,7 +312,7 @@ export class CustomFieldsService {
 	 * @param customFields Array of custom field data
 	 * @returns Array of created/updated field values
 	 */
-	async saveCustomFields(
+	 async saveCustomFields(
 		itemId: string,
 		context: FieldContext,
 		customFields: CustomFieldDto[]
@@ -405,7 +404,7 @@ export class CustomFieldsService {
 		);
 		return savedValues;
 
-	}
+	} 
 
 	/**
 	 * Get custom fields for an entity
@@ -413,7 +412,7 @@ export class CustomFieldsService {
 	 * @param context Entity context
 	 * @returns Array of custom field response DTOs
 	 */
-	async getCustomFields(
+	 async getCustomFields(
 		itemId: string,
 		context: FieldContext
 	): Promise<CustomFieldResponseDto[]> {
@@ -481,7 +480,7 @@ export class CustomFieldsService {
 			`Retrieved ${responseFields.length} custom fields for item: ${itemId} (${fieldValueMap.size} have values)`
 		);
 		return responseFields;
-	}
+	} 
 
 	/**
 	 * Delete custom fields for an entity
@@ -490,7 +489,7 @@ export class CustomFieldsService {
 	 * @param fieldIds Optional array of field IDs to delete specific fields
 	 * @returns Delete result
 	 */
-	async deleteCustomFields(
+	/* async deleteCustomFields(
 		itemId: string,
 		context: FieldContext,
 		fieldIds?: string[]
@@ -517,7 +516,7 @@ export class CustomFieldsService {
 		const result = await this.fieldValueRepository.delete(where);
 		this.logger.log(`Deleted custom fields for item: ${itemId}`);
 		return result;
-	}
+	} */
 
 	/**
 	 * Search entities by custom field values
@@ -525,7 +524,7 @@ export class CustomFieldsService {
 	 * @param searchCriteria Search criteria
 	 * @returns Array of entity IDs that match the criteria
 	 */
-	async searchByCustomFields(
+	/* async searchByCustomFields(
 		context: FieldContext,
 		searchCriteria: { fieldId: string; value: any }[]
 	): Promise<string[]> {
@@ -562,14 +561,14 @@ export class CustomFieldsService {
 			`Found ${itemIds.length} items matching custom field criteria`
 		);
 		return itemIds;
-	}
+	} */
 
 	/**
 	 * Get field statistics
 	 * @param context Entity context
 	 * @returns Field usage statistics
 	 */
-	async getFieldStatistics(context: FieldContext): Promise<any> {
+	/* async getFieldStatistics(context: FieldContext): Promise<any> {
 		this.logger.debug(`Getting field statistics for context: ${context}`);
 
 		const fields = await this.fieldRepository.find({
@@ -600,7 +599,7 @@ export class CustomFieldsService {
 			`Generated statistics for ${statistics.length} fields`
 		);
 		return statistics;
-	}
+	} */
 
 	async setFieldValueToNull(itemId: string, fieldId: string): Promise<UpdateResult> {
 		return await this.fieldValueRepository.update({ itemId, fieldId }, { value: null });

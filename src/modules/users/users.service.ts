@@ -10,7 +10,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
 import { User } from '../../entity/user.entity';
-import { CreateUserDto } from './dto/create-user.dto';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
 import { Consent } from '@entities/consent.entity';
@@ -22,7 +21,6 @@ import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DocumentListProvider } from 'src/common/helper/DocumentListProvider';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { AdminService } from '@modules/admin/admin.service';
@@ -60,7 +58,7 @@ export class UserService {
   ) { }
 
 
-  async create(createUserDto: CreateUserDto) {
+ /*  async create(createUserDto: CreateUserDto) {
     const user = this.userRepository.create(createUserDto);
     try {
       const savedUser = await this.userRepository.save(user);
@@ -76,7 +74,7 @@ export class UserService {
         errorMessage: error.message,
       });
     }
-  }
+  } */
 
   async update(userId: string, updateUserDto: any) {
     // Destructure userInfo from the payload
@@ -210,13 +208,20 @@ export class UserService {
 
   async findUserDocs(user_id: string, decryptData: boolean) {
     const userDocs = await this.userDocsRepository.find({ where: { user_id } });
-
-    // Retrieve the document subtypes set from the DocumentListProvider
-    const documentTypes = DocumentListProvider.getDocumentSubTypesSet();
-
+    
+    // Retrieve supported document subtypes from settings (vcConfiguration)
+    let docTypes = [];
+    try {
+      const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
+      docTypes = Array.isArray(vcConfig?.value) ? vcConfig.value : [];
+    } catch (error) {
+      Logger.error('Failed to fetch vcConfiguration:', error);
+      docTypes = [];
+    }
+  
     return userDocs.map((doc) => ({
       ...doc,
-      is_uploaded: documentTypes.has(doc.doc_subtype),
+      is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
     }));
   }
 
@@ -279,7 +284,7 @@ export class UserService {
   }
 
   // User docs save
-  async createUserDoc(createUserDocDto: CreateUserDocDTO) {
+/*   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
     try {
       // Stringify the JSON doc_data before encryption
       const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
@@ -307,7 +312,7 @@ export class UserService {
         errorMessage: error,
       });
     }
-  }
+  } */
 
   async getDoc(createUserDocDto: CreateUserDocDTO) {
     const existingDoc = await this.userDocsRepository.findOne({
@@ -1483,8 +1488,21 @@ export class UserService {
   async getStatus(orderId: string) {
     const bapId = this.configService.get<string>('BAP_ID'); 
     const bapUri = this.configService.get<string>('BAP_URI'); 
-    const bppId = this.configService.get<string>('BPP_ID');  
-    const bppUri = this.configService.get<string>('BPP_URI'); 
+
+
+    // Fetch BPP info from userApplication table
+    const userApplication = await this.userApplicationRepository.findOne({
+      where: { external_application_id: orderId },
+      select: ['benefit_provider_id', 'benefit_provider_uri']
+    });
+
+    if (!userApplication) {
+      throw new Error(`UserApplication not found for orderId: ${orderId}`);
+    }
+
+    const bppId = userApplication.benefit_provider_id;
+    const bppUri = userApplication.benefit_provider_uri;
+   
     if (!bapId || !bapUri || !bppId || !bppUri) {  
       throw new Error('Missing required configuration for BAP/BPP');
     }
@@ -1524,7 +1542,6 @@ export class UserService {
       const rawStatus =
         response?.responses[0]?.message?.order?.fulfillments[0]?.state
           ?.descriptor?.name;
-
       if (!rawStatus) return null;
 
       // Parse status stringified JSON

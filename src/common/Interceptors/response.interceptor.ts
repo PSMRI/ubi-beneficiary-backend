@@ -3,6 +3,7 @@ import {
 	NestInterceptor,
 	ExecutionContext,
 	CallHandler,
+	HttpException,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map, catchError } from 'rxjs/operators';
@@ -15,8 +16,10 @@ export class ResponseInterceptor implements NestInterceptor {
 		return next.handle().pipe(
 			map((data) => {
 				if (data instanceof ErrorResponse) {
+					// Set the actual HTTP status code on the response
+					const response = context.switchToHttp().getResponse();
+					response.status(data.statusCode);
 					// Return the formatted error response object
-					// Let NestJS handle the actual HTTP response
 					return {
 						statusCode: data.statusCode,
 						error: data.errorMessage,
@@ -35,6 +38,17 @@ export class ResponseInterceptor implements NestInterceptor {
 				}
 			}),
 			catchError((err) => {
+				// Handle ErrorResponse thrown as exceptions
+				if (err instanceof ErrorResponse) {
+					// Convert ErrorResponse to HttpException with proper status code
+					throw new HttpException(
+						{
+							statusCode: err.statusCode,
+							error: err.errorMessage,
+						},
+						err.statusCode
+					);
+				}
 				// Re-throw the error to let NestJS exception filters handle it
 				throw err;
 			})
