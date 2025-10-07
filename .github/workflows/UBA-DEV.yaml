@@ -1,52 +1,41 @@
-name: Deploy to UBA-DEV
+name: Deploy to DEV
 
 on:
-  workflow_dispatch:
-    inputs:
-      TAG:
-        description: 'Docker image tag to deploy'
-        required: true
-        default: 'latest'
-      BRANCH:
-        description: 'Git branch to deploy'
-        required: true
-        default: 'main'
   push:
-    tags:
-      - '*'  # Trigger on any tag push
+    branches:
+      - '*'  # Trigger on any branch push
 
 jobs:
-  Deploy_on_UBA_DEV:
+  deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: UBA-DEV
 
     steps:
       - name: Deploy Stack via SSH
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v0.1.9
         with:
-          host: ${{ secrets.HOST_NAME }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: ${{ secrets.PORT }}
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_SSH_PORT }}
           script: |
-            # ----- Export environment variables from secrets & workflow inputs -----
-            export BASE_DIR="${{ secrets.TARGET_DIR }}"
-            export TAG="${{ github.event.inputs.TAG || github.ref_name || 'latest' }}"
-            export BRANCH="${{ github.event.inputs.BRANCH || 'main' }}"
+            # ----- Export variables -----
+            export BASE_DIR="${{ secrets.SERVER_TARGET_DIR }}"
+            export BRANCH="${GITHUB_REF#refs/heads/}"  # Extract branch name
             export SERVICE_NAME="beneficiary-backend"
 
-            # ----- Run deployment -----
+            # ----- Change to project directory -----
             cd "$BASE_DIR" || exit 1
 
-            # Prepare .env
+            # ----- Prepare .env -----
             if [ -f .env ]; then rm .env; fi
-            echo '${{ secrets.DEV_ENV }}' > .env
+            echo "${{ secrets.SERVER_ENV }}" > .env
 
-            # Run deploy script from base dir
+            # ----- Run deploy script -----
             bash deploy.sh
 
-      - name: Notify on Slack channel
+      - name: Notify on Slack
         uses: iRoachie/slack-github-actions@v2.3.2
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
