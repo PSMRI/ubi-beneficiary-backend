@@ -33,7 +33,8 @@ jobs:
             echo "${{ secrets.SERVER_ENV }}" > .env
 
             # ----- Run deploy script -----
-            bash deploy.sh
+            # bash deploy.sh
+            BRANCH="$BRANCH" SERVICE_NAME="$SERVICE_NAME" ./deploy.sh
 
       - name: Notify on Slack
         uses: iRoachie/slack-github-actions@v2.3.2
