@@ -23,8 +23,11 @@ jobs:
             # ----- Variables -----
             export BASE_DIR="${{ secrets.TARGET_DIR }}"
             export SERVICE_NAME="beneficiary-backend"
-            BRANCH="${GITHUB_REF#refs/heads/}"  # Extract branch name
-            TAG="latest"  # Optional: change or get from input/secret
+            export TAG="latest"
+
+            # Pass branch name from runner into remote script
+            BRANCH="${GITHUB_REF#refs/heads/}"
+            echo "Deploying branch: $BRANCH"
 
             # ----- Change to base directory -----
             cd "$BASE_DIR" || exit 1
@@ -37,7 +40,7 @@ jobs:
             chmod +x deploy.sh
 
             # ----- Run deploy.sh with environment variables -----
-            env BRANCH="$BRANCH" SERVICE_NAME="$SERVICE_NAME" TAG="$TAG" ./deploy.sh
+            BRANCH="$BRANCH" SERVICE_NAME="$SERVICE_NAME" TAG="$TAG" ./deploy.sh
 
       - name: Notify on Slack
         uses: iRoachie/slack-github-actions@v2.3.2
