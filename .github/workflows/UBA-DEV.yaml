@@ -6,7 +6,7 @@ on:
       - '*'  # Trigger on any branch push
 
 jobs:
-  deploy:
+  Deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: UBA-DEV
@@ -32,9 +32,11 @@ jobs:
             if [ -f .env ]; then rm .env; fi
             echo "${{ secrets.SERVER_ENV }}" > .env
 
+            # ----- Ensure deploy.sh is executable -----
+            chmod +x deploy.sh
+
             # ----- Run deploy script -----
-            # bash deploy.sh
-            BRANCH="$BRANCH" SERVICE_NAME="$SERVICE_NAME" ./deploy.sh
+            ./deploy.sh
 
       - name: Notify on Slack
         uses: iRoachie/slack-github-actions@v2.3.2
