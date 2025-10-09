@@ -1,55 +1,58 @@
 name: Deploy to UBA-PILOT
 
 on:
-  workflow_dispatch:
-    inputs:
-      TAG:
-        description: 'Docker image tag to deploy'
-        required: true
-        default: 'v0.0.0'
-      BRANCH:
-        description: 'Git branch to deploy'
-        required: true
-        default: 'main'
   push:
+    # Trigger on tags matching vX.Y.Z or vX.Y.Z-<suffix>
     tags:
-      - '*'  # Trigger on any tag push
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
 
 jobs:
-  Deploy_on_UBA_PILOT:
+  deploy_on_UBA_PILOT:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: UBA-DEPWD-PILOT
 
     steps:
       - name: Deploy Stack via SSH
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v0.1.9
         with:
-          host: ${{ secrets.HOST_NAME_PILOT }}
-          username: ${{ secrets.USERNAME_PILOT }}
-          key: ${{ secrets.EC2_SSH_KEY_PILOT }}
-          port: ${{ secrets.PORT_PILOT }}
+          host: ${{ secrets.HOST_NAME }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.PORT }}
           script: |
-            # ----- Export environment variables from secrets & workflow inputs -----
-            export BASE_DIR="${{ secrets.TARGET_DIR_PILOT }}"
-            export TAG="${{ github.event.inputs.TAG || github.ref_name || 'latest' }}"
-            export BRANCH="${{ github.event.inputs.BRANCH || 'main' }}"
+            echo "🚀 Starting UBA-PILOT deployment..."
+            # ----- Variables -----
+            export BASE_DIR="${{ secrets.TARGET_DIR }}"
             export SERVICE_NAME="ubi-beneficiary-backend"
+            export CONTAINER_NAME="beneficiary-backend"
+            # TAG from pushed tag
+            TAG="${{ github.ref_name }}"
+            # Branch for reference (optional)
+            BRANCH="${{ github.ref_name }}"
 
-            # ----- Run deployment -----
+            echo "Deploying TAG: $TAG on branch: $BRANCH"
+
+            # ----- Change to base directory -----
             cd "$BASE_DIR" || exit 1
 
-            # Prepare .env
+            # ----- Prepare .env -----
             if [ -f .env ]; then rm .env; fi
-            echo '${{ secrets.ENV_PILOT }}' > .env
+            echo "${{ secrets.ENV }}" > .env
 
-            # Run deploy script from base dir
-            bash deploy.sh
+            # ----- Ensure deploy.sh is executable -----
+            chmod +x deploy.sh
+
+            # ----- Run deploy.sh with environment variables -----
+            # Pass TAG for rollback if needed
+            SERVICE_NAME="$SERVICE_NAME" CONTAINER_NAME="$CONTAINER_NAME" TAG="$TAG" BRANCH="$BRANCH" ./deploy.sh
 
       - name: Notify on Slack channel
         uses: iRoachie/slack-github-actions@v2.3.2
+        if: ${{ always() }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         with:
           status: ${{ job.status }}
-        if: ${{ always() }}
+          fields: repo,commit,author
