@@ -1,11 +1,12 @@
 name: Deploy to UBA-PILOT
 
 on:
-  push:
-    # Trigger on tags matching vX.Y.Z or vX.Y.Z-<suffix>
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      TAG:
+        description: 'Docker image tag to deploy (must match vX.Y.Z or vX.Y.Z-<suffix>)'
+        required: true
+        default: 'v0.0.0'
 
 jobs:
   deploy_on_UBA_PILOT:
@@ -14,6 +15,16 @@ jobs:
     environment: UBA-DEPWD-PILOT
 
     steps:
+      - name: Validate TAG format
+        run: |
+          TAG="${{ github.event.inputs.TAG }}"
+          echo "Validating TAG: $TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "❌ Invalid TAG format. Must be vX.Y.Z or vX.Y.Z-<suffix>"
+            exit 1
+          fi
+          echo "✅ TAG format is valid"
+
       - name: Deploy Stack via SSH
         uses: appleboy/ssh-action@v0.1.9
         with:
@@ -23,29 +34,21 @@ jobs:
           port: ${{ secrets.PORT }}
           script: |
             echo "🚀 Starting UBA-PILOT deployment..."
-            # ----- Variables -----
             export BASE_DIR="${{ secrets.TARGET_DIR }}"
             export SERVICE_NAME="ubi-beneficiary-backend"
             export CONTAINER_NAME="beneficiary-backend"
-            # TAG from pushed tag
-            TAG="${{ github.ref_name }}"
-            # Branch for reference (optional)
-            BRANCH="${{ github.ref_name }}"
+            TAG="${{ github.event.inputs.TAG }}"
+            # Dynamically get branch at runtime
+            BRANCH="${GITHUB_REF_NAME:-main}"
 
             echo "Deploying TAG: $TAG on branch: $BRANCH"
 
-            # ----- Change to base directory -----
             cd "$BASE_DIR" || exit 1
 
-            # ----- Prepare .env -----
             if [ -f .env ]; then rm .env; fi
             echo "${{ secrets.ENV }}" > .env
 
-            # ----- Ensure deploy.sh is executable -----
             chmod +x deploy.sh
-
-            # ----- Run deploy.sh with environment variables -----
-            # Pass TAG for rollback if needed
             SERVICE_NAME="$SERVICE_NAME" CONTAINER_NAME="$CONTAINER_NAME" TAG="$TAG" BRANCH="$BRANCH" ./deploy.sh
 
       - name: Notify on Slack channel
