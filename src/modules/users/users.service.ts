@@ -1549,7 +1549,6 @@ export class UserService {
 
       // Parse status stringified JSON
       const parsedStatus = JSON.parse(rawStatus);
-      console.log('parsedStatus+++++++++++++++', parsedStatus);
       return parsedStatus; // { status: '...', comment: '...' }
     } catch (error) {
       console.error(`Error while getting status from response: ${error}`);
