@@ -605,9 +605,12 @@ export class UserService {
   async createUserApplication(
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
-
-
     try {
+      // Validate that order_id is provided if required
+      if (!createUserApplicationDto.order_id) {
+        Logger.warn('Order ID not provided in user application request');
+      }
+
       // Check if an application already exists for the given benefit_id and user_id
       const existingApplication = await this.userApplicationRepository.findOne({
         where: {
