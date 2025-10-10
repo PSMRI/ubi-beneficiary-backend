@@ -4,6 +4,7 @@ import {
 	IsNotEmpty,
 	IsIn,
 	IsOptional,
+	MaxLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -52,27 +53,25 @@ export class CreateUserApplicationDto {
 		type: String,
 		maxLength: 100,
 		example: 'TLEXP_C8C57A3E_1756888693643',
-		required: false,
 	})
 	@IsString()
 	@IsOptional()
+	@MaxLength(100)
 	external_application_id: string;
 
 	@ApiProperty({
 		description: 'Order ID returned by the init API',
 		type: String,
-		maxLength: 255,
+		maxLength: 100,
 		example: 'ORDER_123456789',
-		required: false,
 	})
-	@IsOptional()
 	@IsString()
 	order_id?: string;
 
 	@ApiProperty({
 		description: 'Transaction ID returned by the init API',
 		type: String,
-		maxLength: 255,
+		maxLength: 100,
 		example: 'TRANSACTION_123456789',
 		required: false,
 	})
