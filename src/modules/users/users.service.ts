@@ -1496,7 +1496,7 @@ export class UserService {
     // Fetch BPP info from userApplication table
     const userApplication = await this.userApplicationRepository.findOne({
       where: { external_application_id: orderId },
-      select: ['benefit_provider_id', 'benefit_provider_uri']
+      select: ['benefit_provider_id', 'benefit_provider_uri', 'transaction_id']
     });
 
     if (!userApplication) {
@@ -1505,7 +1505,7 @@ export class UserService {
 
     const bppId = userApplication.benefit_provider_id;
     const bppUri = userApplication.benefit_provider_uri;
-   
+    const transactionId = userApplication.transaction_id;
     if (!bapId || !bapUri || !bppId || !bppUri) {  
       throw new Error('Missing required configuration for BAP/BPP');
     }
@@ -1521,7 +1521,7 @@ export class UserService {
         bap_uri: bapUri,
         bpp_id: bppId,
         bpp_uri: bppUri,
-        transaction_id: uuidv4(),
+        transaction_id: transactionId,
         message_id: uuidv4(),
         location: {
 					country: {
@@ -1549,6 +1549,7 @@ export class UserService {
 
       // Parse status stringified JSON
       const parsedStatus = JSON.parse(rawStatus);
+      console.log('parsedStatus+++++++++++++++', parsedStatus);
       return parsedStatus; // { status: '...', comment: '...' }
     } catch (error) {
       console.error(`Error while getting status from response: ${error}`);
