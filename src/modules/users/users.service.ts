@@ -1491,7 +1491,11 @@ export class UserService {
     // Fetch BPP info from userApplication table
     const userApplication = await this.userApplicationRepository.findOne({
       where: { bpp_application_id: orderId },
-      select: ['benefit_provider_id', 'benefit_provider_uri', 'transaction_id']
+      select: [
+        'benefit_provider_id',
+        'benefit_provider_uri',
+        'transaction_id'
+      ],
     });
 
     if (!userApplication) {
@@ -1501,8 +1505,8 @@ export class UserService {
     const bppId = userApplication.benefit_provider_id;
     const bppUri = userApplication.benefit_provider_uri;
     const transactionId = userApplication.transaction_id;
-    if (!bapId || !bapUri || !bppId || !bppUri) {  
-      throw new Error('Missing required configuration for BAP/BPP');
+    if (!bapId || !bapUri || !bppId || !bppUri || !transactionId) {  
+      throw new Error('Missing required configuration for BAP/BPP or transaction_id not found in database');
     }
     
     const body = {
