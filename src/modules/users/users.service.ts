@@ -606,11 +606,6 @@ export class UserService {
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
     try {
-      // Validate that order_id is provided if required
-      if (!createUserApplicationDto.order_id) {
-        Logger.warn('Order ID not provided in user application request');
-      }
-
       // Check if an application already exists for the given benefit_id and user_id
       const existingApplication = await this.userApplicationRepository.findOne({
         where: {
@@ -1495,7 +1490,7 @@ export class UserService {
 
     // Fetch BPP info from userApplication table
     const userApplication = await this.userApplicationRepository.findOne({
-      where: { external_application_id: orderId },
+      where: { bpp_application_id: orderId },
       select: ['benefit_provider_id', 'benefit_provider_uri', 'transaction_id']
     });
 
@@ -1561,7 +1556,7 @@ export class UserService {
       const results = await Promise.allSettled(
         applications.map(async (application: any) => {
           const statusData = await this.getStatus(
-            application.external_application_id,
+            application.bpp_application_id,
           );
           await this.updateStatus(application, statusData);
         }),

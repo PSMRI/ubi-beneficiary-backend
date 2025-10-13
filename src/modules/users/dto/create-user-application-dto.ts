@@ -57,14 +57,16 @@ export class CreateUserApplicationDto {
 	@IsString()
 	@IsOptional()
 	@MaxLength(100)
-	external_application_id: string;
+	bpp_application_id: string;
 
 	@ApiProperty({
 		description: 'Order ID returned by the init API',
 		type: String,
 		maxLength: 100,
 		example: 'ORDER_123456789',
+		required: false,
 	})
+	@IsOptional()
 	@IsString()
 	order_id?: string;
 
