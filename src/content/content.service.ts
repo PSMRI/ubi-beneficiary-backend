@@ -287,9 +287,10 @@ export class ContentService {
 			const response = await this.proxyService.bapCLientApi2('search', data);	
 			if (response) {
 				// Log number of BPP responses received
-				const bppCount = response.responses?.length || 0;
-				const bppIds = response.responses?.map(r => r.context?.bpp_id)|| [];
-				this.logger.log(`Received responses from ${bppCount} BPP(s)}`);
+				const bppIds = response.responses
+				?.map((r) => r.context?.bpp_id)
+				.filter((id) => id != null) || [];
+				this.logger.log(`Received responses from ${bppIds.length} BPP(s)}`);
 				
 				const arrayOfObjects = [];
 				for (const responses of response.responses) {
