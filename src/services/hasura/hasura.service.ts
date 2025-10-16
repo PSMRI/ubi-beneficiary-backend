@@ -290,7 +290,7 @@ export class HasuraService {
 	);
 
 	// First delete existing records for the specified BPPs only
-	if (arrayOfObjects.length > 0 ) {
+	if (bpps.length > 0) {
 		try {
 			await this.deleteJobsByBpps(bpps);
 			this.logger.log(
@@ -301,7 +301,6 @@ export class HasuraService {
 			throw error;
 		}
 	}
-    
     // $provider_id: String, provider_name: String, bpp_id: String, bpp_uri: String
     // provider_id: $provider_id, provider_name: $provider_name, bpp_id: $bpp_id, bpp_uri: $bpp_uri
     const query = `mutation MyMutation($title: String, $description: String, $url: String, $provider_name: String, $enrollmentEndDate: timestamptz, $bpp_id: String, $unique_id: String, $bpp_uri: String, $item_id: String, $offeringInstitute: jsonb, $credits: String, $instructors: String,$provider_id: String, $item: json, $descriptor: json, $categories: json, $fulfillments: json) { 
@@ -434,9 +433,13 @@ export class HasuraService {
     }
   }
   async deleteJobsByBpps(bpps: string[]) {
-	// Build the _in clause for the query with the array of BPP IDs
-	const bppIdsArray = bpps.map((bpp) => `"${bpp}"`).join(', ');
-
+		// Build the _in clause for the query with the array of BPP IDs
+	const validBpps = bpps.filter((bpp) => bpp != null && bpp !== '');
+	if (validBpps.length === 0) {
+		this.logger.warn('All provided BPP IDs were invalid');
+		return { data: { [`delete_${this.cache_db}`]: { affected_rows: 0 } } };
+	}
+	const bppIdsArray = validBpps.map((bpp) => `"${bpp}"`).join(', ');
 	const query = `mutation MyMutation {
 		delete_${this.cache_db}(where: {bpp_id: {_in: [${bppIdsArray}]}}) {
 		  affected_rows
@@ -447,12 +450,12 @@ export class HasuraService {
 		const result = await this.queryDb(query);
 		const affectedRows = result.data[`delete_${this.cache_db}`].affected_rows;
 		this.logger.log(
-			`Deleted ${affectedRows} records for BPPs: ${bpps.join(', ')}`,
+			`Deleted ${affectedRows} records for BPPs: ${validBpps.join(', ')}`,
 		);
 		return result;
 	} catch (error) {
 		this.logger.error(
-			`Error deleting jobs for BPPs [${bpps.join(', ')}]:`,
+			`Error deleting jobs for BPPs [${validBpps.join(', ')}]:`,
 			error,
 		);
 		throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
