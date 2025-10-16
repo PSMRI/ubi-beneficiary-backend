@@ -605,8 +605,6 @@ export class UserService {
   async createUserApplication(
     createUserApplicationDto: CreateUserApplicationDto,
   ) {
-
-
     try {
       // Check if an application already exists for the given benefit_id and user_id
       const existingApplication = await this.userApplicationRepository.findOne({
@@ -1492,8 +1490,12 @@ export class UserService {
 
     // Fetch BPP info from userApplication table
     const userApplication = await this.userApplicationRepository.findOne({
-      where: { external_application_id: orderId },
-      select: ['benefit_provider_id', 'benefit_provider_uri']
+      where: { bpp_application_id: orderId },
+      select: [
+        'benefit_provider_id',
+        'benefit_provider_uri',
+        'transaction_id'
+      ],
     });
 
     if (!userApplication) {
@@ -1502,9 +1504,9 @@ export class UserService {
 
     const bppId = userApplication.benefit_provider_id;
     const bppUri = userApplication.benefit_provider_uri;
-   
-    if (!bapId || !bapUri || !bppId || !bppUri) {  
-      throw new Error('Missing required configuration for BAP/BPP');
+    const transactionId = userApplication.transaction_id;
+    if (!bapId || !bapUri || !bppId || !bppUri || !transactionId) {  
+      throw new Error('Missing required configuration for BAP/BPP or transaction_id not found in database');
     }
     
     const body = {
@@ -1518,7 +1520,7 @@ export class UserService {
         bap_uri: bapUri,
         bpp_id: bppId,
         bpp_uri: bppUri,
-        transaction_id: uuidv4(),
+        transaction_id: transactionId,
         message_id: uuidv4(),
         location: {
 					country: {
@@ -1558,7 +1560,7 @@ export class UserService {
       const results = await Promise.allSettled(
         applications.map(async (application: any) => {
           const statusData = await this.getStatus(
-            application.external_application_id,
+            application.bpp_application_id,
           );
           await this.updateStatus(application, statusData);
         }),

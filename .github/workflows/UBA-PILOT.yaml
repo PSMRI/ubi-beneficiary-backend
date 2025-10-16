@@ -4,52 +4,58 @@ on:
   workflow_dispatch:
     inputs:
       TAG:
-        description: 'Docker image tag to deploy'
+        description: 'Docker image tag to deploy (must match vX.Y.Z or vX.Y.Z-<suffix>)'
         required: true
         default: 'v0.0.0'
-      BRANCH:
-        description: 'Git branch to deploy'
-        required: true
-        default: 'main'
-  push:
-    tags:
-      - '*'  # Trigger on any tag push
 
 jobs:
-  Deploy_on_UBA_PILOT:
+  deploy_on_UBA_PILOT:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: UBA-DEPWD-PILOT
 
     steps:
-      - name: Deploy Stack via SSH
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.HOST_NAME_PILOT }}
-          username: ${{ secrets.USERNAME_PILOT }}
-          key: ${{ secrets.EC2_SSH_KEY_PILOT }}
-          port: ${{ secrets.PORT_PILOT }}
-          script: |
-            # ----- Export environment variables from secrets & workflow inputs -----
-            export BASE_DIR="${{ secrets.TARGET_DIR_PILOT }}"
-            export TAG="${{ github.event.inputs.TAG || github.ref_name || 'latest' }}"
-            export BRANCH="${{ github.event.inputs.BRANCH || 'main' }}"
-            export SERVICE_NAME="ubi-beneficiary-backend"
+      - name: Validate TAG format
+        run: |
+          TAG="${{ github.event.inputs.TAG }}"
+          echo "Validating TAG: $TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "❌ Invalid TAG format. Must be vX.Y.Z or vX.Y.Z-<suffix>"
+            exit 1
+          fi
+          echo "✅ TAG format is valid"
 
-            # ----- Run deployment -----
+      - name: Deploy Stack via SSH
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.HOST_NAME }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.PORT }}
+          script: |
+            echo "🚀 Starting UBA-PILOT deployment..."
+            export BASE_DIR="${{ secrets.TARGET_DIR }}"
+            export SERVICE_NAME="ubi-beneficiary-backend"
+            export CONTAINER_NAME="beneficiary-backend"
+            TAG="${{ github.event.inputs.TAG }}"
+            # Dynamically get branch at runtime
+            BRANCH="${GITHUB_REF_NAME:-main}"
+
+            echo "Deploying TAG: $TAG on branch: $BRANCH"
+
             cd "$BASE_DIR" || exit 1
 
-            # Prepare .env
             if [ -f .env ]; then rm .env; fi
-            echo '${{ secrets.ENV_PILOT }}' > .env
+            echo "${{ secrets.ENV }}" > .env
 
-            # Run deploy script from base dir
-            bash deploy.sh
+            chmod +x deploy.sh
+            SERVICE_NAME="$SERVICE_NAME" CONTAINER_NAME="$CONTAINER_NAME" TAG="$TAG" BRANCH="$BRANCH" ./deploy.sh
 
       - name: Notify on Slack channel
         uses: iRoachie/slack-github-actions@v2.3.2
+        if: ${{ always() }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         with:
           status: ${{ job.status }}
-        if: ${{ always() }}
+          fields: repo,commit,author

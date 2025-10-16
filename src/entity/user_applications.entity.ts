@@ -28,8 +28,14 @@ export class UserApplication {
 	@Column({ type: 'varchar', length: 255 })
 	benefit_provider_uri: string;
 
-	@Column({ type: 'varchar', length: 100 })
-	external_application_id: string;
+	@Column({ type: 'varchar', length: 100, nullable: true })
+	bpp_application_id: string;
+
+	@Column({ type: 'varchar', length: 100, nullable: true })
+	order_id: string;
+
+	@Column({ type: 'varchar', length: 100, nullable: true })
+	transaction_id: string;
 
 	@Column({ type: 'text', nullable: true })
 	application_name: string;
