@@ -288,7 +288,7 @@ export class ContentService {
 			if (response) {
 				// Log number of BPP responses received
 				const bppCount = response.responses?.length || 0;
-				//const bppIds = response.responses?.map(r => r.context?.bpp_id).filter(Boolean) || [];
+				const bppIds = response.responses?.map(r => r.context?.bpp_id)|| [];
 				this.logger.log(`Received responses from ${bppCount} BPP(s)}`);
 				
 				const arrayOfObjects = [];
@@ -337,7 +337,7 @@ export class ContentService {
 				// console.log('uniqueObjects length', uniqueObjects.length);
 				//return uniqueObjects
 				const insertionResponse =
-					await this.hasuraService.insertCacheData(uniqueObjects);
+					await this.hasuraService.insertCacheData(uniqueObjects , bppIds);
 
 				// Collect all returned items from the response (flatten the result)
 				const returnedItems = insertionResponse.flatMap(
