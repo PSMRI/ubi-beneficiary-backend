@@ -251,7 +251,47 @@ export class ContentService {
 
 	async jobsApiCall() {
 		this.logger.log('create jobs api calling');
-		const data = {
+		const data = this.buildSearchRequest();
+
+		try {
+			const response = await this.proxyService.bapCLientApi2('search', data);	
+			
+		
+			
+			if (!response) {
+				return;
+			}
+
+			const bppIds = this.extractBppIds(response);
+			console.log('bppIds', bppIds);
+			this.logger.log(`Received responses from ${bppIds.length} BPP(s)}`);
+			const arrayOfObjects = this.transformResponseToObjects(response);
+			const uniqueObjects = this.deduplicateObjects(arrayOfObjects);
+			
+			const insertionResponse =
+                    await this.hasuraService.insertCacheData(uniqueObjects , bppIds);
+
+                // Collect all returned items from the response (flatten the result)
+                const returnedItems = insertionResponse.flatMap(
+                    (res) => res.data.insert_ubi_network_cache.returning,
+                );
+
+                this.logger.log(`Successfully inserted ${returnedItems.length} unique benefits into cache`);
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'Data inserted successfully',
+				data: returnedItems,
+			});
+		} catch (error) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message,
+			});
+		}
+	}
+
+	private buildSearchRequest() {
+		return {
 			context: {
 				domain: this.domain,
 				action: 'search',
@@ -262,105 +302,64 @@ export class ContentService {
 				message_id: uuidv4(),
 				timestamp: new Date().toISOString(),
 				location: {
-					country: {
-						name: 'India',
-						code: 'IND',
-					},
-					city: {
-						name: 'Bangalore',
-						code: 'std:080',
-					},
+					country: { name: 'India', code: 'IND' },
+					city: { name: 'Bangalore', code: 'std:080' },
 				},
 			},
 			message: {
 				intent: {
 					item: {
-						descriptor: {
-							name: '',
-						},
+						descriptor: { name: '' },
 					},
 				},
 			},
 		};
-
-		try {
-			const response = await this.proxyService.bapCLientApi2('search', data);	
-			if (response) {
-				// Log number of BPP responses received
-				const bppCount = response.responses?.length || 0;
-				//const bppIds = response.responses?.map(r => r.context?.bpp_id).filter(Boolean) || [];
-				this.logger.log(`Received responses from ${bppCount} BPP(s)}`);
-				
-				const arrayOfObjects = [];
-				for (const responses of response.responses) {
-					if (responses.message.catalog.providers) {
-						for (const provider of responses.message.catalog.providers) {
-							for (const [index, item] of provider.items.entries()) {
-								const obj = {
-									unique_id: this.generateFixedId(
-										item.id,
-										item.descriptor.name,
-										responses.context.bpp_id,
-									),
-									item_id: item.id,
-									title: item?.descriptor?.name ? item.descriptor.name : '',
-									description: item?.descriptor?.long_desc
-										? item.descriptor.long_desc
-										: '',
-									provider_id: provider.id ? provider.id : '',
-									provider_name: provider.descriptor.name
-										? provider.descriptor.name
-										: '',
-									bpp_id: responses.context.bpp_id
-										? responses.context.bpp_id
-										: '',
-									bpp_uri: responses.context.bpp_uri
-										? responses.context.bpp_uri
-										: '',
-									item: item,
-									descriptor: provider.descriptor,
-									categories: provider.categories,
-									fulfillments: provider.fulfillments,
-								};
-								arrayOfObjects.push(obj);
-							}
-						}
-					}
-				}
-		
-				console.log('arrayOfObjects length', arrayOfObjects.length);
-				const uniqueObjects = Array.from(
-					new Set(arrayOfObjects.map((obj) => obj.unique_id)),
-				).map((id) => {
-					return arrayOfObjects.find((obj) => obj.unique_id === id);
-				});
-				// console.log('uniqueObjects length', uniqueObjects.length);
-				//return uniqueObjects
-				const insertionResponse =
-					await this.hasuraService.insertCacheData(uniqueObjects);
-
-				// Collect all returned items from the response (flatten the result)
-				const returnedItems = insertionResponse.flatMap(
-					(res) => res.data.insert_ubi_network_cache.returning,
-				);
-
-				this.logger.log(`Successfully inserted ${returnedItems.length} unique benefits into cache`);
-
-				// Create the success response in the desired format
-				return new SuccessResponse({
-					statusCode: HttpStatus.OK,
-					message: 'Data inserted successfully',
-					data: returnedItems, // Attach the data in the "data" field
-				});
-			}
-		} catch (error) {
-			return new ErrorResponse({
-				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message,
-				// Attach the data in the "data" field
-			});
-		}
 	}
+
+	private extractBppIds(response: any): string[] {
+	
+		return response.responses?.map(r => r.context?.bpp_id) || [];
+	}
+	private transformResponseToObjects(response: any): any[] {
+		const arrayOfObjects = [];
+		
+		for (const bppResponse of response.responses) {
+			const providers = bppResponse.message?.catalog?.providers;
+			if (!providers) continue;
+
+			for (const provider of providers) {
+				const items = this.transformProviderItems(provider, bppResponse.context);
+				arrayOfObjects.push(...items);
+			}
+		}
+		
+		console.log('arrayOfObjects length', arrayOfObjects.length);
+		return arrayOfObjects;
+	}
+
+	private transformProviderItems(provider: any, context: any): any[] {
+		return provider.items.map((item) => ({
+			unique_id: this.generateFixedId(item.id, item.descriptor.name, context.bpp_id),
+			item_id: item.id,
+			title: item?.descriptor?.name || '',
+			description: item?.descriptor?.long_desc || '',
+			provider_id: provider.id || '',
+			provider_name: provider.descriptor?.name || '',
+			bpp_id: context.bpp_id || '',
+			bpp_uri: context.bpp_uri || '',
+			item: item,
+			descriptor: provider.descriptor,
+			categories: provider.categories,
+			fulfillments: provider.fulfillments,
+		}));
+	}
+
+	private deduplicateObjects(objects: any[]): any[] {
+		const uniqueIds = Array.from(new Set(objects.map((obj) => obj.unique_id)));
+		return uniqueIds.map((id) => objects.find((obj) => obj.unique_id === id));
+	}
+
+
 
 	/* async searchResponse(body) {
 		return this.hasuraService.searchResponse(body);
