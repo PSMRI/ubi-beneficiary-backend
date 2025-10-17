@@ -14,10 +14,8 @@ export class HasuraService {
   private readonly telemetry_db = process.env.TELEMETRY_DB;
   private readonly url = process.env.HASURA_URL;
 
-  constructor() {
-    console.log('cache_db', this.cache_db);
-    console.log('response_cache_db', this.response_cache_db);
-  }
+	constructor() {
+	}
 
   async findJobsCache(requestBody) {
 		const { filters, search } = requestBody;
@@ -334,7 +332,6 @@ export class HasuraService {
 
   async queryDb(query: string, variables?: Record<string, any>): Promise<any> {
     try {
-      console.log('querydbDetails', query, variables, this.adminSecretKey);
       const response = await axios.post(
         this.url,
         {
@@ -348,7 +345,6 @@ export class HasuraService {
           },
         },
       );
-      console.log('response.data', response.data);
       return response.data;
     } catch (error) {
       console.log('error', error);
@@ -476,8 +472,6 @@ export class HasuraService {
       }
     }`;
 
-    console.log(query);
-
     // Rest of your code to execute the query
     try {
       const response = await this.queryDb(query, seeker);
@@ -538,7 +532,6 @@ export class HasuraService {
   }
 
   async searchOrderByOrderId(order) {
-    console.log('order', order);
     const query = `query MyQuery {
       ${this.order_db}(where: {order_id: {_eq: "${order}"}}) {
         OrderContentRelationship {
@@ -562,7 +555,6 @@ export class HasuraService {
   }
 
   async addTelemetry(data) {
-    console.log('data', data);
     const query = `
       mutation ($id: String, $ver: String, $events:jsonb) {
         insert_${this.telemetry_db}(objects: [{id: $id, ver: $ver, events: $events}]) {

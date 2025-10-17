@@ -57,7 +57,7 @@ export class NetworkCacheRefreshCron {
     };
   }
 
-  @Cron('*/5 * * * *')
+  @Cron(process.env.NETWORK_CACHE_REFRESH_CRON_TIME || '*/10 * * * *')
   async refreshNetworkCache() {
     try {
       this.logger.log('Network Cache Refresh CRON started at ' + new Date().toISOString());
