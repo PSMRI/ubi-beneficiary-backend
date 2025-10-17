@@ -281,20 +281,26 @@ export class HasuraService {
     }
   }
 
-  async insertCacheData(arrayOfObjects) {
-    this.logger.log(`Starting cache refresh: deleting all existing records and inserting ${arrayOfObjects.length} new records`);
-    
-    // First delete all existing records
-    if(arrayOfObjects.length > 0){
-      try {
-        await this.deleteJobs();
-        this.logger.log('Successfully deleted all existing records');
-      } catch (error) {
-        this.logger.error('Error deleting existing records:', error);
-        throw error;
-      }
-    }
-    
+  async insertCacheData(arrayOfObjects: any[], bpps: string[]) {
+	this.logger.log(
+		`Starting cache refresh for ${bpps.length} BPP(s): ${bpps.join(', ')}`,
+	);
+	this.logger.log(
+		`Deleting existing records and inserting ${arrayOfObjects.length} new records`,
+	);
+
+	// First delete existing records for the specified BPPs only
+	if (bpps.length > 0) {
+		try {
+			await this.deleteJobsByBpps(bpps);
+			this.logger.log(
+				`Successfully deleted records for BPPs: ${bpps.join(', ')}`,
+			);
+		} catch (error) {
+			this.logger.error('Error deleting existing records for BPPs:', error);
+			throw error;
+		}
+	}
     // $provider_id: String, provider_name: String, bpp_id: String, bpp_uri: String
     // provider_id: $provider_id, provider_name: $provider_name, bpp_id: $bpp_id, bpp_uri: $bpp_uri
     const query = `mutation MyMutation($title: String, $description: String, $url: String, $provider_name: String, $enrollmentEndDate: timestamptz, $bpp_id: String, $unique_id: String, $bpp_uri: String, $item_id: String, $offeringInstitute: jsonb, $credits: String, $instructors: String,$provider_id: String, $item: json, $descriptor: json, $categories: json, $fulfillments: json) { 
@@ -426,6 +432,34 @@ export class HasuraService {
       throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
     }
   }
+  async deleteJobsByBpps(bpps: string[]) {
+		// Build the _in clause for the query with the array of BPP IDs
+	const validBpps = bpps.filter((bpp) => bpp != null && bpp !== '');
+	if (validBpps.length === 0) {
+		this.logger.warn('All provided BPP IDs were invalid');
+		return { data: { [`delete_${this.cache_db}`]: { affected_rows: 0 } } };
+	}
+	
+	const query = `mutation DeleteJobsByBpps($bppIds: [String!]!) {
+		delete_${this.cache_db}(where: {bpp_id: {_in: $bppIds}}) {
+			affected_rows
+		}
+	}`;
+	try {
+		const result = await this.queryDb(query, { bppIds: validBpps });
+		const affectedRows = result.data[`delete_${this.cache_db}`].affected_rows;
+		this.logger.log(
+			`Deleted ${affectedRows} records for BPPs: ${validBpps.join(', ')}`,
+		);
+		return result;
+	} catch (error) {
+		this.logger.error(
+			`Error deleting jobs for BPPs [${validBpps.join(', ')}]:`,
+			error,
+		);
+		throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+	}
+}
 
   async createSeekerUser(seeker) {
     const query = `mutation InsertSeeker($email: String , $name:String, $age:String, $gender:String, $phone:String) {
