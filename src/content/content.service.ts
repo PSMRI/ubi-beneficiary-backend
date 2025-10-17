@@ -290,7 +290,7 @@ export class ContentService {
 				const bppIds = response.responses
 				?.map((r) => r.context?.bpp_id)
 				.filter((id) => id != null) || [];
-				this.logger.log(`Received responses from ${bppIds.length} BPP(s)}`);
+				this.logger.log(`Received responses from ${bppIds.length} BPP(s)`);
 				
 				const arrayOfObjects = [];
 				for (const responses of response.responses) {
