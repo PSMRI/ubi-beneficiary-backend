@@ -439,15 +439,14 @@ export class HasuraService {
 		this.logger.warn('All provided BPP IDs were invalid');
 		return { data: { [`delete_${this.cache_db}`]: { affected_rows: 0 } } };
 	}
-	const bppIdsArray = validBpps.map((bpp) => `"${bpp}"`).join(', ');
-	const query = `mutation MyMutation {
-		delete_${this.cache_db}(where: {bpp_id: {_in: [${bppIdsArray}]}}) {
-		  affected_rows
+	
+	const query = `mutation DeleteJobsByBpps($bppIds: [String!]!) {
+		delete_${this.cache_db}(where: {bpp_id: {_in: $bppIds}}) {
+			affected_rows
 		}
-	  }
-	`;
+	}`;
 	try {
-		const result = await this.queryDb(query);
+		const result = await this.queryDb(query, { bppIds: validBpps });
 		const affectedRows = result.data[`delete_${this.cache_db}`].affected_rows;
 		this.logger.log(
 			`Deleted ${affectedRows} records for BPPs: ${validBpps.join(', ')}`,
