@@ -6,6 +6,7 @@ import {
   InternalServerErrorException,
   Logger,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
@@ -29,6 +30,8 @@ import { FieldContext } from '@modules/customfields/entities/field.entity';
 import { ConfigService } from '@nestjs/config';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
+import { UploadDocumentDto } from './dto/upload-document.dto';
+import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 
 type StatusUpdateInfo = {
   attempted: boolean;
@@ -55,6 +58,8 @@ export class UserService {
     private readonly configService: ConfigService,
     private readonly proxyService: ProxyService,
     private readonly adminService: AdminService,
+    @Inject('FileStorageService')
+    private readonly fileStorageService: IFileStorageService,
   ) { }
 
 
@@ -219,10 +224,49 @@ export class UserService {
       docTypes = [];
     }
   
-    return userDocs.map((doc) => ({
-      ...doc,
-      is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
-    }));
+    // Generate pre-signed URLs for documents if using S3
+    const docsWithUrls = await Promise.all(
+      userDocs.map(async (doc) => {
+        const downloadUrl = await this.generateDocumentDownloadUrl(doc.doc_path);
+        return {
+          ...doc,
+          is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
+          download_url: downloadUrl,
+        };
+      })
+    );
+
+    return docsWithUrls;
+  }
+
+  /**
+   * Generate a pre-signed URL for a document
+   * Returns the URL if using S3, or the local path if using local storage
+   */
+  private async generateDocumentDownloadUrl(docPath: string): Promise<string | null> {
+    if (!docPath) {
+      return null;
+    }
+
+    const storageProvider = this.configService.get<string>('FILE_STORAGE_PROVIDER', 'local');
+    
+    if (storageProvider === 's3') {
+      try {
+        // Generate pre-signed URL that expires in 1 hour for better UX
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+        const downloadUrl = await this.fileStorageService.generateTemporaryUrl?.(
+          docPath,
+          expiresAt
+        );
+        return downloadUrl || null;
+      } catch (error) {
+        Logger.error(`Failed to generate pre-signed URL for ${docPath}:`, error);
+        return null;
+      }
+    }
+    
+    // For local storage, return the file path
+    return docPath;
   }
 
   async findUserConsent(user_id: string): Promise<any> {
@@ -1041,6 +1085,9 @@ export class UserService {
           'You are not authorized to modify or delete this resourse',
       });
 
+    // Store the file path before deleting from database
+    const filePath = existingDoc.doc_path;
+
     // Delete the document
     const queryRunner =
       this.userDocsRepository.manager.connection.createQueryRunner();
@@ -1051,8 +1098,24 @@ export class UserService {
       // Reset the field along with deleting the document
       await this.resetField(existingDoc, queryRunner);
       await queryRunner.commitTransaction();
+
+      // Delete the physical file using storage service
+      if (filePath) {
+        try {
+          const deleted = await this.fileStorageService.deleteFile(filePath);
+          if (deleted) {
+            Logger.log(`Deleted file from storage: ${filePath}`);
+          } else {
+            Logger.warn(`Could not delete file from storage: ${filePath}`);
+          }
+        } catch (fileError) {
+          Logger.error(`Failed to delete file from storage: ${fileError}`);
+          // Don't fail the entire operation if file deletion fails
+        }
+      }
     } catch (error) {
       Logger.error('Error while deleting the document: ', error);
+      await queryRunner.rollbackTransaction();
       await queryRunner.release();
       return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1825,6 +1888,152 @@ export class UserService {
       return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         errorMessage: 'Failed to process wallet callback',
+      });
+    }
+  }
+
+  /**
+   * Upload a document file with metadata and store it in the database
+   * If a document with the same type, subtype, and name exists for the user, it will be updated
+   * @param req The request object containing authenticated user information
+   * @param file The uploaded file (from multer)
+   * @param uploadDocumentDto Metadata for the document
+   * @returns Success response with document details
+   */
+  async uploadDocument(
+    req: any,
+    file: Express.Multer.File,
+    uploadDocumentDto: UploadDocumentDto,
+  ) {
+    try {
+      // Get user details from authentication token
+      const userDetails = await this.getUserDetails(req);
+
+      // Determine file extension for doc_datatype
+      const fileExtension = path.extname(file.originalname).toLowerCase();
+      let docDatatype = 'Unknown';
+      switch (fileExtension) {
+        case '.pdf':
+          docDatatype = 'PDF';
+          break;
+        case '.jpg':
+        case '.jpeg':
+          docDatatype = 'JPEG';
+          break;
+        case '.png':
+          docDatatype = 'PNG';
+          break;
+      }
+
+      // Check if a document with the same type, subtype, and name already exists
+      const existingDoc = await this.userDocsRepository.findOne({
+        where: {
+          user_id: userDetails.user_id,
+          doc_type: uploadDocumentDto.docType,
+          doc_subtype: uploadDocumentDto.docSubType,
+          doc_name: uploadDocumentDto.docName,
+        },
+      });
+
+      // Generate unique file key
+      const filePrefix = this.configService.get<string>('FILE_PREFIX_ENV', 'local');
+      const timestamp = Date.now();
+      const randomSuffix = Math.round(Math.random() * 1e9);
+      const fileKey = `${filePrefix}/${userDetails.user_id}/${file.fieldname}-${timestamp}-${randomSuffix}${fileExtension}`;
+
+      // Upload file using storage service
+      const uploadedPath = await this.fileStorageService.uploadFile(fileKey, file.buffer);
+      
+      if (!uploadedPath) {
+        throw new InternalServerErrorException('Failed to upload file to storage');
+      }
+
+      Logger.log(`File uploaded successfully to: ${uploadedPath}`);
+
+      let savedDoc: UserDoc;
+      let isUpdate = false;
+
+      if (existingDoc) {
+        // Update existing document
+        isUpdate = true;
+        
+        // Delete old file if it exists using storage service
+        if (existingDoc.doc_path) {
+          try {
+            const deleted = await this.fileStorageService.deleteFile(existingDoc.doc_path);
+            if (deleted) {
+              Logger.log(`Deleted old file: ${existingDoc.doc_path}`);
+            } else {
+              Logger.warn(`Could not delete old file: ${existingDoc.doc_path}`);
+            }
+          } catch (unlinkError) {
+            Logger.error(`Failed to delete old file: ${unlinkError}`);
+          }
+        }
+
+        // Update the existing document
+        existingDoc.doc_path = uploadedPath;
+        existingDoc.imported_from = uploadDocumentDto.importedFrom;
+        existingDoc.doc_datatype = docDatatype;
+        existingDoc.uploaded_at = new Date();
+
+        savedDoc = await this.userDocsRepository.save(existingDoc);
+        Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
+      } else {
+        // Create new document entity
+        const newUserDoc = this.userDocsRepository.create({
+          user_id: userDetails.user_id,
+          doc_type: uploadDocumentDto.docType,
+          doc_subtype: uploadDocumentDto.docSubType,
+          doc_name: uploadDocumentDto.docName,
+          imported_from: uploadDocumentDto.importedFrom,
+          doc_path: uploadedPath,
+          doc_data: null,
+          doc_datatype: docDatatype,
+          doc_verified: null,
+          watcher_registered: false,
+          watcher_email: null,
+          watcher_callback_url: null,
+          doc_data_link: null,
+        });
+
+        savedDoc = await this.userDocsRepository.save(newUserDoc);
+        Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}`);
+      }
+
+      // Generate pre-signed URL for the uploaded document
+      const downloadUrl = await this.generateDocumentDownloadUrl(savedDoc.doc_path);
+
+      return new SuccessResponse({
+        statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
+        message: isUpdate ? 'Document updated successfully' : 'Document uploaded successfully',
+        data: {
+          doc_id: savedDoc.doc_id,
+          doc_path: savedDoc.doc_path,
+          user_id: savedDoc.user_id,
+          doc_type: savedDoc.doc_type,
+          doc_subtype: savedDoc.doc_subtype,
+          doc_name: savedDoc.doc_name,
+          imported_from: savedDoc.imported_from,
+          doc_datatype: savedDoc.doc_datatype,
+          uploaded_at: savedDoc.uploaded_at,
+          is_update: isUpdate,
+          download_url: downloadUrl, // Pre-signed URL for S3 or file path for local
+        },
+      });
+    } catch (error) {
+      Logger.error(`Error uploading document: ${error}`);
+      
+      if (error.code === '23505') {
+        return new ErrorResponse({
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: 'Duplicate document entry',
+        });
+      }
+
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: 'Failed to upload document',
       });
     }
   }
