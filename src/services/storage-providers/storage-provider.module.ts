@@ -1,8 +1,8 @@
-import { Module, Logger } from '@nestjs/common';
+import { Module, Logger, Global } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { S3StorageAdapter } from './adapters/s3.storage.adapter';
-import { LocalStorageAdapter } from './adapters/local-storage.adapter';
 
+@Global()
 @Module({
   imports: [ConfigModule],
   providers: [
@@ -10,7 +10,7 @@ import { LocalStorageAdapter } from './adapters/local-storage.adapter';
       provide: 'FileStorageService',
       useFactory: (configService: ConfigService) => {
         const logger = new Logger('StorageProviderModule');
-        const provider = configService.get<string>('FILE_STORAGE_PROVIDER', 'local');
+        const provider = configService.get<string>('FILE_STORAGE_PROVIDER', 's3');
         
         logger.log(`Initializing file storage provider: ${provider}`);
         
@@ -24,11 +24,8 @@ import { LocalStorageAdapter } from './adapters/local-storage.adapter';
           }
           logger.log('Using S3 storage adapter');
           return new S3StorageAdapter();
-        } else if (provider === 'local' || !provider) {
-          logger.log('Using local storage adapter');
-          return new LocalStorageAdapter();
         } else {
-          throw new Error(`Invalid FILE_STORAGE_PROVIDER: ${provider}. Must be 's3' or 'local'`);
+          throw new Error(`Invalid FILE_STORAGE_PROVIDER: ${provider}. Only 's3' is supported`);
         }
       },
       inject: [ConfigService],

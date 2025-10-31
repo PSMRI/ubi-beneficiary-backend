@@ -1893,6 +1893,44 @@ export class UserService {
   }
 
   /**
+   * Validates file signature (magic numbers) to ensure file type authenticity
+   * @param buffer The file buffer to validate
+   * @param filename The original filename for logging
+   * @returns void if valid, throws BadRequestException if invalid
+   */
+  private validateFileSignature(buffer: Buffer, filename: string): void {
+    if (!buffer || buffer.length < 4) {
+      throw new BadRequestException('Invalid file: file is too small or corrupted');
+    }
+
+    // Read first few bytes for signature detection
+    const firstBytes = buffer.subarray(0, 8);
+
+    // PDF signature: %PDF (hex: 25504446)
+    if (firstBytes[0] === 0x25 && firstBytes[1] === 0x50 &&
+      firstBytes[2] === 0x44 && firstBytes[3] === 0x46) {
+      return; // Valid PDF
+    }
+
+    // JPEG signature: FFD8FF
+    if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8 && firstBytes[2] === 0xFF) {
+      return; // Valid JPEG
+    }
+
+    // PNG signature: 89504E47 (first 4 bytes of PNG signature)
+    if (firstBytes[0] === 0x89 && firstBytes[1] === 0x50 &&
+      firstBytes[2] === 0x4E && firstBytes[3] === 0x47) {
+      return; // Valid PNG
+    }
+
+    // If none of the signatures match, throw an error
+    const detectedHex = firstBytes.subarray(0, 4).toString('hex').toUpperCase();
+    throw new BadRequestException(
+      `Invalid file signature for ${filename}. Expected PDF, JPEG, or PNG but detected signature: ${detectedHex}`
+    );
+  }
+
+  /**
    * Upload a document file with metadata and store it in the database
    * If a document with the same type, subtype, and name exists for the user, it will be updated
    * @param req The request object containing authenticated user information
@@ -1906,26 +1944,14 @@ export class UserService {
     uploadDocumentDto: UploadDocumentDto,
   ) {
     try {
-      // Get user details from authentication token
+      // Basic presence checks and metadata extraction/validation
+      this.ensureFileAvailable(file);
+      const { fileExtension, docDatatype } = this.extractFileMetadata(file);
+
+      // Get user details
       const userDetails = await this.getUserDetails(req);
 
-      // Determine file extension for doc_datatype
-      const fileExtension = path.extname(file.originalname).toLowerCase();
-      let docDatatype = 'Unknown';
-      switch (fileExtension) {
-        case '.pdf':
-          docDatatype = 'PDF';
-          break;
-        case '.jpg':
-        case '.jpeg':
-          docDatatype = 'JPEG';
-          break;
-        case '.png':
-          docDatatype = 'PNG';
-          break;
-      }
-
-      // Check if a document with the same type, subtype, and name already exists
+      // Try to find an existing document for update
       const existingDoc = await this.userDocsRepository.findOne({
         where: {
           user_id: userDetails.user_id,
@@ -1935,73 +1961,21 @@ export class UserService {
         },
       });
 
-      // Generate unique file key
-      const filePrefix = this.configService.get<string>('FILE_PREFIX_ENV', 'local');
-      const timestamp = Date.now();
-      const randomSuffix = Math.round(Math.random() * 1e9);
-      const fileKey = `${filePrefix}/${userDetails.user_id}/${file.fieldname}-${timestamp}-${randomSuffix}${fileExtension}`;
-
-      // Upload file using storage service
-      const uploadedPath = await this.fileStorageService.uploadFile(fileKey, file.buffer);
-      
+      // Build file key and upload to storage
+      const fileKey = this.buildFileKey(userDetails.user_id, fileExtension);
+      const uploadedPath = await this.fileStorageService.uploadFile(fileKey, file.buffer, false);
       if (!uploadedPath) {
         throw new InternalServerErrorException('Failed to upload file to storage');
       }
-
       Logger.log(`File uploaded successfully to: ${uploadedPath}`);
 
-      let savedDoc: UserDoc;
-      let isUpdate = false;
+      // Save or update the document record
+      const { savedDoc, isUpdate } = await (existingDoc
+        ? this.updateExistingDoc(existingDoc, uploadedPath, uploadDocumentDto, docDatatype)
+        : this.createNewDoc(userDetails.user_id, uploadedPath, uploadDocumentDto, docDatatype)
+      );
 
-      if (existingDoc) {
-        // Update existing document
-        isUpdate = true;
-        
-        // Delete old file if it exists using storage service
-        if (existingDoc.doc_path) {
-          try {
-            const deleted = await this.fileStorageService.deleteFile(existingDoc.doc_path);
-            if (deleted) {
-              Logger.log(`Deleted old file: ${existingDoc.doc_path}`);
-            } else {
-              Logger.warn(`Could not delete old file: ${existingDoc.doc_path}`);
-            }
-          } catch (unlinkError) {
-            Logger.error(`Failed to delete old file: ${unlinkError}`);
-          }
-        }
-
-        // Update the existing document
-        existingDoc.doc_path = uploadedPath;
-        existingDoc.imported_from = uploadDocumentDto.importedFrom;
-        existingDoc.doc_datatype = docDatatype;
-        existingDoc.uploaded_at = new Date();
-
-        savedDoc = await this.userDocsRepository.save(existingDoc);
-        Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
-      } else {
-        // Create new document entity
-        const newUserDoc = this.userDocsRepository.create({
-          user_id: userDetails.user_id,
-          doc_type: uploadDocumentDto.docType,
-          doc_subtype: uploadDocumentDto.docSubType,
-          doc_name: uploadDocumentDto.docName,
-          imported_from: uploadDocumentDto.importedFrom,
-          doc_path: uploadedPath,
-          doc_data: null,
-          doc_datatype: docDatatype,
-          doc_verified: null,
-          watcher_registered: false,
-          watcher_email: null,
-          watcher_callback_url: null,
-          doc_data_link: null,
-        });
-
-        savedDoc = await this.userDocsRepository.save(newUserDoc);
-        Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}`);
-      }
-
-      // Generate pre-signed URL for the uploaded document
+      // Generate download URL and return standardized response
       const downloadUrl = await this.generateDocumentDownloadUrl(savedDoc.doc_path);
 
       return new SuccessResponse({
@@ -2022,12 +1996,23 @@ export class UserService {
         },
       });
     } catch (error) {
-      Logger.error(`Error uploading document: ${error}`);
-      
-      if (error.code === '23505') {
+      Logger.error(
+        'users.service:uploadDocument',
+        error?.message ?? error,
+        error?.stack,
+      );
+
+      if (error?.code === '23505') {
         return new ErrorResponse({
           statusCode: HttpStatus.BAD_REQUEST,
           errorMessage: 'Duplicate document entry',
+        });
+      }
+
+      if (error instanceof BadRequestException) {
+        return new ErrorResponse({
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: error.message,
         });
       }
 
@@ -2036,5 +2021,114 @@ export class UserService {
         errorMessage: 'Failed to upload document',
       });
     }
+  }
+
+  // Helpers extracted from uploadDocument to reduce cognitive complexity
+
+  private ensureFileAvailable(file: Express.Multer.File) {
+    if (!file?.buffer || !file?.originalname) {
+      throw new BadRequestException('No file uploaded');
+    }
+  }
+
+  private extractFileMetadata(file: Express.Multer.File): { fileExtension: string; docDatatype: string } {
+    const allowedMimes = new Set(['application/pdf', 'image/jpeg', 'image/png']);
+    const allowedExts = new Set(['.pdf', '.jpg', '.jpeg', '.png']);
+    const fileExtension = path.extname(file.originalname).toLowerCase();
+
+    if (!allowedExts.has(fileExtension) || (file.mimetype && !allowedMimes.has(file.mimetype))) {
+      throw new BadRequestException('Unsupported file type');
+    }
+
+    const maxBytes = 10 * 1024 * 1024; // 10MB
+    if (file.size && file.size > maxBytes) {
+      throw new BadRequestException('File too large');
+    }
+
+    // Validate file signature (magic numbers) before processing
+    this.validateFileSignature(file.buffer, file.originalname);
+
+    let docDatatype = 'Unknown';
+    switch (fileExtension) {
+      case '.pdf':
+        docDatatype = 'PDF';
+        break;
+      case '.jpg':
+      case '.jpeg':
+        docDatatype = 'JPEG';
+        break;
+      case '.png':
+        docDatatype = 'PNG';
+        break;
+    }
+
+    return { fileExtension, docDatatype };
+  }
+
+  private buildFileKey(userId: string, fileExtension: string): string {
+    const filePrefix = this.configService.get<string>('FILE_PREFIX_ENV', 'local');
+    return `${filePrefix}/${userId}/${uuidv4()}${fileExtension}`;
+  }
+
+  private async deleteOldFileIfExists(filePath?: string) {
+    if (!filePath) return;
+    try {
+      const deleted = await this.fileStorageService.deleteFile(filePath);
+      if (deleted) {
+        Logger.log(`Deleted old file: ${filePath}`);
+      } else {
+        Logger.warn(`Could not delete old file: ${filePath}`);
+      }
+    } catch (unlinkError) {
+      Logger.error(`Failed to delete old file: ${unlinkError}`);
+    }
+  }
+
+  private async updateExistingDoc(
+    existingDoc: UserDoc,
+    uploadedPath: string,
+    uploadDocumentDto: UploadDocumentDto,
+    docDatatype: string,
+  ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+    // Delete old file if present
+    if (existingDoc.doc_path) {
+      await this.deleteOldFileIfExists(existingDoc.doc_path);
+    }
+
+    existingDoc.doc_path = uploadedPath;
+    existingDoc.imported_from = uploadDocumentDto.importedFrom;
+    existingDoc.doc_datatype = docDatatype;
+    existingDoc.uploaded_at = new Date();
+
+    const savedDoc = await this.userDocsRepository.save(existingDoc);
+    Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
+    return { savedDoc, isUpdate: true };
+  }
+
+  private async createNewDoc(
+    userId: string,
+    uploadedPath: string,
+    uploadDocumentDto: UploadDocumentDto,
+    docDatatype: string,
+  ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+    const newUserDoc = this.userDocsRepository.create({
+      user_id: userId,
+      doc_type: uploadDocumentDto.docType,
+      doc_subtype: uploadDocumentDto.docSubType,
+      doc_name: uploadDocumentDto.docName,
+      imported_from: uploadDocumentDto.importedFrom,
+      doc_path: uploadedPath,
+      doc_data: null,
+      doc_datatype: docDatatype,
+      doc_verified: null,
+      watcher_registered: false,
+      watcher_email: null,
+      watcher_callback_url: null,
+      doc_data_link: null,
+    });
+
+    const savedDoc = await this.userDocsRepository.save(newUserDoc);
+    Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}`);
+    return { savedDoc, isUpdate: false };
   }
 }

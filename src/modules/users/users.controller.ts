@@ -14,6 +14,9 @@ import {
 	UseInterceptors,
 	UploadedFile,
 	BadRequestException,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from '../users/users.service';
@@ -320,20 +323,28 @@ export class UserController {
   @ApiResponse({ status: 500, description: 'Internal server error' })
   async uploadDocument(
     @Req() req: Request,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+          new FileTypeValidator({ fileType: /(pdf|jpeg|jpg|png)$/ }),
+        ],
+        errorHttpStatusCode: 400,
+      })
+    ) file: Express.Multer.File,
     @Body() uploadDocumentDto: UploadDocumentDto,
   ) {
     try {
-      if (!file) {
-        throw new BadRequestException('No file uploaded');
-      }
-
       return await this.userService.uploadDocument(req, file, uploadDocumentDto);
     } catch (error) {
       if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
         throw error;
       }
-      Logger.error('Failed to upload document:', error);
+      Logger.error(
+        'users.controller:uploadDocument',
+        error.message,
+        error.stack,
+      );
       throw new InternalServerErrorException(
         'An error occurred while uploading the document',
       );

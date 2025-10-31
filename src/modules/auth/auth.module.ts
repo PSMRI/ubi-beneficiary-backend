@@ -21,7 +21,6 @@ import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { AdminModule } from '@modules/admin/admin.module';
 import { ProxyService } from '@services/proxy/proxy.service';
-import { StorageProviderModule } from '@services/storage-providers/storage-provider.module';
 
 @Module({
   imports: [
@@ -37,7 +36,6 @@ import { StorageProviderModule } from '@services/storage-providers/storage-provi
     ]),
     CustomFieldsModule,
     AdminModule,
-    StorageProviderModule, // Added to provide FileStorageService dependency
   ],
   controllers: [AuthController],
   providers: [
