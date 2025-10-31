@@ -36,8 +36,15 @@ export const ALLOWED_FILE_TYPES = {
     'image/png',
   ] as string[],
   
+  // Content-based file type detection (matches file-type library output)
+  CONTENT_TYPES: [
+    'pdf',   // PDF files
+    'jpg',   // JPEG files  
+    'png',   // PNG files
+  ] as string[],
+  
   // File extension pattern for validation
-  EXTENSION_PATTERN: /(pdf|jpeg|jpg|png)$/,
+  EXTENSION_PATTERN: /\.(pdf|jpeg|jpg|png)$/i,
 } as const;
 
 // File upload error messages

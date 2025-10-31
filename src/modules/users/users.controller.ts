@@ -16,11 +16,10 @@ import {
 	BadRequestException,
   ParseFilePipe,
   MaxFileSizeValidator,
-  FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from '../users/users.service';
-import { FILE_UPLOAD_LIMITS, ALLOWED_FILE_TYPES } from '../../common/constants/upload.constants';
+import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 import {
   ApiBasicAuth,
   ApiBody,
@@ -328,7 +327,6 @@ export class UserController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: FILE_UPLOAD_LIMITS.MAX_FILE_SIZE }),
-          new FileTypeValidator({ fileType: ALLOWED_FILE_TYPES.EXTENSION_PATTERN }),
         ],
         errorHttpStatusCode: 400,
       })
@@ -342,9 +340,9 @@ export class UserController {
         throw error;
       }
       Logger.error(
+        error?.message ?? 'Failed to upload document',
+        error?.stack,
         'users.controller:uploadDocument',
-        error.message,
-        error.stack,
       );
       throw new InternalServerErrorException(
         'An error occurred while uploading the document',

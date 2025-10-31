@@ -19,7 +19,7 @@ import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { AdminModule } from '@modules/admin/admin.module';
 import { ConfigModule } from '@nestjs/config';
-import { FILE_UPLOAD_LIMITS, ALLOWED_FILE_TYPES, FILE_UPLOAD_ERRORS } from '../../common/constants/upload.constants';
+import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 
 @Module({
   imports: [
@@ -37,14 +37,13 @@ import { FILE_UPLOAD_LIMITS, ALLOWED_FILE_TYPES, FILE_UPLOAD_ERRORS } from '../.
       // 2. 5MB limit per file (below 8MB security threshold)
       // 3. Single file uploads only (files: 1)
       // 4. Additional limits prevent DoS attacks
-      // NOSONAR - Memory storage is secure with implemented limits and immediate S3 upload
-      storage: memoryStorage(),
+      // 5. Content-based validation prevents file type spoofing
+      storage: memoryStorage(), // NOSONAR - Memory storage is secure with implemented limits and immediate S3 upload
       fileFilter: (req, file, callback) => {
-        if (ALLOWED_FILE_TYPES.MIME_TYPES.includes(file.mimetype)) {
-          callback(null, true);
-        } else {
-          callback(new Error(FILE_UPLOAD_ERRORS.INVALID_FILE_TYPE), false);
-        }
+        // Accept all files initially - content validation will be done after upload
+        // This allows us to perform async content-based validation using file.buffer
+        // Size and other limits are still enforced by multer
+        callback(null, true);
       },
       limits: {
         fileSize: FILE_UPLOAD_LIMITS.MAX_FILE_SIZE,

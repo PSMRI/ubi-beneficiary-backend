@@ -29,6 +29,7 @@ import { AdminService } from '@modules/admin/admin.service';
 import axios from 'axios';
 import { FieldContext } from '@modules/customfields/entities/field.entity';
 import { ConfigService } from '@nestjs/config';
+import { validateFileContent } from '../../common/helper/fileValidation';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
 import { UploadDocumentDto } from './dto/upload-document.dto';
@@ -1944,9 +1945,14 @@ export class UserService {
     file: Express.Multer.File,
     uploadDocumentDto: UploadDocumentDto,
   ) {
+    let uploadedPath: string | null = null;
     try {
       // Basic presence checks and metadata extraction/validation
       this.ensureFileAvailable(file);
+      
+      // Validate file content using magic number detection (prevents file type spoofing)
+      await validateFileContent(file.buffer);
+      
       const { fileExtension, docDatatype } = this.extractFileMetadata(file);
 
       // Get user details
@@ -1964,7 +1970,7 @@ export class UserService {
 
       // Build file key and upload to storage
       const fileKey = this.buildFileKey(userDetails.user_id, fileExtension);
-      const uploadedPath = await this.fileStorageService.uploadFile(fileKey, file.buffer, false);
+      uploadedPath = await this.fileStorageService.uploadFile(fileKey, file.buffer, false);
       if (!uploadedPath) {
         throw new InternalServerErrorException('Failed to upload file to storage');
       }
@@ -1997,6 +2003,13 @@ export class UserService {
         },
       });
     } catch (error) {
+      if (uploadedPath) {
+        try {
+          await this.fileStorageService.deleteFile(uploadedPath);
+        } catch (cleanupError) {
+          Logger.warn(`Failed to clean up uploaded file ${uploadedPath}: ${cleanupError}`);
+        }
+      }
       Logger.error(
         'users.service:uploadDocument',
         error?.message ?? error,
@@ -2090,17 +2103,16 @@ export class UserService {
     uploadDocumentDto: UploadDocumentDto,
     docDatatype: string,
   ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
-    // Delete old file if present
-    if (existingDoc.doc_path) {
-      await this.deleteOldFileIfExists(existingDoc.doc_path);
-    }
-
+    const previousPath = existingDoc.doc_path;
     existingDoc.doc_path = uploadedPath;
     existingDoc.imported_from = uploadDocumentDto.importedFrom;
     existingDoc.doc_datatype = docDatatype;
     existingDoc.uploaded_at = new Date();
 
     const savedDoc = await this.userDocsRepository.save(existingDoc);
+    if (previousPath) {
+      await this.deleteOldFileIfExists(previousPath);
+    }
     Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
     return { savedDoc, isUpdate: true };
   }
