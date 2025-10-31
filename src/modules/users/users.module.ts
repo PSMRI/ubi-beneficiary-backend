@@ -32,7 +32,12 @@ import { FILE_UPLOAD_LIMITS, ALLOWED_FILE_TYPES, FILE_UPLOAD_ERRORS } from '../.
       FieldValue,
     ]),
     MulterModule.register({
-      storage: memoryStorage(), // Use memory storage for S3 upload - files are processed and uploaded immediately
+      // Memory storage is secure here because:
+      // 1. Files are immediately processed and uploaded to S3
+      // 2. 5MB limit per file (below 8MB security threshold)
+      // 3. Single file uploads only (files: 1)
+      // 4. Additional limits prevent DoS attacks
+      storage: memoryStorage(),
       fileFilter: (req, file, callback) => {
         if (ALLOWED_FILE_TYPES.MIME_TYPES.includes(file.mimetype)) {
           callback(null, true);
