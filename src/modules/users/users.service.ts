@@ -19,6 +19,7 @@ import { UserApplication } from '@entities/user_applications.entity';
 import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { KeycloakService } from '@services/keycloak/keycloak.service';
 import { SuccessResponse } from 'src/common/responses/success-response';
+import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 import { ErrorResponse } from 'src/common/responses/error-response';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -2040,8 +2041,7 @@ export class UserService {
       throw new BadRequestException('Unsupported file type');
     }
 
-    const maxBytes = 10 * 1024 * 1024; // 10MB
-    if (file.size && file.size > maxBytes) {
+    if (file.size && file.size > FILE_UPLOAD_LIMITS.MAX_FILE_SIZE) {
       throw new BadRequestException('File too large');
     }
 

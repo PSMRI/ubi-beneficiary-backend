@@ -19,6 +19,7 @@ import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { AdminModule } from '@modules/admin/admin.module';
 import { ConfigModule } from '@nestjs/config';
+import { FILE_UPLOAD_LIMITS, ALLOWED_FILE_TYPES, FILE_UPLOAD_ERRORS } from '../../common/constants/upload.constants';
 
 @Module({
   imports: [
@@ -31,30 +32,22 @@ import { ConfigModule } from '@nestjs/config';
       FieldValue,
     ]),
     MulterModule.register({
-      storage: memoryStorage(), // Use memory storage for flexibility with S3 and local storage
+      storage: memoryStorage(), // Use memory storage for S3 upload - files are processed and uploaded immediately
       fileFilter: (req, file, callback) => {
-        const allowedMimes = [
-          'application/pdf',
-          'image/jpeg',
-          'image/jpg',
-          'image/png',
-        ];
-        if (allowedMimes.includes(file.mimetype)) {
+        if (ALLOWED_FILE_TYPES.MIME_TYPES.includes(file.mimetype)) {
           callback(null, true);
         } else {
-          callback(
-            new Error('Invalid file type. Only PDF, JPG, JPEG, and PNG are allowed.'),
-            false,
-          );
+          callback(new Error(FILE_UPLOAD_ERRORS.INVALID_FILE_TYPE), false);
         }
       },
       limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB limit - reduced for better security
-        files: 1, // Only allow 1 file per upload
-        fieldSize: 1024 * 1024, // 1MB limit for field values
-        fieldNameSize: 100, // Limit field name size
-        fields: 10, // Limit number of non-file fields
-        headerPairs: 2000, // Limit header pairs to prevent header pollution attacks
+        fileSize: FILE_UPLOAD_LIMITS.MAX_FILE_SIZE,
+        files: FILE_UPLOAD_LIMITS.MAX_FILES,
+        fieldSize: FILE_UPLOAD_LIMITS.MAX_FIELD_SIZE,
+        fieldNameSize: FILE_UPLOAD_LIMITS.MAX_FIELD_NAME_SIZE,
+        fields: FILE_UPLOAD_LIMITS.MAX_FIELDS,
+        headerPairs: FILE_UPLOAD_LIMITS.MAX_HEADER_PAIRS,
+        parts: FILE_UPLOAD_LIMITS.MAX_PARTS,
       },
     }),
     CustomFieldsModule,

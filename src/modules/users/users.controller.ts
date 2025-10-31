@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from '../users/users.service';
+import { FILE_UPLOAD_LIMITS, ALLOWED_FILE_TYPES } from '../../common/constants/upload.constants';
 import {
   ApiBasicAuth,
   ApiBody,
@@ -326,8 +327,8 @@ export class UserController {
     @UploadedFile(
       new ParseFilePipe({
         validators: [
-          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
-          new FileTypeValidator({ fileType: /(pdf|jpeg|jpg|png)$/ }),
+          new MaxFileSizeValidator({ maxSize: FILE_UPLOAD_LIMITS.MAX_FILE_SIZE }),
+          new FileTypeValidator({ fileType: ALLOWED_FILE_TYPES.EXTENSION_PATTERN }),
         ],
         errorHttpStatusCode: 400,
       })
