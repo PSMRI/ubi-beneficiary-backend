@@ -19,21 +19,20 @@ import { UserApplication } from '@entities/user_applications.entity';
 import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { KeycloakService } from '@services/keycloak/keycloak.service';
 import { SuccessResponse } from 'src/common/responses/success-response';
-import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 import { ErrorResponse } from 'src/common/responses/error-response';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { AdminService } from '@modules/admin/admin.service';
 import axios from 'axios';
 import { FieldContext } from '@modules/customfields/entities/field.entity';
 import { ConfigService } from '@nestjs/config';
-import { validateFileContent } from '../../common/helper/fileValidation';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
+import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
 
 type StatusUpdateInfo = {
   attempted: boolean;
@@ -62,6 +61,7 @@ export class UserService {
     private readonly adminService: AdminService,
     @Inject('FileStorageService')
     private readonly fileStorageService: IFileStorageService,
+    private readonly documentUploadService: DocumentUploadService,
   ) { }
 
 
@@ -229,7 +229,7 @@ export class UserService {
     // Generate pre-signed URLs for documents if using S3
     const docsWithUrls = await Promise.all(
       userDocs.map(async (doc) => {
-        const downloadUrl = await this.generateDocumentDownloadUrl(doc.doc_path);
+        const downloadUrl = await this.documentUploadService.generateDownloadUrl(doc.doc_path);
         return {
           ...doc,
           is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
@@ -241,35 +241,6 @@ export class UserService {
     return docsWithUrls;
   }
 
-  /**
-   * Generate a pre-signed URL for a document
-   * Returns the URL if using S3, or the local path if using local storage
-   */
-  private async generateDocumentDownloadUrl(docPath: string): Promise<string | null> {
-    if (!docPath) {
-      return null;
-    }
-
-    const storageProvider = this.configService.get<string>('FILE_STORAGE_PROVIDER', 'local');
-    
-    if (storageProvider === 's3') {
-      try {
-        // Generate pre-signed URL that expires in 1 hour for better UX
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-        const downloadUrl = await this.fileStorageService.generateTemporaryUrl?.(
-          docPath,
-          expiresAt
-        );
-        return downloadUrl || null;
-      } catch (error) {
-        Logger.error(`Failed to generate pre-signed URL for ${docPath}:`, error);
-        return null;
-      }
-    }
-    
-    // For local storage, return the file path
-    return docPath;
-  }
 
   async findUserConsent(user_id: string): Promise<any> {
     const consents = await this.consentRepository.find({
@@ -1101,15 +1072,10 @@ export class UserService {
       await this.resetField(existingDoc, queryRunner);
       await queryRunner.commitTransaction();
 
-      // Delete the physical file using storage service
+      // Delete the physical file using document upload service
       if (filePath) {
         try {
-          const deleted = await this.fileStorageService.deleteFile(filePath);
-          if (deleted) {
-            Logger.log(`Deleted file from storage: ${filePath}`);
-          } else {
-            Logger.warn(`Could not delete file from storage: ${filePath}`);
-          }
+          await this.documentUploadService.deleteFile(filePath);
         } catch (fileError) {
           Logger.error(`Failed to delete file from storage: ${fileError}`);
           // Don't fail the entire operation if file deletion fails
@@ -1894,43 +1860,6 @@ export class UserService {
     }
   }
 
-  /**
-   * Validates file signature (magic numbers) to ensure file type authenticity
-   * @param buffer The file buffer to validate
-   * @param filename The original filename for logging
-   * @returns void if valid, throws BadRequestException if invalid
-   */
-  private validateFileSignature(buffer: Buffer, filename: string): void {
-    if (!buffer || buffer.length < 4) {
-      throw new BadRequestException('Invalid file: file is too small or corrupted');
-    }
-
-    // Read first few bytes for signature detection
-    const firstBytes = buffer.subarray(0, 8);
-
-    // PDF signature: %PDF (hex: 25504446)
-    if (firstBytes[0] === 0x25 && firstBytes[1] === 0x50 &&
-      firstBytes[2] === 0x44 && firstBytes[3] === 0x46) {
-      return; // Valid PDF
-    }
-
-    // JPEG signature: FFD8FF
-    if (firstBytes[0] === 0xFF && firstBytes[1] === 0xD8 && firstBytes[2] === 0xFF) {
-      return; // Valid JPEG
-    }
-
-    // PNG signature: 89504E47 (first 4 bytes of PNG signature)
-    if (firstBytes[0] === 0x89 && firstBytes[1] === 0x50 &&
-      firstBytes[2] === 0x4E && firstBytes[3] === 0x47) {
-      return; // Valid PNG
-    }
-
-    // If none of the signatures match, throw an error
-    const detectedHex = firstBytes.subarray(0, 4).toString('hex').toUpperCase();
-    throw new BadRequestException(
-      `Invalid file signature for ${filename}. Expected PDF, JPEG, or PNG but detected signature: ${detectedHex}`
-    );
-  }
 
   /**
    * Upload a document file with metadata and store it in the database
@@ -1945,16 +1874,7 @@ export class UserService {
     file: Express.Multer.File,
     uploadDocumentDto: UploadDocumentDto,
   ) {
-    let uploadedPath: string | null = null;
     try {
-      // Basic presence checks and metadata extraction/validation
-      this.ensureFileAvailable(file);
-      
-      // Validate file content using magic number detection (prevents file type spoofing)
-      await validateFileContent(file.buffer);
-      
-      const { fileExtension, docDatatype } = this.extractFileMetadata(file);
-
       // Get user details
       const userDetails = await this.getUserDetails(req);
 
@@ -1968,22 +1888,25 @@ export class UserService {
         },
       });
 
-      // Build file key and upload to storage
-      const fileKey = this.buildFileKey(userDetails.user_id, fileExtension);
-      uploadedPath = await this.fileStorageService.uploadFile(fileKey, file.buffer, false);
-      if (!uploadedPath) {
-        throw new InternalServerErrorException('Failed to upload file to storage');
-      }
-      Logger.log(`File uploaded successfully to: ${uploadedPath}`);
-
-      // Save or update the document record
-      const { savedDoc, isUpdate } = await (existingDoc
-        ? this.updateExistingDoc(existingDoc, uploadedPath, uploadDocumentDto, docDatatype)
-        : this.createNewDoc(userDetails.user_id, uploadedPath, uploadDocumentDto, docDatatype)
+      // Upload file using the generic document upload service
+      const uploadResult = await this.documentUploadService.uploadFile(
+        file,
+        {
+          docType: uploadDocumentDto.docType,
+          docSubType: uploadDocumentDto.docSubType,
+          docName: uploadDocumentDto.docName,
+          importedFrom: uploadDocumentDto.importedFrom,
+        },
+        userDetails.user_id,
       );
 
+      // Save or update the document record
+      const { savedDoc, isUpdate } = existingDoc
+        ? await this.updateExistingDoc(existingDoc, uploadResult, uploadDocumentDto)
+        : await this.createNewDoc(userDetails.user_id, uploadResult, uploadDocumentDto);
+
       // Generate download URL and return standardized response
-      const downloadUrl = await this.generateDocumentDownloadUrl(savedDoc.doc_path);
+      const downloadUrl = await this.documentUploadService.generateDownloadUrl(savedDoc.doc_path);
 
       return new SuccessResponse({
         statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
@@ -2003,13 +1926,6 @@ export class UserService {
         },
       });
     } catch (error) {
-      if (uploadedPath) {
-        try {
-          await this.fileStorageService.deleteFile(uploadedPath);
-        } catch (cleanupError) {
-          Logger.warn(`Failed to clean up uploaded file ${uploadedPath}: ${cleanupError}`);
-        }
-      }
       Logger.error(
         'users.service:uploadDocument',
         error?.message ?? error,
@@ -2037,81 +1953,22 @@ export class UserService {
     }
   }
 
-  // Helpers extracted from uploadDocument to reduce cognitive complexity
-
-  private ensureFileAvailable(file: Express.Multer.File) {
-    if (!file?.buffer || !file?.originalname) {
-      throw new BadRequestException('No file uploaded');
-    }
-  }
-
-  private extractFileMetadata(file: Express.Multer.File): { fileExtension: string; docDatatype: string } {
-    const allowedMimes = new Set(['application/pdf', 'image/jpeg', 'image/png']);
-    const allowedExts = new Set(['.pdf', '.jpg', '.jpeg', '.png']);
-    const fileExtension = path.extname(file.originalname).toLowerCase();
-
-    if (!allowedExts.has(fileExtension) || (file.mimetype && !allowedMimes.has(file.mimetype))) {
-      throw new BadRequestException('Unsupported file type');
-    }
-
-    if (file.size && file.size > FILE_UPLOAD_LIMITS.MAX_FILE_SIZE) {
-      throw new BadRequestException('File too large');
-    }
-
-    // Validate file signature (magic numbers) before processing
-    this.validateFileSignature(file.buffer, file.originalname);
-
-    let docDatatype = 'Unknown';
-    switch (fileExtension) {
-      case '.pdf':
-        docDatatype = 'PDF';
-        break;
-      case '.jpg':
-      case '.jpeg':
-        docDatatype = 'JPEG';
-        break;
-      case '.png':
-        docDatatype = 'PNG';
-        break;
-    }
-
-    return { fileExtension, docDatatype };
-  }
-
-  private buildFileKey(userId: string, fileExtension: string): string {
-    const filePrefix = this.configService.get<string>('FILE_PREFIX_ENV', 'local');
-    return `${filePrefix}/${userId}/${uuidv4()}${fileExtension}`;
-  }
-
-  private async deleteOldFileIfExists(filePath?: string) {
-    if (!filePath) return;
-    try {
-      const deleted = await this.fileStorageService.deleteFile(filePath);
-      if (deleted) {
-        Logger.log(`Deleted old file: ${filePath}`);
-      } else {
-        Logger.warn(`Could not delete old file: ${filePath}`);
-      }
-    } catch (unlinkError) {
-      Logger.error(`Failed to delete old file: ${unlinkError}`);
-    }
-  }
+  // Helper methods for document management
 
   private async updateExistingDoc(
     existingDoc: UserDoc,
-    uploadedPath: string,
+    uploadResult: any,
     uploadDocumentDto: UploadDocumentDto,
-    docDatatype: string,
   ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
     const previousPath = existingDoc.doc_path;
-    existingDoc.doc_path = uploadedPath;
+    existingDoc.doc_path = uploadResult.filePath;
     existingDoc.imported_from = uploadDocumentDto.importedFrom;
-    existingDoc.doc_datatype = docDatatype;
-    existingDoc.uploaded_at = new Date();
+    existingDoc.doc_datatype = uploadResult.docDatatype;
+    existingDoc.uploaded_at = uploadResult.uploadedAt;
 
     const savedDoc = await this.userDocsRepository.save(existingDoc);
     if (previousPath) {
-      await this.deleteOldFileIfExists(previousPath);
+      await this.documentUploadService.deleteFile(previousPath);
     }
     Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
     return { savedDoc, isUpdate: true };
@@ -2119,9 +1976,8 @@ export class UserService {
 
   private async createNewDoc(
     userId: string,
-    uploadedPath: string,
+    uploadResult: any,
     uploadDocumentDto: UploadDocumentDto,
-    docDatatype: string,
   ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
     const newUserDoc = this.userDocsRepository.create({
       user_id: userId,
@@ -2129,9 +1985,9 @@ export class UserService {
       doc_subtype: uploadDocumentDto.docSubType,
       doc_name: uploadDocumentDto.docName,
       imported_from: uploadDocumentDto.importedFrom,
-      doc_path: uploadedPath,
+      doc_path: uploadResult.filePath,
       doc_data: null,
-      doc_datatype: docDatatype,
+      doc_datatype: uploadResult.docDatatype,
       doc_verified: null,
       watcher_registered: false,
       watcher_email: null,

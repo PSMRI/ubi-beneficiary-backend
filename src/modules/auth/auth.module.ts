@@ -20,6 +20,7 @@ import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { AdminModule } from '@modules/admin/admin.module';
+import { DocumentUploadModule } from '@modules/document-upload/document-upload.module';
 import { ProxyService } from '@services/proxy/proxy.service';
 
 @Module({
@@ -36,6 +37,7 @@ import { ProxyService } from '@services/proxy/proxy.service';
     ]),
     CustomFieldsModule,
     AdminModule,
+    DocumentUploadModule,
   ],
   controllers: [AuthController],
   providers: [

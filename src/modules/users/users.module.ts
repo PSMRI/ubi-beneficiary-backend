@@ -18,6 +18,7 @@ import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { AdminModule } from '@modules/admin/admin.module';
+import { DocumentUploadModule } from '@modules/document-upload/document-upload.module';
 import { ConfigModule } from '@nestjs/config';
 import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 
@@ -57,6 +58,7 @@ import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
     }),
     CustomFieldsModule,
     AdminModule,
+    DocumentUploadModule,
   ],
   controllers: [UserController],
   providers: [
