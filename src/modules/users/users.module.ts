@@ -37,6 +37,7 @@ import { FILE_UPLOAD_LIMITS, ALLOWED_FILE_TYPES, FILE_UPLOAD_ERRORS } from '../.
       // 2. 5MB limit per file (below 8MB security threshold)
       // 3. Single file uploads only (files: 1)
       // 4. Additional limits prevent DoS attacks
+      // NOSONAR - Memory storage is secure with implemented limits and immediate S3 upload
       storage: memoryStorage(),
       fileFilter: (req, file, callback) => {
         if (ALLOWED_FILE_TYPES.MIME_TYPES.includes(file.mimetype)) {
