@@ -99,7 +99,7 @@ export class KeycloakService {
 	}
 
 	public async resetPassword(keycloak_id, token, password) {
-		console.log('resetPassword');
+		
 		const data = {
 			temporary: false,
 			type: 'password',
@@ -119,7 +119,7 @@ export class KeycloakService {
 			const observable = this.httpService.put(url, data, config);
 			const promise = observable.toPromise();
 			const response = await promise;
-			console.log('password updated');
+			
 
 			if (response.status === 204) {
 				return true;
@@ -248,7 +248,6 @@ export class KeycloakService {
 	}
 
 	public async registerUser(data, token) {
-		console.log('inside registerUser', data);
 
 		const url = `${this.keycloak_url}/admin/realms/${this.realm_name_app}/users`;
 
@@ -266,7 +265,6 @@ export class KeycloakService {
 			const promise = observable.toPromise();
 
 			const { headers, status } = await promise;
-			console.log('registerUser response', headers);
 			registerUserRes = {
 				headers,
 				status,
@@ -279,7 +277,7 @@ export class KeycloakService {
 	}
 
 	public async findUser(data, token) {
-		console.log('inside findUser', data);
+		
 
 		const url = `${this.keycloak_url}/admin/realms/${this.realm_name_app}/users?username=${data}`;
 
@@ -295,7 +293,6 @@ export class KeycloakService {
 			const observable = this.httpService.get(url, config);
 			const promise = observable.toPromise();
 			const response = await promise;
-			console.log('response 171', response.data);
 			return response.data;
 		} catch (err) {
 			console.log('findUser err', err);

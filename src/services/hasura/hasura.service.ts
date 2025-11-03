@@ -14,10 +14,8 @@ export class HasuraService {
   private readonly telemetry_db = process.env.TELEMETRY_DB;
   private readonly url = process.env.HASURA_URL;
 
-  constructor() {
-    console.log('cache_db', this.cache_db);
-    console.log('response_cache_db', this.response_cache_db);
-  }
+	constructor() {
+	}
 
   async findJobsCache(requestBody) {
 		const { filters, search } = requestBody;
@@ -281,20 +279,26 @@ export class HasuraService {
     }
   }
 
-  async insertCacheData(arrayOfObjects) {
-    this.logger.log(`Starting cache refresh: deleting all existing records and inserting ${arrayOfObjects.length} new records`);
-    
-    // First delete all existing records
-    if(arrayOfObjects.length > 0){
-      try {
-        await this.deleteJobs();
-        this.logger.log('Successfully deleted all existing records');
-      } catch (error) {
-        this.logger.error('Error deleting existing records:', error);
-        throw error;
-      }
-    }
-    
+  async insertCacheData(arrayOfObjects: any[], bpps: string[]) {
+	this.logger.log(
+		`Starting cache refresh for ${bpps.length} BPP(s): ${bpps.join(', ')}`,
+	);
+	this.logger.log(
+		`Deleting existing records and inserting ${arrayOfObjects.length} new records`,
+	);
+
+	// First delete existing records for the specified BPPs only
+	if (bpps.length > 0) {
+		try {
+			await this.deleteJobsByBpps(bpps);
+			this.logger.log(
+				`Successfully deleted records for BPPs: ${bpps.join(', ')}`,
+			);
+		} catch (error) {
+			this.logger.error('Error deleting existing records for BPPs:', error);
+			throw error;
+		}
+	}
     // $provider_id: String, provider_name: String, bpp_id: String, bpp_uri: String
     // provider_id: $provider_id, provider_name: $provider_name, bpp_id: $bpp_id, bpp_uri: $bpp_uri
     const query = `mutation MyMutation($title: String, $description: String, $url: String, $provider_name: String, $enrollmentEndDate: timestamptz, $bpp_id: String, $unique_id: String, $bpp_uri: String, $item_id: String, $offeringInstitute: jsonb, $credits: String, $instructors: String,$provider_id: String, $item: json, $descriptor: json, $categories: json, $fulfillments: json) { 
@@ -328,7 +332,6 @@ export class HasuraService {
 
   async queryDb(query: string, variables?: Record<string, any>): Promise<any> {
     try {
-      console.log('querydbDetails', query, variables, this.adminSecretKey);
       const response = await axios.post(
         this.url,
         {
@@ -342,7 +345,6 @@ export class HasuraService {
           },
         },
       );
-      console.log('response.data', response.data);
       return response.data;
     } catch (error) {
       console.log('error', error);
@@ -426,6 +428,34 @@ export class HasuraService {
       throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
     }
   }
+  async deleteJobsByBpps(bpps: string[]) {
+		// Build the _in clause for the query with the array of BPP IDs
+	const validBpps = bpps.filter((bpp) => bpp != null && bpp !== '');
+	if (validBpps.length === 0) {
+		this.logger.warn('All provided BPP IDs were invalid');
+		return { data: { [`delete_${this.cache_db}`]: { affected_rows: 0 } } };
+	}
+	
+	const query = `mutation DeleteJobsByBpps($bppIds: [String!]!) {
+		delete_${this.cache_db}(where: {bpp_id: {_in: $bppIds}}) {
+			affected_rows
+		}
+	}`;
+	try {
+		const result = await this.queryDb(query, { bppIds: validBpps });
+		const affectedRows = result.data[`delete_${this.cache_db}`].affected_rows;
+		this.logger.log(
+			`Deleted ${affectedRows} records for BPPs: ${validBpps.join(', ')}`,
+		);
+		return result;
+	} catch (error) {
+		this.logger.error(
+			`Error deleting jobs for BPPs [${validBpps.join(', ')}]:`,
+			error,
+		);
+		throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+	}
+}
 
   async createSeekerUser(seeker) {
     const query = `mutation InsertSeeker($email: String , $name:String, $age:String, $gender:String, $phone:String) {
@@ -441,8 +471,6 @@ export class HasuraService {
         } 
       }
     }`;
-
-    console.log(query);
 
     // Rest of your code to execute the query
     try {
@@ -504,7 +532,6 @@ export class HasuraService {
   }
 
   async searchOrderByOrderId(order) {
-    console.log('order', order);
     const query = `query MyQuery {
       ${this.order_db}(where: {order_id: {_eq: "${order}"}}) {
         OrderContentRelationship {
@@ -528,7 +555,6 @@ export class HasuraService {
   }
 
   async addTelemetry(data) {
-    console.log('data', data);
     const query = `
       mutation ($id: String, $ver: String, $events:jsonb) {
         insert_${this.telemetry_db}(objects: [{id: $id, ver: $ver, events: $events}]) {

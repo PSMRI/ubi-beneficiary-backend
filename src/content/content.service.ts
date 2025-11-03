@@ -286,6 +286,12 @@ export class ContentService {
 		try {
 			const response = await this.proxyService.bapCLientApi2('search', data);	
 			if (response) {
+				// Log number of BPP responses received
+				const bppIds = response.responses
+				?.map((r) => r.context?.bpp_id)
+				.filter((id) => id != null) || [];
+				this.logger.log(`Received responses from ${bppIds.length} BPP(s)`);
+				
 				const arrayOfObjects = [];
 				for (const responses of response.responses) {
 					if (responses.message.catalog.providers) {
@@ -322,8 +328,8 @@ export class ContentService {
 						}
 					}
 				}
-				// console.log('arrayOfObjects', arrayOfObjects);
-				// console.log('arrayOfObjects length', arrayOfObjects.length);
+		
+				console.log('arrayOfObjects length', arrayOfObjects.length);
 				const uniqueObjects = Array.from(
 					new Set(arrayOfObjects.map((obj) => obj.unique_id)),
 				).map((id) => {
@@ -332,12 +338,14 @@ export class ContentService {
 				// console.log('uniqueObjects length', uniqueObjects.length);
 				//return uniqueObjects
 				const insertionResponse =
-					await this.hasuraService.insertCacheData(uniqueObjects);
+					await this.hasuraService.insertCacheData(uniqueObjects , bppIds);
 
 				// Collect all returned items from the response (flatten the result)
 				const returnedItems = insertionResponse.flatMap(
 					(res) => res.data.insert_ubi_network_cache.returning,
 				);
+
+				this.logger.log(`Successfully inserted ${returnedItems.length} unique benefits into cache`);
 
 				// Create the success response in the desired format
 				return new SuccessResponse({

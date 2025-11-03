@@ -7,8 +7,6 @@ export class ProxyService {
 
   async bapCLientApi2(endPoint, body) {
     let data = JSON.stringify(body);
-    console.log('bap_client_url', `${this.bap_client_url}/${endPoint}`);
-    console.log('req_body', data);
 
     let config = {
       method: 'post',
