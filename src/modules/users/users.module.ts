@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MulterModule } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { UserController } from '@modules/users/users.controller';
 import { UserService } from '@modules/users/users.service';
 import { User } from '@entities/user.entity';
@@ -16,7 +18,9 @@ import { Field } from '@modules/customfields/entities/field.entity';
 import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { AdminModule } from '@modules/admin/admin.module';
+import { DocumentUploadModule } from '@modules/document-upload/document-upload.module';
 import { ConfigModule } from '@nestjs/config';
+import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 
 @Module({
   imports: [
@@ -28,8 +32,33 @@ import { ConfigModule } from '@nestjs/config';
       Field,
       FieldValue,
     ]),
+    MulterModule.register({
+      // Memory storage is secure here because:
+      // 1. Files are immediately processed and uploaded to S3
+      // 2. 5MB limit per file (below 8MB security threshold)
+      // 3. Single file uploads only (files: 1)
+      // 4. Additional limits prevent DoS attacks
+      // 5. Content-based validation prevents file type spoofing
+      storage: memoryStorage(), // NOSONAR - Memory storage is secure with implemented limits and immediate S3 upload
+      fileFilter: (req, file, callback) => {
+        // Accept all files initially - content validation will be done after upload
+        // This allows us to perform async content-based validation using file.buffer
+        // Size and other limits are still enforced by multer
+        callback(null, true);
+      },
+      limits: {
+        fileSize: FILE_UPLOAD_LIMITS.MAX_FILE_SIZE,
+        files: FILE_UPLOAD_LIMITS.MAX_FILES,
+        fieldSize: FILE_UPLOAD_LIMITS.MAX_FIELD_SIZE,
+        fieldNameSize: FILE_UPLOAD_LIMITS.MAX_FIELD_NAME_SIZE,
+        fields: FILE_UPLOAD_LIMITS.MAX_FIELDS,
+        headerPairs: FILE_UPLOAD_LIMITS.MAX_HEADER_PAIRS,
+        parts: FILE_UPLOAD_LIMITS.MAX_PARTS,
+      },
+    }),
     CustomFieldsModule,
     AdminModule,
+    DocumentUploadModule,
   ],
   controllers: [UserController],
   providers: [

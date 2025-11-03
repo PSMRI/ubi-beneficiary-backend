@@ -6,6 +6,7 @@ import {
   InternalServerErrorException,
   Logger,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
@@ -19,8 +20,8 @@ import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { KeycloakService } from '@services/keycloak/keycloak.service';
 import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { AdminService } from '@modules/admin/admin.service';
@@ -29,6 +30,9 @@ import { FieldContext } from '@modules/customfields/entities/field.entity';
 import { ConfigService } from '@nestjs/config';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
+import { UploadDocumentDto } from './dto/upload-document.dto';
+import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
+import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
 
 type StatusUpdateInfo = {
   attempted: boolean;
@@ -55,6 +59,9 @@ export class UserService {
     private readonly configService: ConfigService,
     private readonly proxyService: ProxyService,
     private readonly adminService: AdminService,
+    @Inject('FileStorageService')
+    private readonly fileStorageService: IFileStorageService,
+    private readonly documentUploadService: DocumentUploadService,
   ) { }
 
 
@@ -219,11 +226,21 @@ export class UserService {
       docTypes = [];
     }
   
-    return userDocs.map((doc) => ({
-      ...doc,
-      is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
-    }));
+    // Generate pre-signed URLs for documents if using S3
+    const docsWithUrls = await Promise.all(
+      userDocs.map(async (doc) => {
+        const downloadUrl = await this.documentUploadService.generateDownloadUrl(doc.doc_path);
+        return {
+          ...doc,
+          is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
+          download_url: downloadUrl,
+        };
+      })
+    );
+
+    return docsWithUrls;
   }
+
 
   async findUserConsent(user_id: string): Promise<any> {
     const consents = await this.consentRepository.find({
@@ -1041,6 +1058,9 @@ export class UserService {
           'You are not authorized to modify or delete this resourse',
       });
 
+    // Store the file path before deleting from database
+    const filePath = existingDoc.doc_path;
+
     // Delete the document
     const queryRunner =
       this.userDocsRepository.manager.connection.createQueryRunner();
@@ -1051,8 +1071,19 @@ export class UserService {
       // Reset the field along with deleting the document
       await this.resetField(existingDoc, queryRunner);
       await queryRunner.commitTransaction();
+
+      // Delete the physical file using document upload service
+      if (filePath) {
+        try {
+          await this.documentUploadService.deleteFile(filePath);
+        } catch (fileError) {
+          Logger.error(`Failed to delete file from storage: ${fileError}`);
+          // Don't fail the entire operation if file deletion fails
+        }
+      }
     } catch (error) {
       Logger.error('Error while deleting the document: ', error);
+      await queryRunner.rollbackTransaction();
       await queryRunner.release();
       return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1827,5 +1858,145 @@ export class UserService {
         errorMessage: 'Failed to process wallet callback',
       });
     }
+  }
+
+
+  /**
+   * Upload a document file with metadata and store it in the database
+   * If a document with the same type, subtype, and name exists for the user, it will be updated
+   * @param req The request object containing authenticated user information
+   * @param file The uploaded file (from multer)
+   * @param uploadDocumentDto Metadata for the document
+   * @returns Success response with document details
+   */
+  async uploadDocument(
+    req: any,
+    file: Express.Multer.File,
+    uploadDocumentDto: UploadDocumentDto,
+  ) {
+    try {
+      // Get user details
+      const userDetails = await this.getUserDetails(req);
+
+      // Try to find an existing document for update
+      const existingDoc = await this.userDocsRepository.findOne({
+        where: {
+          user_id: userDetails.user_id,
+          doc_type: uploadDocumentDto.docType,
+          doc_subtype: uploadDocumentDto.docSubType,
+          doc_name: uploadDocumentDto.docName,
+        },
+      });
+
+      // Upload file using the generic document upload service
+      const uploadResult = await this.documentUploadService.uploadFile(
+        file,
+        {
+          docType: uploadDocumentDto.docType,
+          docSubType: uploadDocumentDto.docSubType,
+          docName: uploadDocumentDto.docName,
+          importedFrom: uploadDocumentDto.importedFrom,
+        },
+        userDetails.user_id,
+      );
+
+      // Save or update the document record
+      const { savedDoc, isUpdate } = existingDoc
+        ? await this.updateExistingDoc(existingDoc, uploadResult, uploadDocumentDto)
+        : await this.createNewDoc(userDetails.user_id, uploadResult, uploadDocumentDto);
+
+      // Generate download URL and return standardized response
+      const downloadUrl = await this.documentUploadService.generateDownloadUrl(savedDoc.doc_path);
+
+      return new SuccessResponse({
+        statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
+        message: isUpdate ? 'Document updated successfully' : 'Document uploaded successfully',
+        data: {
+          doc_id: savedDoc.doc_id,
+          doc_path: savedDoc.doc_path,
+          user_id: savedDoc.user_id,
+          doc_type: savedDoc.doc_type,
+          doc_subtype: savedDoc.doc_subtype,
+          doc_name: savedDoc.doc_name,
+          imported_from: savedDoc.imported_from,
+          doc_datatype: savedDoc.doc_datatype,
+          uploaded_at: savedDoc.uploaded_at,
+          is_update: isUpdate,
+          download_url: downloadUrl, // Pre-signed URL for S3 or file path for local
+        },
+      });
+    } catch (error) {
+      Logger.error(
+        'users.service:uploadDocument',
+        error?.message ?? error,
+        error?.stack,
+      );
+
+      if (error?.code === '23505') {
+        return new ErrorResponse({
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: 'Duplicate document entry',
+        });
+      }
+
+      if (error instanceof BadRequestException) {
+        return new ErrorResponse({
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: error.message,
+        });
+      }
+
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: 'Failed to upload document',
+      });
+    }
+  }
+
+  // Helper methods for document management
+
+  private async updateExistingDoc(
+    existingDoc: UserDoc,
+    uploadResult: any,
+    uploadDocumentDto: UploadDocumentDto,
+  ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+    const previousPath = existingDoc.doc_path;
+    existingDoc.doc_path = uploadResult.filePath;
+    existingDoc.imported_from = uploadDocumentDto.importedFrom;
+    existingDoc.doc_datatype = uploadResult.docDatatype;
+    existingDoc.uploaded_at = uploadResult.uploadedAt;
+
+    const savedDoc = await this.userDocsRepository.save(existingDoc);
+    if (previousPath) {
+      await this.documentUploadService.deleteFile(previousPath);
+    }
+    Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
+    return { savedDoc, isUpdate: true };
+  }
+
+  private async createNewDoc(
+    userId: string,
+    uploadResult: any,
+    uploadDocumentDto: UploadDocumentDto,
+  ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+    const newUserDoc = this.userDocsRepository.create({
+      user_id: userId,
+      doc_type: uploadDocumentDto.docType,
+      doc_subtype: uploadDocumentDto.docSubType,
+      doc_name: uploadDocumentDto.docName,
+      imported_from: uploadDocumentDto.importedFrom,
+      doc_path: uploadResult.filePath,
+      doc_data: null,
+      doc_datatype: uploadResult.docDatatype,
+      doc_verified: null,
+      watcher_registered: false,
+      watcher_email: null,
+      watcher_callback_url: null,
+      doc_data_link: null,
+    });
+
+    const savedDoc = await this.userDocsRepository.save(newUserDoc);
+    Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}`);
+    return { savedDoc, isUpdate: false };
   }
 }
