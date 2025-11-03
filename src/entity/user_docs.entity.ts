@@ -50,11 +50,11 @@ export class UserDoc {
 	})
 	doc_data: Record<string, unknown> | null;
 
-	@Column({ type: 'varchar', length: 100 })
-	doc_datatype: string;
+	@Column({ type: 'varchar', length: 100, nullable: true })
+	doc_datatype: string | null;
 
-	@Column({ type: 'boolean' })
-	doc_verified: boolean;
+	@Column({ type: 'boolean', nullable: true })
+	doc_verified: boolean | null;
 
 	@Column({ type: 'boolean', default: false, nullable: false })
 	watcher_registered: boolean;
