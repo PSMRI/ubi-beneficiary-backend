@@ -74,9 +74,9 @@ export class HasuraService {
   private normalizeCondition(condition: string): string {
     return String(condition)
       .toLowerCase()
-      .replace(/\s+/g, '')  // Remove all whitespace
-      .replace(/[^a-z0-9=<>]/g, '') // Keep only alphanumeric and comparison operators
-      .replace(/[=<>]+/g, match => {
+      .replaceAll(/[\s]+/g, '')  // Remove all whitespace
+      .replaceAll(/[^a-z0-9=<>]/g, '') // Keep only alphanumeric and comparison operators
+      .replaceAll(/[=<>]+/g, match => {
         // Normalize symbolic operators
         switch (match) {
           case '=': return 'equals';
@@ -185,7 +185,7 @@ export class HasuraService {
         case 'match':
         case '=':
           return cleanConditionValues[0] === cleanUserValue ||
-            cleanConditionValues[0].replace(/[^a-zA-Z0-9]/g, '') === cleanUserValue.replace(/[^a-zA-Z0-9]/g, '');
+            cleanConditionValues[0].replaceAll(/[^a-zA-Z0-9]/g, '') === cleanUserValue.replaceAll(/[^a-zA-Z0-9]/g, '');
 
         case 'lessthanequals':
         case 'lte':
@@ -356,26 +356,6 @@ export class HasuraService {
     if (filters?.item_id) {
       jobs = jobs.filter(job => job.item_id === filters.item_id);
     }
-
-    // Utility to parse and evaluate a tag's value against a filter
-    const normalizeCondition = (condition: string): string => {
-      return String(condition)
-        .toLowerCase()
-        .replace(/\s+/g, '')  // Remove all whitespace
-        .replace(/[^a-z0-9=<>]/g, '') // Keep only alphanumeric and comparison operators
-        .replace(/[=<>]+/g, match => {
-          // Normalize symbolic operators
-          switch (match) {
-            case '=': return 'equals';
-            case '<=': return 'lte';
-            case '>=': return 'gte';
-            case '<': return 'lt';
-            case '>': return 'gt';
-            default: return match;
-          }
-        });
-    };
-
     const handleAnnualIncome = (cleanFilterValue: string, cleanConditionValues: string[]): boolean => {
       let annualIncomeValue;
 
@@ -403,7 +383,7 @@ export class HasuraService {
     const evaluateCondition = (tagValueJson, filterKey, filterValue) => {
       try {
         const tagValue = JSON.parse(tagValueJson);
-        const condition = normalizeCondition(tagValue.condition);
+        const condition = this.normalizeCondition(tagValue.condition);
 
         // Get condition values from the criteria object
         const conditionValues = Array.isArray(tagValue.criteria?.conditionValues)
@@ -436,7 +416,7 @@ export class HasuraService {
           case 'match':
           case '=':
             return cleanConditionValues[0] === cleanFilterValue ||
-              cleanConditionValues[0].replace(/[^a-zA-Z0-9]/g, '') === cleanFilterValue.replace(/[^a-zA-Z0-9]/g, '');
+              cleanConditionValues[0].replaceAll(/[^a-zA-Z0-9]/g, '') === cleanFilterValue.replaceAll(/[^a-zA-Z0-9]/g, '');
 
           case 'lessthanequals':
           case 'lte':
