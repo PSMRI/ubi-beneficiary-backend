@@ -83,24 +83,24 @@ interface Job {
 }
 
 interface CriteriaResult {
-	  ruleKey: string;
-	  passed: boolean;
-	  description: string;
-	  reasons?: string[];
-	}
-	
-	interface EligibilityItem {
-	  schemaId: string;
-	  details?: {
-	    isEligible: boolean;
-	    criteriaResults?: CriteriaResult[];
-	  };
-	}
-	
-	interface EligibilityData {
-	  eligible?: EligibilityItem[];
-	  ineligible?: EligibilityItem[];
-	}
+	ruleKey: string;
+	passed: boolean;
+	description: string;
+	reasons?: string[];
+}
+
+interface EligibilityItem {
+	schemaId: string;
+	details?: {
+		isEligible: boolean;
+		criteriaResults?: CriteriaResult[];
+	};
+}
+
+interface EligibilityData {
+	eligible?: EligibilityItem[];
+	ineligible?: EligibilityItem[];
+}
 
 @Injectable()
 export class ContentService {
@@ -122,7 +122,7 @@ export class ContentService {
 		private readonly userService: UserService,
 		private readonly authService: AuthService,
 		private readonly adminService: AdminService,
-	) {}
+	) { }
 
 	async getJobs(body, req) {
 		try {
@@ -131,76 +131,25 @@ export class ContentService {
 			const userId = req?.mw_userid;
 
 			// Step 1: Fetch default eligibility config from AdminService
-			let defaultEligibilityConfig: any[] = [];
-			try {
-				this.logger.log('Fetching default eligibility config from AdminService...');
-				const configResponse = await this.adminService.getConfig('defaultEligibility');
-				if (!(configResponse instanceof ErrorResponse) && configResponse?.data) {
-					const settingData = configResponse.data as any;
-					if (settingData?.value) {
-						// Parse JSON string and extract applyFilter array
-						try {
-							const parsedConfig = typeof settingData.value === 'string' 
-								? JSON.parse(settingData.value) 
-								: settingData.value;
-							defaultEligibilityConfig = parsedConfig?.applyFilter || [];
-							console.log("defaultEligibilityConfig++++",defaultEligibilityConfig);
-						} catch (parseErr) {
-							this.logger.warn('Failed to parse default eligibility config JSON:', parseErr);
-						}
-					} else {
-						this.logger.log('No default eligibility config value found');
-					}
-				} else {
-					this.logger.log('No default eligibility config found in database');
-				}
-			} catch (err) {
-				this.logger.warn('Failed to fetch default eligibility config:', err);
-			}
+			const defaultEligibilityConfig = await this.fetchDefaultEligibilityConfig();
 
 			// Get user info if userId is present
-			let userInfo = null;
-			if (userId) {
-				const request = { user: { keycloak_id: userId } };
-				const response = await this.userService.findOne(request, true);
-				let user = null;
-				if (!(response instanceof ErrorResponse) && response?.data) {
-					user = response.data;
-				}
-				if (user) {
-					userInfo = this.authService.formatUserInfo(user);
-				}
-			}
+			const userInfo = await this.fetchUserInfoForEligibility(userId);
 
 			// Step 2: Extract user eligibility values dynamically
-			const userEligibilityValues = {};
-			if (userInfo && Array.isArray(defaultEligibilityConfig)) {
-				for (const rule of defaultEligibilityConfig) {
-					const key = rule?.key;
-					if (key) {
-						// Directly access the field from userInfo (formatUserInfo already flattens customFields)
-						userEligibilityValues[key] = userInfo[key] ?? null;
-					}
-				}
-			} else if (!userInfo) {
-				this.logger.log('No user info available - skipping eligibility value extraction');
-			}
+			const userEligibilityValues = this.extractUserEligibilityValues(
+				userInfo,
+				defaultEligibilityConfig,
+			);
 
 			// Step 3: Attach processed defaultEligibility array to request body
-			const defaultEligibility = [];
-			if (Array.isArray(defaultEligibilityConfig) && userInfo) {
-				this.logger.log('Building defaultEligibility array for Hasura...');
-				for (const rule of defaultEligibilityConfig) {
-					if (rule?.key && rule?.isApply !== undefined) {
-						defaultEligibility.push({
-							key: rule.key,
-							isApply: rule.isApply,
-							userValue: userEligibilityValues[rule.key] ?? null,
-						});
-					}
-				}
-			}
-			// Attach defaultEligibility to body before calling Hasura
+			const defaultEligibility = this.buildDefaultEligibilityArray(
+				defaultEligibilityConfig,
+				userInfo,
+				userEligibilityValues,
+			);
+
+			// Fetch jobs from Hasura with enriched body
 			const enrichedBody = {
 				...body,
 				defaultEligibility:
@@ -209,64 +158,24 @@ export class ContentService {
 						: undefined,
 			};
 
-			// Fetch jobs from Hasura
-			const filteredData =
-				await this.hasuraService.findJobsCache(enrichedBody);
-			let filteredJobs: any[] = [];
-			if (
-				!(filteredData instanceof ErrorResponse) &&
-				typeof filteredData.data === 'object' &&
-				filteredData.data !== null &&
-				'ubi_network_cache' in filteredData.data
-			) {
-				filteredJobs = (filteredData.data as any).ubi_network_cache ?? [];
-			}
+			let filteredJobs = await this.fetchJobsFromHasura(enrichedBody);
 
 			// Eligibility filtering if userInfo is present
 			if (userInfo) {
-				try {
-					// check if strictCheck is provided in the request body
-					const strictCheck = body?.strictCheck ?? false; 
-
-					// format the benefits list from the filteredJobs data as per eligibility API requirements
-					const benefitsList =
-						this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs); 
-					const eligibilityData = await this.checkBenefitsEligibility(
-						userInfo,
-						benefitsList,
-						strictCheck,
-					);
-					// get the eligible list from the eligibility API response
-					const eligibleList = eligibilityData?.eligible ?? []; 
-
-					// extract job IDs from the eligible list
-					const eligibleJobIds = eligibleList.map((e) => e?.schemaId); 
-
-					// filter the jobs based on eligibility
-					filteredJobs = filteredJobs.filter((scheme) =>
-						eligibleJobIds.includes(scheme?.id),
-					); 
-				} catch (err) {
-					console.error('Error in eligibility filtering:', err);
-				}
+				filteredJobs = await this.applyEligibilityFiltering(
+					filteredJobs,
+					userInfo,
+					body?.strictCheck ?? false,
+				);
 			}
 
 			// Pagination
-			const total = filteredJobs.length;
-			const start = (page - 1) * limit;
-			const end = start + limit;
-			const paginatedJobs = filteredJobs.slice(start, end);
+			const paginationResult = this.paginateJobs(filteredJobs, page, limit);
 
 			return {
 				statusCode: 200,
 				message: 'Ok.',
-				data: {
-					ubi_network_cache: paginatedJobs,
-					total,
-					page,
-					limit,
-					totalPages: Math.ceil(total / limit),
-				},
+				data: paginationResult,
 			};
 		} catch (err) {
 			return new ErrorResponse({
@@ -274,6 +183,178 @@ export class ContentService {
 				errorMessage: err.message,
 			});
 		}
+	}
+
+	/**
+	 * Fetch default eligibility configuration from AdminService
+	 */
+	private async fetchDefaultEligibilityConfig(): Promise<any[]> {
+		try {
+			const configResponse = await this.adminService.getConfig('defaultEligibility');
+
+			if (!(configResponse instanceof ErrorResponse) && configResponse?.data) {
+				const settingData = configResponse.data as any;
+				if (settingData?.value) {
+					return this.parseEligibilityConfig(settingData.value);
+				}
+				this.logger.log('No default eligibility config value found');
+			} else {
+				this.logger.log('No default eligibility config found in database');
+			}
+		} catch (err) {
+			this.logger.warn('Failed to fetch default eligibility config:', err);
+		}
+		return [];
+	}
+
+	/**
+	 * Parse eligibility configuration from string or object
+	 */
+	private parseEligibilityConfig(value: any): any[] {
+		try {
+			const parsedConfig = typeof value === 'string'
+				? JSON.parse(value)
+				: value;
+			const config = parsedConfig?.applyFilter || [];
+			return config;
+		} catch (error_) {
+			this.logger.warn('Failed to parse default eligibility config JSON:', error_);
+			return [];
+		}
+	}
+
+	/**
+	 * Fetch and format user info for eligibility checking
+	 */
+	private async fetchUserInfoForEligibility(userId: string): Promise<any | null> {
+		if (!userId) {
+			return null;
+		}
+
+		const request = { user: { keycloak_id: userId } };
+		const response = await this.userService.findOne(request, true);
+
+		if (!(response instanceof ErrorResponse) && response?.data) {
+			return this.authService.formatUserInfo(response.data);
+		}
+
+		return null;
+	}
+
+	/**
+	 * Extract user eligibility values based on config rules
+	 */
+	private extractUserEligibilityValues(
+		userInfo: any,
+		defaultEligibilityConfig: any[],
+	): Record<string, any> {
+		const userEligibilityValues = {};
+
+		if (userInfo && Array.isArray(defaultEligibilityConfig)) {
+			for (const rule of defaultEligibilityConfig) {
+				const key = rule?.key;
+				if (key) {
+					userEligibilityValues[key] = userInfo[key] ?? null;
+				}
+			}
+		} else if (!userInfo) {
+			this.logger.log('No user info available - skipping eligibility value extraction');
+		}
+
+		return userEligibilityValues;
+	}
+
+	/**
+	 * Build default eligibility array for Hasura
+	 */
+	private buildDefaultEligibilityArray(
+		defaultEligibilityConfig: any[],
+		userInfo: any,
+		userEligibilityValues: Record<string, any>,
+	): any[] {
+		const defaultEligibility = [];
+
+		if (Array.isArray(defaultEligibilityConfig) && userInfo) {
+			for (const rule of defaultEligibilityConfig) {
+				if (rule?.key && rule?.isApply !== undefined) {
+					defaultEligibility.push({
+						key: rule.key,
+						isApply: rule.isApply,
+						userValue: userEligibilityValues[rule.key] ?? null,
+					});
+				}
+			}
+		}
+
+		return defaultEligibility;
+	}
+
+	/**
+	 * Fetch jobs from Hasura with enriched body
+	 */
+	private async fetchJobsFromHasura(enrichedBody: any): Promise<any[]> {
+		const filteredData = await this.hasuraService.findJobsCache(enrichedBody);
+
+		if (
+			!(filteredData instanceof ErrorResponse) &&
+			typeof filteredData.data === 'object' &&
+			filteredData.data !== null &&
+			'ubi_network_cache' in filteredData.data
+		) {
+			return (filteredData.data as any).ubi_network_cache ?? [];
+		}
+
+		return [];
+	}
+
+	/**
+	 * Apply eligibility filtering to jobs
+	 */
+	private async applyEligibilityFiltering(
+		filteredJobs: any[],
+		userInfo: any,
+		strictCheck: boolean,
+	): Promise<any[]> {
+		try {
+			const benefitsList = this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs);
+			const eligibilityData = await this.checkBenefitsEligibility(
+				userInfo,
+				benefitsList,
+				strictCheck,
+			);
+
+			const eligibleList = eligibilityData?.eligible ?? [];
+			const eligibleJobIds = eligibleList.map((e) => e?.schemaId);
+
+			return filteredJobs.filter((scheme) =>
+				eligibleJobIds.includes(scheme?.id),
+			);
+		} catch (err) {
+			console.error('Error in eligibility filtering:', err);
+			return filteredJobs;
+		}
+	}
+
+	/**
+	 * Paginate jobs and return pagination metadata
+	 */
+	private paginateJobs(
+		filteredJobs: any[],
+		page: number,
+		limit: number,
+	): any {
+		const total = filteredJobs.length;
+		const start = (page - 1) * limit;
+		const end = start + limit;
+		const paginatedJobs = filteredJobs.slice(start, end);
+
+		return {
+			ubi_network_cache: paginatedJobs,
+			total,
+			page,
+			limit,
+			totalPages: Math.ceil(total / limit),
+		};
 	}
 
 	async encryption(data) {
@@ -352,14 +433,14 @@ export class ContentService {
 		};
 
 		try {
-			const response = await this.proxyService.bapCLientApi2('search', data);	
+			const response = await this.proxyService.bapCLientApi2('search', data);
 			if (response) {
 				// Log number of BPP responses received
 				const bppIds = response.responses
-				?.map((r) => r.context?.bpp_id)
-				.filter((id) => id != null) || [];
+					?.map((r) => r.context?.bpp_id)
+					.filter((id) => id != null) || [];
 				this.logger.log(`Received responses from ${bppIds.length} BPP(s)`);
-				
+
 				const arrayOfObjects = [];
 				for (const responses of response.responses) {
 					if (responses.message.catalog.providers) {
@@ -396,7 +477,7 @@ export class ContentService {
 						}
 					}
 				}
-		
+
 				console.log('arrayOfObjects length', arrayOfObjects.length);
 				const uniqueObjects = Array.from(
 					new Set(arrayOfObjects.map((obj) => obj.unique_id)),
@@ -406,7 +487,7 @@ export class ContentService {
 				// console.log('uniqueObjects length', uniqueObjects.length);
 				//return uniqueObjects
 				const insertionResponse =
-					await this.hasuraService.insertCacheData(uniqueObjects , bppIds);
+					await this.hasuraService.insertCacheData(uniqueObjects, bppIds);
 
 				// Collect all returned items from the response (flatten the result)
 				const returnedItems = insertionResponse.flatMap(
@@ -585,23 +666,23 @@ export class ContentService {
 
 	async telemetryAnalytics(body) {
 		let query = `SELECT
-       events->'edata'->>'pageurl' AS unique_pageurl,
-       COUNT(*) AS data_count
-       FROM
-       ${this.telemetry_db}
-       GROUP BY
-       unique_pageurl;`;
+	   events->'edata'->>'pageurl' AS unique_pageurl,
+	   COUNT(*) AS data_count
+	   FROM
+	   ${this.telemetry_db}
+	   GROUP BY
+	   unique_pageurl;`;
 
 		if (body.agent) {
 			query = `SELECT
-       events->'edata'->>'pageurl' AS unique_pageurl,
-       COUNT(*) AS data_count
-       FROM
-       ${this.telemetry_db}
-       WHERE
-           events->'edata'->>'pageurl' LIKE '%${body.agent}%'
-       GROUP BY
-       unique_pageurl;`;
+	   events->'edata'->>'pageurl' AS unique_pageurl,
+	   COUNT(*) AS data_count
+	   FROM
+	   ${this.telemetry_db}
+	   WHERE
+		   events->'edata'->>'pageurl' LIKE '%${body.agent}%'
+	   GROUP BY
+	   unique_pageurl;`;
 		}
 
 		if (body.date) {
@@ -609,27 +690,27 @@ export class ContentService {
 			const toDate = Date.parse(body.date.to);
 
 			query = `SELECT
-       events->'edata'->>'pageurl' AS unique_pageurl,
-       COUNT(*) AS data_count
-       FROM
-       ${this.telemetry_db}
-       WHERE events->>'ets'>='${fromDate}'
-       AND events->>'ets'<'${toDate}'
-       GROUP BY
-       unique_pageurl;`;
+	   events->'edata'->>'pageurl' AS unique_pageurl,
+	   COUNT(*) AS data_count
+	   FROM
+	   ${this.telemetry_db}
+	   WHERE events->>'ets'>='${fromDate}'
+	   AND events->>'ets'<'${toDate}'
+	   GROUP BY
+	   unique_pageurl;`;
 
 			if (body.agent) {
 				query = `SELECT
-           events->'edata'->>'pageurl' AS unique_pageurl,
-           COUNT(*) AS data_count
-           FROM
-           ${this.telemetry_db}
-           WHERE
-               events->'edata'->>'pageurl' LIKE '%${body.agent}%'
-               AND events->>'ets'>='${fromDate}'
-               AND events->>'ets'<'${toDate}'
-           GROUP BY
-           unique_pageurl;`;
+		   events->'edata'->>'pageurl' AS unique_pageurl,
+		   COUNT(*) AS data_count
+		   FROM
+		   ${this.telemetry_db}
+		   WHERE
+			   events->'edata'->>'pageurl' LIKE '%${body.agent}%'
+			   AND events->>'ets'>='${fromDate}'
+			   AND events->>'ets'<'${toDate}'
+		   GROUP BY
+		   unique_pageurl;`;
 			}
 		}
 
@@ -655,17 +736,17 @@ export class ContentService {
 
 	async telemetryAnalytics1(body) {
 		let query = `SELECT *
-       FROM
-       ${this.telemetry_db}
-       ;`;
+	   FROM
+	   ${this.telemetry_db}
+	   ;`;
 
 		if (body.agent) {
 			query = `SELECT *
-       FROM
-       ${this.telemetry_db}
-       WHERE
-           events->'edata'->>'pageurl' LIKE '%${body.agent}%'
-       ;`;
+	   FROM
+	   ${this.telemetry_db}
+	   WHERE
+		   events->'edata'->>'pageurl' LIKE '%${body.agent}%'
+	   ;`;
 		}
 
 		if (body.date) {
@@ -673,21 +754,21 @@ export class ContentService {
 			const toDate = Date.parse(body.date.to);
 
 			query = `SELECT *
-       FROM
-       ${this.telemetry_db}
-       WHERE events->>'ets'>='${fromDate}'
-       AND events->>'ets'<'${toDate}'
-       ;`;
+	   FROM
+	   ${this.telemetry_db}
+	   WHERE events->>'ets'>='${fromDate}'
+	   AND events->>'ets'<'${toDate}'
+	   ;`;
 
 			if (body.agent) {
 				query = `SELECT *
-           FROM
-           ${this.telemetry_db}
-           WHERE
-               events->'edata'->>'pageurl' LIKE '%${body.agent}%'
-               AND events->>'ets'>='${fromDate}'
-               AND events->>'ets'<'${toDate}'
-          ;`;
+		   FROM
+		   ${this.telemetry_db}
+		   WHERE
+			   events->'edata'->>'pageurl' LIKE '%${body.agent}%'
+			   AND events->>'ets'>='${fromDate}'
+			   AND events->>'ets'<'${toDate}'
+		  ;`;
 			}
 		}
 
@@ -1022,11 +1103,11 @@ export class ContentService {
 						description: valueObj.description,
 						criteria: criteria
 							? {
-									name: criteria.name,
-									documentKey: criteria.documentKey,
-									condition: criteria.condition,
-									conditionValues: criteria.conditionValues,
-								}
+								name: criteria.name,
+								documentKey: criteria.documentKey,
+								condition: criteria.condition,
+								conditionValues: criteria.conditionValues,
+							}
 							: undefined,
 					};
 				});
@@ -1072,7 +1153,7 @@ export class ContentService {
 	private async fetchBenefitDetails(benefitId: string): Promise<Job[]> {
 		const body = { filters: { item_id: benefitId } };
 		const filteredData = await this.hasuraService.findJobsCache(body);
-		
+
 		if (filteredData instanceof ErrorResponse) {
 			throw new BadRequestException(
 				`Failed to fetch benefit details: ${filteredData.errorMessage}`,
@@ -1098,7 +1179,7 @@ export class ContentService {
 	private async fetchUserInfo(userId: string) {
 		const request = { user: { keycloak_id: userId } };
 		const response = await this.userService.findOne(request, true);
-		
+
 		if (response instanceof ErrorResponse) {
 			throw new Error(`Failed to fetch user details: ${response.errorMessage}`);
 		}
@@ -1112,7 +1193,7 @@ export class ContentService {
 
 	private async checkEligibility(userInfo: any, filteredJobs: any[], strictCheck = true): Promise<any> {
 		const benefitsList = this.getFormattedEligibilityCriteriaFromBenefits(filteredJobs);
-		
+
 		if (!benefitsList || benefitsList.length === 0) {
 			throw new Error('No eligibility criteria found for the benefit');
 		}
@@ -1122,7 +1203,7 @@ export class ContentService {
 			benefitsList,
 			strictCheck,
 		);
-		
+
 		if (!eligibilityData) {
 			throw new Error('Failed to get eligibility data');
 		}
@@ -1175,7 +1256,7 @@ export class ContentService {
 		// Helper function to calculate percentage for a single item
 		const calculatePercentage = (item: EligibilityItem) => {
 			const { details } = item;
-			
+
 			if (!details?.criteriaResults || !Array.isArray(details.criteriaResults)) {
 				return {
 					...item,

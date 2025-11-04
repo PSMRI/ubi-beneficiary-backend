@@ -14,13 +14,13 @@ export class HasuraService {
   private readonly telemetry_db = process.env.TELEMETRY_DB;
   private readonly url = process.env.HASURA_URL;
 
-	constructor() {
-	}
+  constructor() {
+  }
 
   async findJobsCache(requestBody) {
-		const { filters, search, defaultEligibility } = requestBody;
-		
-		const query = `query MyQuery {
+    const { filters, search, defaultEligibility } = requestBody;
+
+    const query = `query MyQuery {
            ${this.cache_db}(distinct_on: unique_id) {
             id
             unique_id
@@ -38,33 +38,33 @@ export class HasuraService {
             fulfillments
           }
           }`;
-		try {
-			const response = await this.queryDb(query);
-			const jobs = response.data[this.cache_db];
+    try {
+      const response = await this.queryDb(query);
+      const jobs = response.data[this.cache_db];
 
-			let filteredJobs = this.filterJobs(jobs, filters, search);
+      let filteredJobs = this.filterJobs(jobs, filters, search);
 
-			// Apply default eligibility filtering if provided
-			if (defaultEligibility && Array.isArray(defaultEligibility) && defaultEligibility.length > 0) {
-				filteredJobs = this.applyDefaultEligibility(filteredJobs, defaultEligibility);
-			}
+      // Apply default eligibility filtering if provided
+      if (defaultEligibility && Array.isArray(defaultEligibility) && defaultEligibility.length > 0) {
+        filteredJobs = this.applyDefaultEligibility(filteredJobs, defaultEligibility);
+      }
 
-			return new SuccessResponse({
-				statusCode: HttpStatus.OK,
-				message: 'Ok.',
+      return new SuccessResponse({
+        statusCode: HttpStatus.OK,
+        message: 'Ok.',
 
-				data: {
-					ubi_network_cache: filteredJobs,
-				},
-			});
-		} catch (error) {
-			//this.logger.error("Something Went wrong in creating Admin", error);
-			return new ErrorResponse({
-				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message, // Use error message if available
-			});
-		}
-	}
+        data: {
+          ubi_network_cache: filteredJobs,
+        },
+      });
+    } catch (error) {
+      //this.logger.error("Something Went wrong in creating Admin", error);
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error.message, // Use error message if available
+      });
+    }
+  }
 
   /**
    * Normalize condition string to standardized format
@@ -78,7 +78,7 @@ export class HasuraService {
       .replace(/[^a-z0-9=<>]/g, '') // Keep only alphanumeric and comparison operators
       .replace(/[=<>]+/g, match => {
         // Normalize symbolic operators
-        switch(match) {
+        switch (match) {
           case '=': return 'equals';
           case '<=': return 'lte';
           case '>=': return 'gte';
@@ -97,26 +97,26 @@ export class HasuraService {
    */
   private handleAnnualIncomeEligibility(userValue: string, conditionValues: string[]): boolean {
     let annualIncomeValue;
-    
+
     // Handle range format (e.g., "0-270000")
     if (userValue.includes('-')) {
-      const [min, max] = userValue.split('-').map(v => parseFloat(v.trim()));
-      if (!isNaN(min) && !isNaN(max)) {
+      const [min, max] = userValue.split('-').map(v => Number.parseFloat(v.trim()));
+      if (!Number.isNaN(min) && !Number.isNaN(max)) {
         annualIncomeValue = max;
       }
-    } 
+    }
     // Handle monthly income (convert to annual)
-    else if (parseFloat(userValue) <= 100000) { // Assuming monthly income won't exceed 1L
-      annualIncomeValue = parseFloat(userValue) * 12;
+    else if (Number.parseFloat(userValue) <= 100000) { // Assuming monthly income won't exceed 1L
+      annualIncomeValue = Number.parseFloat(userValue) * 12;
     }
     // Handle direct annual income
     else {
-      annualIncomeValue = parseFloat(userValue);
+      annualIncomeValue = Number.parseFloat(userValue);
     }
 
-    if (!isNaN(annualIncomeValue)) {
-      const conditionValue = parseFloat(conditionValues[0]);
-      if (!isNaN(conditionValue)) {
+    if (!Number.isNaN(annualIncomeValue)) {
+      const conditionValue = Number.parseFloat(conditionValues[0]);
+      if (!Number.isNaN(conditionValue)) {
         return annualIncomeValue <= conditionValue;
       }
     }
@@ -131,9 +131,6 @@ export class HasuraService {
    * @returns true if values match based on criteria condition
    */
   evaluateEligibilityCondition(tagValue: any, userValue: any, fieldKey: string): boolean {
-    console.log("tagValue++++",tagValue);
-    console.log("userValue++++",userValue);
-    console.log("fieldKey++++",fieldKey);
     try {
       // Handle simple string/array comparison (backward compatibility)
       if (typeof tagValue === 'string' && !tagValue.startsWith('{')) {
@@ -146,7 +143,7 @@ export class HasuraService {
 
       // Parse the stringified JSON tag value
       const parsedTagValue = typeof tagValue === 'string' ? JSON.parse(tagValue) : tagValue;
-      
+
       // Extract criteria from parsed value
       const criteria = parsedTagValue?.criteria;
       if (!criteria) {
@@ -155,10 +152,10 @@ export class HasuraService {
       }
 
       const condition = this.normalizeCondition(criteria.condition || 'equals');
-      
+
       // Get condition values from criteria
-      const conditionValues = Array.isArray(criteria.conditionValues) 
-        ? criteria.conditionValues 
+      const conditionValues = Array.isArray(criteria.conditionValues)
+        ? criteria.conditionValues
         : [criteria.conditionValues];
 
       // Clean and normalize values
@@ -187,41 +184,41 @@ export class HasuraService {
         case 'exact':
         case 'match':
         case '=':
-          return cleanConditionValues[0] === cleanUserValue || 
+          return cleanConditionValues[0] === cleanUserValue ||
             cleanConditionValues[0].replace(/[^a-zA-Z0-9]/g, '') === cleanUserValue.replace(/[^a-zA-Z0-9]/g, '');
 
         case 'lessthanequals':
         case 'lte':
         case 'lessthanorequal':
         case '<=': {
-          const userNum = parseFloat(cleanUserValue);
-          const conditionNum = parseFloat(cleanConditionValues[0]);
-          return !isNaN(userNum) && !isNaN(conditionNum) && userNum <= conditionNum;
+          const userNum = Number.parseFloat(cleanUserValue);
+          const conditionNum = Number.parseFloat(cleanConditionValues[0]);
+          return !Number.isNaN(userNum) && !Number.isNaN(conditionNum) && userNum <= conditionNum;
         }
 
         case 'greaterthanequals':
         case 'gte':
         case 'greaterthanorequal':
         case '>=': {
-          const userNumGte = parseFloat(cleanUserValue);
-          const conditionNumGte = parseFloat(cleanConditionValues[0]);
-          return !isNaN(userNumGte) && !isNaN(conditionNumGte) && userNumGte >= conditionNumGte;
+          const userNumGte = Number.parseFloat(cleanUserValue);
+          const conditionNumGte = Number.parseFloat(cleanConditionValues[0]);
+          return !Number.isNaN(userNumGte) && !Number.isNaN(conditionNumGte) && userNumGte >= conditionNumGte;
         }
 
         case 'lessthan':
         case 'lt':
         case '<': {
-          const userNumLt = parseFloat(cleanUserValue);
-          const conditionNumLt = parseFloat(cleanConditionValues[0]);
-          return !isNaN(userNumLt) && !isNaN(conditionNumLt) && userNumLt < conditionNumLt;
+          const userNumLt = Number.parseFloat(cleanUserValue);
+          const conditionNumLt = Number.parseFloat(cleanConditionValues[0]);
+          return !Number.isNaN(userNumLt) && !Number.isNaN(conditionNumLt) && userNumLt < conditionNumLt;
         }
 
         case 'greaterthan':
         case 'gt':
         case '>': {
-          const userNumGt = parseFloat(cleanUserValue);
-          const conditionNumGt = parseFloat(cleanConditionValues[0]);
-          return !isNaN(userNumGt) && !isNaN(conditionNumGt) && userNumGt > conditionNumGt;
+          const userNumGt = Number.parseFloat(cleanUserValue);
+          const conditionNumGt = Number.parseFloat(cleanConditionValues[0]);
+          return !Number.isNaN(userNumGt) && !Number.isNaN(conditionNumGt) && userNumGt > conditionNumGt;
         }
 
         default: {
@@ -249,60 +246,106 @@ export class HasuraService {
       return jobs;
     }
 
-    return jobs.filter(job => {
-      // For each job, check all eligibility rules
-      for (const rule of defaultEligibility) {
-        // Skip if rule should not be applied
-        if (!rule.isApply) {
-          continue;
-        }
+    return jobs.filter(job => this.jobMeetsAllEligibilityRules(job, defaultEligibility));
+  }
 
-        // Skip if user value is missing or null
-        if (rule.userValue === null || rule.userValue === undefined) {
-          continue;
-        }
-
-        const ruleKey = rule.key;
-
-        // Get all tags from the job item
-        const tags = job.item?.tags;
-        if (!Array.isArray(tags)) {
-          // If job has no tags, exclude it
-          return false;
-        }
-
-        // Find all tag items that match the rule key
-        const matchingTagItems = [];
-        for (const tag of tags) {
-          if (Array.isArray(tag.list)) {
-            for (const listItem of tag.list) {
-              if (listItem.descriptor?.code === ruleKey) {
-                matchingTagItems.push(listItem);
-              }
-            }
-          }
-        }
-        console.log("matchingTagItems++++",matchingTagItems);
-        // If no matching tag items exist for this rule, exclude the job
-        if (matchingTagItems.length === 0) {
-          return false;
-        }
-
-        // Check if any of the matching tag items' values match the user value
-        // using the evaluateEligibilityCondition helper
-        const hasMatch = matchingTagItems.some(item => {
-          // Pass raw item.value (it may be stringified JSON with criteria)
-          return this.evaluateEligibilityCondition(item.value, rule.userValue, ruleKey);
-        });
-
-        // If none of the tag values match the user value, exclude the job
-        if (!hasMatch) {
-          return false;
-        }
+  /**
+   * Check if a job meets all eligibility rules
+   * @param job - Job to check
+   * @param defaultEligibility - Array of eligibility rules
+   * @returns true if job meets all rules, false otherwise
+   */
+  private jobMeetsAllEligibilityRules(job: any, defaultEligibility: any[]): boolean {
+    for (const rule of defaultEligibility) {
+      if (!this.shouldApplyRule(rule)) {
+        continue;
       }
 
-      // If all rules passed, include the job
-      return true;
+      if (!this.jobMeetsEligibilityRule(job, rule)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Check if a rule should be applied
+   * @param rule - Eligibility rule
+   * @returns true if rule should be applied
+   */
+  private shouldApplyRule(rule: any): boolean {
+    // Skip if rule should not be applied
+    if (!rule.isApply) {
+      return false;
+    }
+
+    // Skip if user value is missing or null
+    if (rule.userValue === null || rule.userValue === undefined) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Check if a job meets a specific eligibility rule
+   * @param job - Job to check
+   * @param rule - Eligibility rule
+   * @returns true if job meets the rule
+   */
+  private jobMeetsEligibilityRule(job: any, rule: any): boolean {
+    const tags = job.item?.tags;
+    if (!Array.isArray(tags)) {
+      return false;
+    }
+
+    const matchingTagItems = this.findMatchingTagItems(tags, rule.key);
+
+
+    if (matchingTagItems.length === 0) {
+      return false;
+    }
+
+    return this.anyTagMatchesUserValue(matchingTagItems, rule.userValue, rule.key);
+  }
+
+  /**
+   * Find all tag items that match the rule key
+   * @param tags - Array of tags from job item
+   * @param ruleKey - Key to match
+   * @returns Array of matching tag items
+   */
+  private findMatchingTagItems(tags: any[], ruleKey: string): any[] {
+    const matchingTagItems = [];
+
+    for (const tag of tags) {
+      if (Array.isArray(tag.list)) {
+        for (const listItem of tag.list) {
+          if (listItem.descriptor?.code === ruleKey) {
+            matchingTagItems.push(listItem);
+          }
+        }
+      }
+    }
+
+    return matchingTagItems;
+  }
+
+  /**
+   * Check if any tag item matches the user value
+   * @param matchingTagItems - Array of tag items to check
+   * @param userValue - User's value for comparison
+   * @param ruleKey - Rule key for context
+   * @returns true if any tag matches
+   */
+  private anyTagMatchesUserValue(
+    matchingTagItems: any[],
+    userValue: any,
+    ruleKey: string,
+  ): boolean {
+    return matchingTagItems.some(item => {
+      return this.evaluateEligibilityCondition(item.value, userValue, ruleKey);
     });
   }
 
@@ -322,7 +365,7 @@ export class HasuraService {
         .replace(/[^a-z0-9=<>]/g, '') // Keep only alphanumeric and comparison operators
         .replace(/[=<>]+/g, match => {
           // Normalize symbolic operators
-          switch(match) {
+          switch (match) {
             case '=': return 'equals';
             case '<=': return 'lte';
             case '>=': return 'gte';
@@ -335,26 +378,22 @@ export class HasuraService {
 
     const handleAnnualIncome = (cleanFilterValue: string, cleanConditionValues: string[]): boolean => {
       let annualIncomeValue;
-      
+
       // Handle range format (e.g., "0-270000")
       if (cleanFilterValue.includes('-')) {
-        const [min, max] = cleanFilterValue.split('-').map(v => parseFloat(v.trim()));
-        if (!isNaN(min) && !isNaN(max)) {
+        const [min, max] = cleanFilterValue.split('-').map(v => Number.parseFloat(v.trim()));
+        if (!Number.isNaN(min) && !Number.isNaN(max)) {
           annualIncomeValue = max;
         }
-      } 
-      // Handle monthly income (convert to annual)
-      else if (parseFloat(cleanFilterValue) <= 100000) { // Assuming monthly income won't exceed 1L
-        annualIncomeValue = parseFloat(cleanFilterValue) * 12;
       }
       // Handle direct annual income
       else {
-        annualIncomeValue = parseFloat(cleanFilterValue);
+        annualIncomeValue = Number.parseFloat(cleanFilterValue);
       }
 
-      if (!isNaN(annualIncomeValue)) {
-        const conditionValue = parseFloat(cleanConditionValues[0]);
-        if (!isNaN(conditionValue)) {
+      if (!Number.isNaN(annualIncomeValue)) {
+        const conditionValue = Number.parseFloat(cleanConditionValues[0]);
+        if (!Number.isNaN(conditionValue)) {
           return annualIncomeValue <= conditionValue;
         }
       }
@@ -367,8 +406,8 @@ export class HasuraService {
         const condition = normalizeCondition(tagValue.condition);
 
         // Get condition values from the criteria object
-        const conditionValues = Array.isArray(tagValue.criteria?.conditionValues) 
-          ? tagValue.criteria.conditionValues 
+        const conditionValues = Array.isArray(tagValue.criteria?.conditionValues)
+          ? tagValue.criteria.conditionValues
           : [tagValue.criteria?.conditionValues];
 
         // Clean and normalize values
@@ -396,41 +435,41 @@ export class HasuraService {
           case 'exact':
           case 'match':
           case '=':
-            return cleanConditionValues[0] === cleanFilterValue || 
+            return cleanConditionValues[0] === cleanFilterValue ||
               cleanConditionValues[0].replace(/[^a-zA-Z0-9]/g, '') === cleanFilterValue.replace(/[^a-zA-Z0-9]/g, '');
 
           case 'lessthanequals':
           case 'lte':
           case 'lessthanorequal':
           case '<=': {
-            const filterNum = parseFloat(cleanFilterValue);
-            const conditionNum = parseFloat(cleanConditionValues[0]);
-            return !isNaN(filterNum) && !isNaN(conditionNum) && filterNum <= conditionNum;
+            const filterNum = Number.parseFloat(cleanFilterValue);
+            const conditionNum = Number.parseFloat(cleanConditionValues[0]);
+            return !Number.isNaN(filterNum) && !Number.isNaN(conditionNum) && filterNum <= conditionNum;
           }
 
           case 'greaterthanequals':
           case 'gte':
           case 'greaterthanorequal':
           case '>=': {
-            const filterNumGt = parseFloat(cleanFilterValue);
-            const conditionNumGt = parseFloat(cleanConditionValues[0]);
-            return !isNaN(filterNumGt) && !isNaN(conditionNumGt) && filterNumGt >= conditionNumGt;
+            const filterNumGt = Number.parseFloat(cleanFilterValue);
+            const conditionNumGt = Number.parseFloat(cleanConditionValues[0]);
+            return !Number.isNaN(filterNumGt) && !Number.isNaN(conditionNumGt) && filterNumGt >= conditionNumGt;
           }
 
           case 'lessthan':
           case 'lt':
           case '<': {
-            const filterNumLt = parseFloat(cleanFilterValue);
-            const conditionNumLt = parseFloat(cleanConditionValues[0]);
-            return !isNaN(filterNumLt) && !isNaN(conditionNumLt) && filterNumLt < conditionNumLt;
+            const filterNumLt = Number.parseFloat(cleanFilterValue);
+            const conditionNumLt = Number.parseFloat(cleanConditionValues[0]);
+            return !Number.isNaN(filterNumLt) && !Number.isNaN(conditionNumLt) && filterNumLt < conditionNumLt;
           }
 
           case 'greaterthan':
           case 'gt':
           case '>': {
-            const filterNumGt2 = parseFloat(cleanFilterValue);
-            const conditionNumGt2 = parseFloat(cleanConditionValues[0]);
-            return !isNaN(filterNumGt2) && !isNaN(conditionNumGt2) && filterNumGt2 > conditionNumGt2;
+            const filterNumGt2 = Number.parseFloat(cleanFilterValue);
+            const conditionNumGt2 = Number.parseFloat(cleanConditionValues[0]);
+            return !Number.isNaN(filterNumGt2) && !Number.isNaN(conditionNumGt2) && filterNumGt2 > conditionNumGt2;
           }
 
           default: {
@@ -526,25 +565,25 @@ export class HasuraService {
   }
 
   async insertCacheData(arrayOfObjects: any[], bpps: string[]) {
-	this.logger.log(
-		`Starting cache refresh for ${bpps.length} BPP(s): ${bpps.join(', ')}`,
-	);
-	this.logger.log(
-		`Deleting existing records and inserting ${arrayOfObjects.length} new records`,
-	);
+    this.logger.log(
+      `Starting cache refresh for ${bpps.length} BPP(s): ${bpps.join(', ')}`,
+    );
+    this.logger.log(
+      `Deleting existing records and inserting ${arrayOfObjects.length} new records`,
+    );
 
-	// First delete existing records for the specified BPPs only
-	if (bpps.length > 0) {
-		try {
-			await this.deleteJobsByBpps(bpps);
-			this.logger.log(
-				`Successfully deleted records for BPPs: ${bpps.join(', ')}`,
-			);
-		} catch (error) {
-			this.logger.error('Error deleting existing records for BPPs:', error);
-			throw error;
-		}
-	}
+    // First delete existing records for the specified BPPs only
+    if (bpps.length > 0) {
+      try {
+        await this.deleteJobsByBpps(bpps);
+        this.logger.log(
+          `Successfully deleted records for BPPs: ${bpps.join(', ')}`,
+        );
+      } catch (error) {
+        this.logger.error('Error deleting existing records for BPPs:', error);
+        throw error;
+      }
+    }
     // $provider_id: String, provider_name: String, bpp_id: String, bpp_uri: String
     // provider_id: $provider_id, provider_name: $provider_name, bpp_id: $bpp_id, bpp_uri: $bpp_uri
     const query = `mutation MyMutation($title: String, $description: String, $url: String, $provider_name: String, $enrollmentEndDate: timestamptz, $bpp_id: String, $unique_id: String, $bpp_uri: String, $item_id: String, $offeringInstitute: jsonb, $credits: String, $instructors: String,$provider_id: String, $item: json, $descriptor: json, $categories: json, $fulfillments: json) { 
@@ -559,7 +598,7 @@ export class HasuraService {
 
     let insertApiRes = [];
     for (const item of arrayOfObjects) {
-      try {  
+      try {
         const insertResult = await this.queryDb(query, item);
         if (insertResult.errors) {
           insertApiRes.push({ error: insertResult.errors, item_id: item.item_id });
@@ -567,7 +606,7 @@ export class HasuraService {
           insertApiRes.push(insertResult);
         }
       } catch (error) {
-     
+
         insertApiRes.push({ error: error.message, item_id: item.item_id });
       }
     }
@@ -675,33 +714,33 @@ export class HasuraService {
     }
   }
   async deleteJobsByBpps(bpps: string[]) {
-		// Build the _in clause for the query with the array of BPP IDs
-	const validBpps = bpps.filter((bpp) => bpp != null && bpp !== '');
-	if (validBpps.length === 0) {
-		this.logger.warn('All provided BPP IDs were invalid');
-		return { data: { [`delete_${this.cache_db}`]: { affected_rows: 0 } } };
-	}
-	
-	const query = `mutation DeleteJobsByBpps($bppIds: [String!]!) {
+    // Build the _in clause for the query with the array of BPP IDs
+    const validBpps = bpps.filter((bpp) => bpp != null && bpp !== '');
+    if (validBpps.length === 0) {
+      this.logger.warn('All provided BPP IDs were invalid');
+      return { data: { [`delete_${this.cache_db}`]: { affected_rows: 0 } } };
+    }
+
+    const query = `mutation DeleteJobsByBpps($bppIds: [String!]!) {
 		delete_${this.cache_db}(where: {bpp_id: {_in: $bppIds}}) {
 			affected_rows
 		}
 	}`;
-	try {
-		const result = await this.queryDb(query, { bppIds: validBpps });
-		const affectedRows = result.data[`delete_${this.cache_db}`].affected_rows;
-		this.logger.log(
-			`Deleted ${affectedRows} records for BPPs: ${validBpps.join(', ')}`,
-		);
-		return result;
-	} catch (error) {
-		this.logger.error(
-			`Error deleting jobs for BPPs [${validBpps.join(', ')}]:`,
-			error,
-		);
-		throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
-	}
-}
+    try {
+      const result = await this.queryDb(query, { bppIds: validBpps });
+      const affectedRows = result.data[`delete_${this.cache_db}`].affected_rows;
+      this.logger.log(
+        `Deleted ${affectedRows} records for BPPs: ${validBpps.join(', ')}`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Error deleting jobs for BPPs [${validBpps.join(', ')}]:`,
+        error,
+      );
+      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+    }
+  }
 
   async createSeekerUser(seeker) {
     const query = `mutation InsertSeeker($email: String , $name:String, $age:String, $gender:String, $phone:String) {
