@@ -33,6 +33,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
+import { OcrService } from '@services/ocr/ocr.service';
 
 type StatusUpdateInfo = {
   attempted: boolean;
@@ -62,6 +63,7 @@ export class UserService {
     @Inject('FileStorageService')
     private readonly fileStorageService: IFileStorageService,
     private readonly documentUploadService: DocumentUploadService,
+    private readonly ocrService: OcrService,
   ) { }
 
 
@@ -1888,7 +1890,36 @@ export class UserService {
         },
       });
 
-      // Upload file using the generic document upload service
+      // Perform OCR extraction first to validate permissions
+      let ocrResult = null;
+      try {
+        Logger.log(`Starting OCR extraction for document validation`);
+        
+        // Extract text from the uploaded file buffer to validate OCR permissions
+        const extractedData = await this.ocrService.extractTextFromBuffer(
+          file.buffer,
+          file.mimetype,
+        );
+
+        ocrResult = {
+          extractedText: extractedData.fullText,
+          confidence: extractedData.confidence,
+          metadata: extractedData.metadata,
+        };
+
+        Logger.log(
+          `OCR validation successful. ` +
+          `Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence`,
+        );
+      } catch (ocrError) {
+        // Throw error to prevent file upload if OCR fails
+        Logger.error(`OCR validation failed: ${ocrError.message}`);
+        throw new InternalServerErrorException(
+          `${ocrError.message}. Document upload aborted.`
+        );
+      }
+
+      // Only proceed with upload if OCR validation passed
       const uploadResult = await this.documentUploadService.uploadFile(
         file,
         {
@@ -1923,6 +1954,7 @@ export class UserService {
           uploaded_at: savedDoc.uploaded_at,
           is_update: isUpdate,
           download_url: downloadUrl, // Pre-signed URL for S3 or file path for local
+          ocr: ocrResult, // Include OCR extraction results (null if OCR failed)
         },
       });
     } catch (error) {
@@ -1939,16 +1971,24 @@ export class UserService {
         });
       }
 
-      if (error instanceof BadRequestException) {
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
         return new ErrorResponse({
-          statusCode: HttpStatus.BAD_REQUEST,
+          statusCode: error.getStatus(),
           errorMessage: error.message,
+        });
+      }
+
+      // Handle nested service errors
+      if (error?.response?.statusCode && error?.response?.message) {
+        return new ErrorResponse({
+          statusCode: error.response.statusCode,
+          errorMessage: error.response.message,
         });
       }
 
       return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: 'Failed to upload document',
+        errorMessage: error?.message || 'Failed to upload document',
       });
     }
   }

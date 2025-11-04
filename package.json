@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.919.0",
+    "@aws-sdk/client-textract": "^3.922.0",
     "@flystorage/aws-s3": "^1.2.0",
     "@flystorage/file-storage": "^1.2.0",
     "@nestjs/axios": "^3.1.2",

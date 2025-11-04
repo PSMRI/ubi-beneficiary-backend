@@ -24,6 +24,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
 import { NetworkCache } from './entity/network-cache.entity';
 import { StorageProviderModule } from './services/storage-providers/storage-provider.module';
+import { OcrModule } from './services/ocr/ocr.module';
 
 @Module({
 	imports: [
@@ -61,6 +62,7 @@ import { StorageProviderModule } from './services/storage-providers/storage-prov
 		AdminModule,
 		HousekeepingModule,
 		StorageProviderModule,
+		OcrModule,
 	],
 	controllers: [AppController],
 	providers: [
