@@ -12,6 +12,7 @@ import { ErrorResponse } from 'src/common/responses/error-response';
 import { HttpService } from '@nestjs/axios';
 import { UserService } from '../modules/users/users.service';
 import { AuthService } from '../modules/auth/auth.service';
+import { AdminService } from '../modules/admin/admin.service';
 const crypto = require('crypto');
 
 interface Job {
@@ -120,6 +121,7 @@ export class ContentService {
 		private readonly responseCacheRepository: Repository<ResponseCache>,
 		private readonly userService: UserService,
 		private readonly authService: AuthService,
+		private readonly adminService: AdminService,
 	) {}
 
 	async getJobs(body, req) {
@@ -128,16 +130,32 @@ export class ContentService {
 			const limit = body.limit ?? 100;
 			const userId = req?.mw_userid;
 
-			// Fetch jobs from Hasura
-			const filteredData = await this.hasuraService.findJobsCache(body);
-			let filteredJobs: any[] = [];
-			if (
-				!(filteredData instanceof ErrorResponse) &&
-				typeof filteredData.data === 'object' &&
-				filteredData.data !== null &&
-				'ubi_network_cache' in filteredData.data
-			) {
-				filteredJobs = (filteredData.data as any).ubi_network_cache ?? [];
+			// Step 1: Fetch default eligibility config from AdminService
+			let defaultEligibilityConfig: any[] = [];
+			try {
+				this.logger.log('Fetching default eligibility config from AdminService...');
+				const configResponse = await this.adminService.getConfig('defaultEligibility');
+				if (!(configResponse instanceof ErrorResponse) && configResponse?.data) {
+					const settingData = configResponse.data as any;
+					if (settingData?.value) {
+						// Parse JSON string and extract applyFilter array
+						try {
+							const parsedConfig = typeof settingData.value === 'string' 
+								? JSON.parse(settingData.value) 
+								: settingData.value;
+							defaultEligibilityConfig = parsedConfig?.applyFilter || [];
+							console.log("defaultEligibilityConfig++++",defaultEligibilityConfig);
+						} catch (parseErr) {
+							this.logger.warn('Failed to parse default eligibility config JSON:', parseErr);
+						}
+					} else {
+						this.logger.log('No default eligibility config value found');
+					}
+				} else {
+					this.logger.log('No default eligibility config found in database');
+				}
+			} catch (err) {
+				this.logger.warn('Failed to fetch default eligibility config:', err);
 			}
 
 			// Get user info if userId is present
@@ -152,6 +170,56 @@ export class ContentService {
 				if (user) {
 					userInfo = this.authService.formatUserInfo(user);
 				}
+			}
+
+			// Step 2: Extract user eligibility values dynamically
+			const userEligibilityValues = {};
+			if (userInfo && Array.isArray(defaultEligibilityConfig)) {
+				for (const rule of defaultEligibilityConfig) {
+					const key = rule?.key;
+					if (key) {
+						// Directly access the field from userInfo (formatUserInfo already flattens customFields)
+						userEligibilityValues[key] = userInfo[key] ?? null;
+					}
+				}
+			} else if (!userInfo) {
+				this.logger.log('No user info available - skipping eligibility value extraction');
+			}
+
+			// Step 3: Attach processed defaultEligibility array to request body
+			const defaultEligibility = [];
+			if (Array.isArray(defaultEligibilityConfig) && userInfo) {
+				this.logger.log('Building defaultEligibility array for Hasura...');
+				for (const rule of defaultEligibilityConfig) {
+					if (rule?.key && rule?.isApply !== undefined) {
+						defaultEligibility.push({
+							key: rule.key,
+							isApply: rule.isApply,
+							userValue: userEligibilityValues[rule.key] ?? null,
+						});
+					}
+				}
+			}
+			// Attach defaultEligibility to body before calling Hasura
+			const enrichedBody = {
+				...body,
+				defaultEligibility:
+					defaultEligibility.length > 0
+						? defaultEligibility
+						: undefined,
+			};
+
+			// Fetch jobs from Hasura
+			const filteredData =
+				await this.hasuraService.findJobsCache(enrichedBody);
+			let filteredJobs: any[] = [];
+			if (
+				!(filteredData instanceof ErrorResponse) &&
+				typeof filteredData.data === 'object' &&
+				filteredData.data !== null &&
+				'ubi_network_cache' in filteredData.data
+			) {
+				filteredJobs = (filteredData.data as any).ubi_network_cache ?? [];
 			}
 
 			// Eligibility filtering if userInfo is present

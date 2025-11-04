@@ -18,7 +18,7 @@ export class HasuraService {
 	}
 
   async findJobsCache(requestBody) {
-		const { filters, search } = requestBody;
+		const { filters, search, defaultEligibility } = requestBody;
 		
 		const query = `query MyQuery {
            ${this.cache_db}(distinct_on: unique_id) {
@@ -43,6 +43,12 @@ export class HasuraService {
 			const jobs = response.data[this.cache_db];
 
 			let filteredJobs = this.filterJobs(jobs, filters, search);
+
+			// Apply default eligibility filtering if provided
+			if (defaultEligibility && Array.isArray(defaultEligibility) && defaultEligibility.length > 0) {
+				filteredJobs = this.applyDefaultEligibility(filteredJobs, defaultEligibility);
+			}
+
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
 				message: 'Ok.',
@@ -59,6 +65,246 @@ export class HasuraService {
 			});
 		}
 	}
+
+  /**
+   * Normalize condition string to standardized format
+   * @param condition - Raw condition string
+   * @returns Normalized condition string
+   */
+  private normalizeCondition(condition: string): string {
+    return String(condition)
+      .toLowerCase()
+      .replace(/\s+/g, '')  // Remove all whitespace
+      .replace(/[^a-z0-9=<>]/g, '') // Keep only alphanumeric and comparison operators
+      .replace(/[=<>]+/g, match => {
+        // Normalize symbolic operators
+        switch(match) {
+          case '=': return 'equals';
+          case '<=': return 'lte';
+          case '>=': return 'gte';
+          case '<': return 'lt';
+          case '>': return 'gt';
+          default: return match;
+        }
+      });
+  }
+
+  /**
+   * Handle annual income comparison with special logic
+   * @param userValue - User's annual income value
+   * @param conditionValues - Condition values from criteria
+   * @returns true if condition is met
+   */
+  private handleAnnualIncomeEligibility(userValue: string, conditionValues: string[]): boolean {
+    let annualIncomeValue;
+    
+    // Handle range format (e.g., "0-270000")
+    if (userValue.includes('-')) {
+      const [min, max] = userValue.split('-').map(v => parseFloat(v.trim()));
+      if (!isNaN(min) && !isNaN(max)) {
+        annualIncomeValue = max;
+      }
+    } 
+    // Handle monthly income (convert to annual)
+    else if (parseFloat(userValue) <= 100000) { // Assuming monthly income won't exceed 1L
+      annualIncomeValue = parseFloat(userValue) * 12;
+    }
+    // Handle direct annual income
+    else {
+      annualIncomeValue = parseFloat(userValue);
+    }
+
+    if (!isNaN(annualIncomeValue)) {
+      const conditionValue = parseFloat(conditionValues[0]);
+      if (!isNaN(conditionValue)) {
+        return annualIncomeValue <= conditionValue;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Evaluate eligibility condition between tag value and user value
+   * @param tagValue - Stringified JSON value from job tag containing criteria
+   * @param userValue - User's value for comparison
+   * @param fieldKey - The field key (e.g., 'state', 'annualIncome')
+   * @returns true if values match based on criteria condition
+   */
+  evaluateEligibilityCondition(tagValue: any, userValue: any, fieldKey: string): boolean {
+    console.log("tagValue++++",tagValue);
+    console.log("userValue++++",userValue);
+    console.log("fieldKey++++",fieldKey);
+    try {
+      // Handle simple string/array comparison (backward compatibility)
+      if (typeof tagValue === 'string' && !tagValue.startsWith('{')) {
+        return tagValue.toLowerCase().trim() === String(userValue).toLowerCase().trim();
+      }
+
+      if (Array.isArray(tagValue)) {
+        return tagValue.includes(userValue);
+      }
+
+      // Parse the stringified JSON tag value
+      const parsedTagValue = typeof tagValue === 'string' ? JSON.parse(tagValue) : tagValue;
+      
+      // Extract criteria from parsed value
+      const criteria = parsedTagValue?.criteria;
+      if (!criteria) {
+        // If no criteria, fall back to simple comparison
+        return false;
+      }
+
+      const condition = this.normalizeCondition(criteria.condition || 'equals');
+      
+      // Get condition values from criteria
+      const conditionValues = Array.isArray(criteria.conditionValues) 
+        ? criteria.conditionValues 
+        : [criteria.conditionValues];
+
+      // Clean and normalize values
+      const cleanUserValue = String(userValue).trim().toLowerCase();
+      const cleanConditionValues = conditionValues.map(v => String(v).trim().toLowerCase());
+
+      // Special handling for annualIncome
+      if (fieldKey === 'annualIncome' || criteria.name === 'annualIncome') {
+        return this.handleAnnualIncomeEligibility(cleanUserValue, cleanConditionValues);
+      }
+
+      // Evaluate based on condition type
+      switch (condition) {
+        case 'in':
+        case 'contains':
+        case 'includes':
+          return cleanConditionValues.some(value => {
+            const exactMatch = value === cleanUserValue;
+            const valueIncludes = value.includes(cleanUserValue);
+            const userIncludes = cleanUserValue.includes(value);
+            return exactMatch || valueIncludes || userIncludes;
+          });
+
+        case 'equals':
+        case 'equal':
+        case 'exact':
+        case 'match':
+        case '=':
+          return cleanConditionValues[0] === cleanUserValue || 
+            cleanConditionValues[0].replace(/[^a-zA-Z0-9]/g, '') === cleanUserValue.replace(/[^a-zA-Z0-9]/g, '');
+
+        case 'lessthanequals':
+        case 'lte':
+        case 'lessthanorequal':
+        case '<=': {
+          const userNum = parseFloat(cleanUserValue);
+          const conditionNum = parseFloat(cleanConditionValues[0]);
+          return !isNaN(userNum) && !isNaN(conditionNum) && userNum <= conditionNum;
+        }
+
+        case 'greaterthanequals':
+        case 'gte':
+        case 'greaterthanorequal':
+        case '>=': {
+          const userNumGte = parseFloat(cleanUserValue);
+          const conditionNumGte = parseFloat(cleanConditionValues[0]);
+          return !isNaN(userNumGte) && !isNaN(conditionNumGte) && userNumGte >= conditionNumGte;
+        }
+
+        case 'lessthan':
+        case 'lt':
+        case '<': {
+          const userNumLt = parseFloat(cleanUserValue);
+          const conditionNumLt = parseFloat(cleanConditionValues[0]);
+          return !isNaN(userNumLt) && !isNaN(conditionNumLt) && userNumLt < conditionNumLt;
+        }
+
+        case 'greaterthan':
+        case 'gt':
+        case '>': {
+          const userNumGt = parseFloat(cleanUserValue);
+          const conditionNumGt = parseFloat(cleanConditionValues[0]);
+          return !isNaN(userNumGt) && !isNaN(conditionNumGt) && userNumGt > conditionNumGt;
+        }
+
+        default: {
+          // Default to contains/includes behavior
+          const valueIncludes = cleanConditionValues[0].includes(cleanUserValue);
+          const userIncludes = cleanUserValue.includes(cleanConditionValues[0]);
+          return valueIncludes || userIncludes;
+        }
+      }
+    } catch (error) {
+      console.error('Error evaluating eligibility condition:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Apply default eligibility filtering to jobs based on user's eligibility values
+   * @param jobs - Array of jobs to filter
+   * @param defaultEligibility - Array of eligibility rules with user values
+   * @returns Filtered array of jobs that meet all eligibility criteria
+   */
+  applyDefaultEligibility(jobs: any[], defaultEligibility: any[]): any[] {
+    // If no eligibility rules, return all jobs
+    if (!defaultEligibility || defaultEligibility.length === 0) {
+      return jobs;
+    }
+
+    return jobs.filter(job => {
+      // For each job, check all eligibility rules
+      for (const rule of defaultEligibility) {
+        // Skip if rule should not be applied
+        if (!rule.isApply) {
+          continue;
+        }
+
+        // Skip if user value is missing or null
+        if (rule.userValue === null || rule.userValue === undefined) {
+          continue;
+        }
+
+        const ruleKey = rule.key;
+
+        // Get all tags from the job item
+        const tags = job.item?.tags;
+        if (!Array.isArray(tags)) {
+          // If job has no tags, exclude it
+          return false;
+        }
+
+        // Find all tag items that match the rule key
+        const matchingTagItems = [];
+        for (const tag of tags) {
+          if (Array.isArray(tag.list)) {
+            for (const listItem of tag.list) {
+              if (listItem.descriptor?.code === ruleKey) {
+                matchingTagItems.push(listItem);
+              }
+            }
+          }
+        }
+        console.log("matchingTagItems++++",matchingTagItems);
+        // If no matching tag items exist for this rule, exclude the job
+        if (matchingTagItems.length === 0) {
+          return false;
+        }
+
+        // Check if any of the matching tag items' values match the user value
+        // using the evaluateEligibilityCondition helper
+        const hasMatch = matchingTagItems.some(item => {
+          // Pass raw item.value (it may be stringified JSON with criteria)
+          return this.evaluateEligibilityCondition(item.value, rule.userValue, ruleKey);
+        });
+
+        // If none of the tag values match the user value, exclude the job
+        if (!hasMatch) {
+          return false;
+        }
+      }
+
+      // If all rules passed, include the job
+      return true;
+    });
+  }
 
   filterJobs(jobs, filters, search) {
     if (!filters && !search) return jobs;
