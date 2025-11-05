@@ -11,9 +11,10 @@ import { EncryptionService } from 'src/common/helper/encryptionService';
 import { UserModule } from '../modules/users/users.module';
 import { NetworkCacheRefreshCron } from './network-cache-refresh.cron';
 import { AuthModule } from '../modules/auth/auth.module';
+import { AdminModule } from '../modules/admin/admin.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), TypeOrmModule.forFeature([ResponseCache]), UserModule, AuthModule],
+  imports: [ScheduleModule.forRoot(), TypeOrmModule.forFeature([ResponseCache]), UserModule, AuthModule, AdminModule],
   controllers: [ContentController],
   providers: [ContentService, HasuraService, ProxyService, LoggerService, EncryptionService, NetworkCacheRefreshCron]
 })
