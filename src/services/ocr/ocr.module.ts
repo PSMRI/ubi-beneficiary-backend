@@ -41,7 +41,7 @@ import { QRScanningService } from '../qr/qr-scanning.service';
               'GEMINI_API_KEY is required when OCR_PROVIDER is set to google-gemini'
             );
           }
-        } else {
+        } else if (provider === 'aws-textract') {
           // Configure AWS Textract (default)
           config = {
             region: configService.get<string>('AWS_TEXTRACT_AWS_REGION'),
@@ -50,6 +50,11 @@ import { QRScanningService } from '../qr/qr-scanning.service';
               secretAccessKey: configService.get<string>('AWS_TEXTRACT_SECRET_ACCESS_KEY'),
             },
           };
+        } else if (provider === 'tesseract') {
+          // Tesseract requires no config
+          config = {};
+        } else {
+          throw new Error(`Unsupported OCR_PROVIDER: ${provider}. Supported: aws-textract, google-gemini, tesseract`);
         }
 
         // Create and return the appropriate text extractor

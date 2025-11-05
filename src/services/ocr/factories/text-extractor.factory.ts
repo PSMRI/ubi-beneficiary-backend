@@ -1,6 +1,7 @@
 import { ITextExtractor } from '../interfaces/text-extractor.interface';
 import { AWSTextractAdapter } from '../adapters/extractors/aws-textract.adapter';
 import { GoogleGeminiAdapter } from '../adapters/extractors/google-gemini.adapter';
+import { TesseractAdapter } from '../adapters/extractors/tesseract.adapter';
 
 /**
  * Factory for creating text extractor instances
@@ -33,7 +34,11 @@ export class TextExtractorFactory {
       });
     }
 
-    throw new Error(`Unsupported text extraction provider: ${provider}. Supported providers: aws-textract, google-gemini`);
+    if (normalizedProvider === 'tesseract') {
+      return new TesseractAdapter();
+    }
+
+    throw new Error(`Unsupported text extraction provider: ${provider}. Supported providers: aws-textract, google-gemini, tesseract`);
   }
 
   /**
@@ -41,7 +46,7 @@ export class TextExtractorFactory {
    * @returns Array of supported provider names
    */
   static getSupportedProviders(): string[] {
-    return ['aws-textract', 'google-gemini'];
+    return ['aws-textract', 'google-gemini', 'tesseract'];
   }
 
   /**

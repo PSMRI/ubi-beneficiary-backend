@@ -112,9 +112,9 @@ export class QRCodeDetectorService implements IQRCodeDetector {
    */
   private async detectQRWithOriginalSize(imageBuffer: Buffer): Promise<string | null> {
     const processedImage = await sharp(imageBuffer)
+      .grayscale()
       .png()
       .raw()
-      .ensureAlpha()
       .toBuffer({ resolveWithObject: true });
 
     return this.decodeQRFromImageData(processedImage.data, processedImage.info.width, processedImage.info.height);
@@ -130,9 +130,9 @@ export class QRCodeDetectorService implements IQRCodeDetector {
         height: Math.round(await this.getImageHeight(imageBuffer) * scale),
         fit: 'fill'
       })
+      .grayscale()
       .png()
       .raw()
-      .ensureAlpha()
       .toBuffer({ resolveWithObject: true });
 
     return this.decodeQRFromImageData(processedImage.data, processedImage.info.width, processedImage.info.height);
@@ -146,7 +146,6 @@ export class QRCodeDetectorService implements IQRCodeDetector {
       .grayscale()
       .png()
       .raw()
-      .ensureAlpha()
       .toBuffer({ resolveWithObject: true });
 
     return this.decodeQRFromImageData(processedImage.data, processedImage.info.width, processedImage.info.height);
@@ -159,9 +158,9 @@ export class QRCodeDetectorService implements IQRCodeDetector {
     const processedImage = await sharp(imageBuffer)
       .normalize()
       .sharpen()
+      .grayscale()
       .png()
       .raw()
-      .ensureAlpha()
       .toBuffer({ resolveWithObject: true });
 
     return this.decodeQRFromImageData(processedImage.data, processedImage.info.width, processedImage.info.height);
