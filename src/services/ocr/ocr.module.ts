@@ -27,14 +27,30 @@ import { QRScanningService } from '../qr/qr-scanning.service';
           'aws-textract',
         );
 
-        // Configure AWS Textract
-        const config = {
-          region: configService.get<string>('AWS_TEXTRACT_AWS_REGION'),
-          credentials: {
-            accessKeyId: configService.get<string>('AWS_TEXTRACT_ACCESS_KEY_ID'),
-            secretAccessKey: configService.get<string>('AWS_TEXTRACT_SECRET_ACCESS_KEY'),
-          },
-        };
+        let config: any;
+
+        // Configure based on provider
+        if (provider === 'google-gemini') {
+          // Configure Google Gemini API
+          config = {
+            apiKey: configService.get<string>('GEMINI_API_KEY'),
+          };
+
+          if (!config.apiKey) {
+            throw new Error(
+              'GEMINI_API_KEY is required when OCR_PROVIDER is set to google-gemini'
+            );
+          }
+        } else {
+          // Configure AWS Textract (default)
+          config = {
+            region: configService.get<string>('AWS_TEXTRACT_AWS_REGION'),
+            credentials: {
+              accessKeyId: configService.get<string>('AWS_TEXTRACT_ACCESS_KEY_ID'),
+              secretAccessKey: configService.get<string>('AWS_TEXTRACT_SECRET_ACCESS_KEY'),
+            },
+          };
+        }
 
         // Create and return the appropriate text extractor
         return TextExtractorFactory.create(provider, config);

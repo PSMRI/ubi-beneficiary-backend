@@ -1,14 +1,15 @@
 import { ITextExtractor } from '../interfaces/text-extractor.interface';
 import { AWSTextractAdapter } from '../adapters/extractors/aws-textract.adapter';
+import { GoogleGeminiAdapter } from '../adapters/extractors/google-gemini.adapter';
 
 /**
  * Factory for creating text extractor instances
- * Currently supports AWS Textract, with ability to add more providers in future
+ * Supports AWS Textract and Google Gemini API
  */
 export class TextExtractorFactory {
   /**
    * Create a text extractor based on provider name
-   * @param provider - Provider name (currently only supports 'aws-textract')
+   * @param provider - Provider name ('aws-textract' or 'google-gemini')
    * @param config - Provider-specific configuration
    * @returns Text extractor instance
    * @throws Error if provider is not supported
@@ -26,7 +27,13 @@ export class TextExtractorFactory {
       });
     }
 
-    throw new Error(`Unsupported text extraction provider: ${provider}. Currently only AWS Textract is supported.`);
+    if (normalizedProvider === 'google-gemini' || normalizedProvider === 'gemini') {
+      return new GoogleGeminiAdapter({
+        apiKey: config.apiKey || process.env.GEMINI_API_KEY,
+      });
+    }
+
+    throw new Error(`Unsupported text extraction provider: ${provider}. Supported providers: aws-textract, google-gemini`);
   }
 
   /**
@@ -34,7 +41,7 @@ export class TextExtractorFactory {
    * @returns Array of supported provider names
    */
   static getSupportedProviders(): string[] {
-    return ['aws-textract'];
+    return ['aws-textract', 'google-gemini'];
   }
 
   /**
