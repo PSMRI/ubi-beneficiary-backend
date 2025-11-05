@@ -1890,30 +1890,86 @@ export class UserService {
         },
       });
 
-      // Perform OCR extraction first to validate permissions
+      // Check document configuration to determine if QR processing is needed
+      let requiresQRProcessing = false;
+      let documentConfig = null;
+      
+      if (uploadDocumentDto.docSubType) {
+        try {
+          const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
+          if (vcConfig?.value && Array.isArray(vcConfig.value)) {
+            documentConfig = vcConfig.value.find(
+              (doc: any) => doc.documentSubType === uploadDocumentDto.docSubType
+            );
+            
+            if (documentConfig) {
+              // QR processing is required only if issueVC is "no"
+              requiresQRProcessing = documentConfig.issueVC?.toLowerCase() === 'no';
+              Logger.log(
+                `Document config for ${uploadDocumentDto.docSubType}: issueVC=${documentConfig.issueVC}, ` +
+                `requiresQRProcessing=${requiresQRProcessing}`
+              );
+            }
+          }
+        } catch (configError) {
+          Logger.warn(`Failed to fetch document configuration: ${configError.message}`);
+        }
+      }
+
+      // Validate file type based on whether QR processing is required
+      if (requiresQRProcessing && file.mimetype === 'application/pdf') {
+        throw new BadRequestException(
+          'QR processing failed: PDF QR code extraction is not supported. Please upload an image with a QR code.'
+        );
+      }
+
+      // Perform OCR extraction with QR code processing support
       let ocrResult = null;
       try {
-        Logger.log(`Starting OCR extraction for document validation`);
-        
-        // Extract text from the uploaded file buffer to validate OCR permissions
-        const extractedData = await this.ocrService.extractTextFromBuffer(
-          file.buffer,
-          file.mimetype,
+        Logger.log(
+          `Starting OCR extraction ${requiresQRProcessing ? 'with QR processing' : 'without QR processing'} for document validation`
         );
+        
+        // Extract text from the uploaded file buffer
+        // Use different methods based on whether QR processing is required
+        const extractedData = requiresQRProcessing 
+          ? await this.ocrService.extractTextFromBufferWithQR(
+              file.buffer,
+              file.mimetype,
+              uploadDocumentDto.docSubType,
+            )
+          : await this.ocrService.extractTextFromBuffer(
+              file.buffer,
+              file.mimetype,
+            );
 
         ocrResult = {
           extractedText: extractedData.fullText,
           confidence: extractedData.confidence,
           metadata: extractedData.metadata,
+          qrProcessing: requiresQRProcessing && 'qrProcessing' in extractedData 
+            ? extractedData.qrProcessing 
+            : undefined,
         };
 
         Logger.log(
-          `OCR validation successful. ` +
-          `Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence`,
+          `OCR processing successful. ` +
+          `Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
+          (requiresQRProcessing && 'qrProcessing' in extractedData && extractedData.qrProcessing && (extractedData.qrProcessing as any)?.qrCodeDetected 
+            ? ` (QR code processed)` 
+            : ''),
         );
+
+        // Validate that meaningful text was extracted
+        if (extractedData.fullText.length === 0 || extractedData.confidence === 0) {
+          Logger.error(`OCR validation failed: No readable text found in document (${extractedData.fullText.length} characters, ${extractedData.confidence}% confidence)`);
+          throw new BadRequestException(
+            'Document validation failed: No readable text found in the uploaded document. Please upload a valid document with readable text.'
+          );
+        }
       } catch (ocrError) {
         // Throw error to prevent file upload if OCR fails
-        Logger.error(`OCR validation failed: ${ocrError.message}`);
+        Logger.error(`OCR processing failed: ${ocrError.message}`);
         throw new InternalServerErrorException(
           `${ocrError.message}. Document upload aborted.`
         );
@@ -1954,7 +2010,7 @@ export class UserService {
           uploaded_at: savedDoc.uploaded_at,
           is_update: isUpdate,
           download_url: downloadUrl, // Pre-signed URL for S3 or file path for local
-          ocr: ocrResult, // Include OCR extraction results (null if OCR failed)
+          ocr: ocrResult, // Include OCR extraction results and QR processing info
         },
       });
     } catch (error) {

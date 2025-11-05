@@ -2,16 +2,21 @@ import { Module, Global } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { OcrService } from './ocr.service';
 import { TextExtractorFactory } from './factories/text-extractor.factory';
+import { QRCodeDetectorService } from './services/qr-code-detector.service';
+import { QRProcessingService } from './services/qr-processing.service';
+import { QRContentProcessorService } from './services/qr-content-processor.service';
+import { AdminModule } from '@modules/admin/admin.module';
+import { QRScanningService } from '../qr/qr-scanning.service';
 
 /**
- * OCR Module - Provides OCR text extraction services
+ * OCR Module - Provides OCR text extraction services with QR code processing
  * Uses adapter pattern to support multiple OCR providers
  * 
  * @Global - Makes OcrService available throughout the application
  */
 @Global()
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, AdminModule],
   providers: [
     {
       provide: 'TEXT_EXTRACTOR',
@@ -36,8 +41,15 @@ import { TextExtractorFactory } from './factories/text-extractor.factory';
       },
       inject: [ConfigService],
     },
+    {
+      provide: 'QR_CODE_DETECTOR',
+      useClass: QRCodeDetectorService,
+    },
+    QRContentProcessorService,
+    QRProcessingService,
+    QRScanningService, // Added QRScanningService to providers
     OcrService,
   ],
-  exports: [OcrService],
+  exports: [OcrService, QRScanningService], // Exporting QRScanningService
 })
 export class OcrModule {}

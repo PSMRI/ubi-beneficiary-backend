@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { ITextExtractor, ExtractedText } from './interfaces/text-extractor.interface';
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { QRProcessingService } from './services/qr-processing.service';
 
 /**
  * OCR Service for document text extraction
@@ -24,6 +25,7 @@ export class OcrService {
     @Inject('FileStorageService')
     private readonly fileStorageService: IFileStorageService,
     private readonly configService: ConfigService,
+    private readonly qrProcessingService: QRProcessingService,
   ) {
     this.logger.log(
       `OCR Service initialized with provider: ${this.textExtractor.getProviderName()}`,
@@ -31,12 +33,108 @@ export class OcrService {
   }
 
   /**
-   * Extract text from a file buffer
-   * This is the primary method for OCR extraction
+   * Extract text from a file buffer with QR code processing support
+   * This method checks if the document type supports QR processing and handles it accordingly
    * @param fileBuffer - File buffer to extract text from
    * @param mimeType - MIME type of the file (e.g., 'image/jpeg', 'application/pdf')
-   * @returns Extracted text with metadata
+   * @param documentSubType - Document subtype to check for QR processing configuration
+   * @returns Extracted text with metadata and QR processing results
    */
+  async extractTextFromBufferWithQR(
+    fileBuffer: Buffer,
+    mimeType: string,
+    documentSubType?: string,
+  ): Promise<ExtractedText & { qrProcessing?: any }> {
+    try {
+      // Validate file buffer
+      if (!fileBuffer || fileBuffer.length === 0) {
+        throw new BadRequestException('File buffer is empty or invalid');
+      }
+
+      // Check if file type is supported
+      if (!this.textExtractor.supportsFileType(mimeType)) {
+        throw new BadRequestException(
+          `File type '${mimeType}' is not supported by ${this.textExtractor.getProviderName()}`,
+        );
+      }
+
+      this.logger.log(
+        `Extracting text from buffer (${fileBuffer.length} bytes, type: ${mimeType}, subtype: ${documentSubType})`,
+      );
+
+      // Check if this document type requires QR processing
+      const qrProcessingResult = await this.qrProcessingService.processQRCodeIfRequired(
+        fileBuffer,
+        mimeType,
+        documentSubType,
+      );
+
+      // If QR processing found a document, extract text from the downloaded document
+      if (qrProcessingResult?.downloadedDocument) {
+        this.logger.log('QR code found with document URL - processing downloaded document');
+        
+        const qrResult = await this.textExtractor.extractText(
+          qrProcessingResult.downloadedDocument.buffer,
+          qrProcessingResult.downloadedDocument.mimeType,
+        );
+
+        return {
+          ...qrResult,
+          qrProcessing: qrProcessingResult,
+        };
+      }
+
+      // If QR code was detected successfully but contains data (not a document URL)
+      // Return the QR content as text without trying to OCR the image
+      if (qrProcessingResult?.qrCodeDetected && qrProcessingResult?.qrCodeContent) {
+        this.logger.log('QR code detected with data content (no document URL) - returning QR content');
+        
+        return {
+          fullText: qrProcessingResult.qrCodeContent,
+          confidence: 100, // QR detection is certain
+          metadata: {
+            provider: 'qr-code-detection',
+            processingTime: 0,
+            qrContentType: qrProcessingResult.contentType,
+          },
+          qrProcessing: qrProcessingResult,
+        };
+      }
+
+      // Log QR processing issues but don't fail - allow fallback to original document
+      if (qrProcessingResult?.error) {
+        this.logger.warn(`QR processing had issues: ${qrProcessingResult.error} - Processing original document instead`);
+      }
+
+      // No QR processing needed or no QR found - process original document
+      const result = await this.textExtractor.extractText(fileBuffer, mimeType);
+
+      this.logger.log(
+        `Text extraction successful. Extracted ${result.fullText.length} characters with ${result.confidence}% confidence`,
+      );
+
+      return {
+        ...result,
+        qrProcessing: qrProcessingResult,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Text extraction failed: ${error.message}`,
+        error.stack,
+      );
+
+      if (
+        error instanceof BadRequestException ||
+        error instanceof InternalServerErrorException
+      ) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException(
+        `OCR processing failed: ${error.message}`,
+      );
+    }
+  }
   async extractTextFromBuffer(
     fileBuffer: Buffer,
     mimeType: string,
