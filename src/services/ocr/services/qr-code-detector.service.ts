@@ -142,8 +142,11 @@ export class QRCodeDetectorService implements IQRCodeDetector {
    * Detect QR code with grayscale conversion
    */
   private async detectQRWithGrayscale(imageBuffer: Buffer): Promise<string | null> {
+    // Convert to grayscale and apply a threshold to binarize the image,
+    // which can improve QR detection on low-contrast or noisy images.
     const processedImage = await sharp(imageBuffer)
       .grayscale()
+      .threshold(150) // binarize; adjust threshold level if needed
       .png()
       .raw()
       .toBuffer({ resolveWithObject: true });
