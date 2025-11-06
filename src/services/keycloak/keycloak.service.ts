@@ -65,7 +65,6 @@ export class KeycloakService {
 	}
 
 	public async getUserKeycloakToken(data) {
-		console.log("hii inside token");
 
 		const url = `${this.keycloak_url}/realms/${this.realm_name_app}/protocol/openid-connect/token`;
 
@@ -88,7 +87,7 @@ export class KeycloakService {
 				payload,
 				config,
 			);
-			console.log("keycloakData", keycloakData);
+
 			if (keycloakData.status !== 200) {
 				throw new InternalServerErrorException(
 					'Failed to get Keycloak user token',
@@ -120,7 +119,6 @@ export class KeycloakService {
 			type: 'password',
 			value: password,
 		};
-		console.log("keycloakid++++++++++++++++", keycloak_id);
 
 		const url = `${this.keycloak_url}/admin/realms/${this.realm_name_app}/users/${keycloak_id}/reset-password`;
 
@@ -143,7 +141,7 @@ export class KeycloakService {
 				return false;
 			}
 		} catch (e) {
-			// console.log('resetPassword', e);
+			console.log('resetPassword', e);
 			return false;
 		}
 	}
