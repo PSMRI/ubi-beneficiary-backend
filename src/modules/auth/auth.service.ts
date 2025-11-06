@@ -470,12 +470,9 @@ export class AuthService {
 
     // 2️⃣ Find user in Keycloak
     const user = await this.keycloakService.getUserByUsername(username);
-    if (!user) {
+    if (!user?.user || user.isUserExist === false) {
       throw new HttpException('USER_NOT_FOUND', HttpStatus.NOT_FOUND);
     }
-
-    // 3️⃣ Call reset password API
-    console.log("uesr", user.user);
 
     const success = await this.keycloakService.resetPassword(
       user.user.id,
