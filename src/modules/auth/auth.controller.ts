@@ -12,11 +12,12 @@ import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDTO } from './dto/register.dto';
 import { LoginDTO } from './dto/login.dto';
+import { UpdatePasswordDTO } from './dto/update-password.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(public authService: AuthService) {}
+  constructor(public authService: AuthService) { }
 
   // users/register on keycloak and postgres both side.
 
@@ -55,4 +56,18 @@ export class AuthController {
   logout(@Req() req: Request) {
     return this.authService.logout(req);
   }
+
+  @Post('/update-password')
+  @UsePipes(new ValidationPipe())
+  @ApiBody({
+    type: UpdatePasswordDTO,
+    description: 'Update user password after PASSWORD_UPDATE_REQUIRED',
+  })
+  @ApiResponse({ status: 200, description: 'PASSWORD_UPDATED_SUCCESSFULLY' })
+  @ApiResponse({ status: 404, description: 'USER_NOT_FOUND' })
+  @ApiResponse({ status: 400, description: 'BAD_REQUEST' })
+  public async updatePassword(@Body() body: UpdatePasswordDTO) {
+    return await this.authService.updatePassword(body);
+  }
+
 }
