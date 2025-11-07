@@ -1,0 +1,190 @@
+import { Logger } from '@nestjs/common';
+import {
+  ITextExtractor,
+  ExtractedText,
+} from '../../interfaces/text-extractor.interface';
+import {
+  TextractClient,
+  DetectDocumentTextCommand,
+  Block,
+} from '@aws-sdk/client-textract';
+
+/**
+ * AWS Textract adapter for text extraction
+ * Implements the ITextExtractor interface
+ */
+export class AWSTextractAdapter implements ITextExtractor {
+  private readonly logger = new Logger(AWSTextractAdapter.name);
+  private readonly client: TextractClient;
+
+  constructor(config: { region: string; credentials?: any }) {
+    this.client = new TextractClient({
+      region: config.region,
+      credentials: config.credentials,
+    });
+    
+    this.logger.log(`AWS Textract adapter initialized for region: ${config.region}`);
+  }
+
+  /**
+   * Validate AWS Textract permissions by attempting a minimal API call
+   * @returns true if permissions are valid
+   * @throws Error if permissions are invalid
+   */
+  async validatePermissions(): Promise<boolean> {
+    try {
+      // Create a minimal command with a single pixel buffer for testing
+      const singlePixelBuffer = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]);
+      const command = new DetectDocumentTextCommand({
+        Document: { Bytes: singlePixelBuffer },
+      });
+
+      await this.client.send(command);
+      return true;
+    } catch (error) {
+      // Log detailed error information for debugging
+      this.logger.error(`AWS Textract validation error - Name: ${error.name}, Message: ${error.message}`, error);
+
+      if (error.name === 'AccessDeniedException') {
+        throw new Error('OCR service not properly configured. Please contact support.');
+      }
+      
+      // InvalidDocument error means we have valid permissions
+      if (error.name === 'InvalidDocumentException' || error.name === 'InvalidImageFormatException') {
+        this.logger.log('AWS Textract permissions validated successfully');
+        return true;
+      }
+
+      // For credential errors, be more specific
+      if (error.name === 'UnrecognizedClientException' || error.name === 'InvalidSignatureException') {
+        throw new Error('OCR service credentials are invalid. Please check AWS access key and secret.');
+      }
+
+      if (error.name === 'ExpiredToken') {
+        throw new Error('OCR service credentials have expired. Please update AWS credentials.');
+      }
+
+      // For region errors
+      if (error.name === 'UnknownEndpoint') {
+        throw new Error('OCR service region configuration is invalid. Please check AWS region setting.');
+      }
+
+      // For any other AWS errors, include the error name for better debugging
+      throw new Error(`OCR service configuration error: ${error.name}. Please try again later.`);
+    }
+  }
+
+  /**
+   * Extract text from document using AWS Textract
+   * @param fileBuffer - Document buffer (image or PDF)
+   * @param mimeType - MIME type of the document
+   * @returns Extracted text with metadata
+   */
+  async extractText(
+    fileBuffer: Buffer,
+    mimeType: string,
+  ): Promise<ExtractedText> {
+    const startTime = Date.now();
+
+    try {
+      this.logger.log(`Starting text extraction for file type: ${mimeType}`);
+
+      // Create Textract command with document bytes
+      const command = new DetectDocumentTextCommand({
+        Document: { Bytes: fileBuffer },
+      });
+
+      // Send request to AWS Textract
+      const response = await this.client.send(command);
+
+      // Extract text from LINE blocks (most readable format)
+      const fullText =
+        response.Blocks?.filter((block) => block.BlockType === 'LINE')
+          .map((block) => block.Text)
+          .join('\n') || '';
+
+      // Calculate average confidence
+      const confidence = this.calculateAverageConfidence(response.Blocks || []);
+
+      const processingTime = Date.now() - startTime;
+      
+      this.logger.log(
+        `Text extraction completed in ${processingTime}ms with ${fullText.length} characters extracted`,
+      );
+
+      return {
+        fullText,
+        confidence,
+        metadata: {
+          pageCount: 1, // DetectDocumentText processes single page
+          processingTime,
+          provider: 'aws-textract',
+          blockCount: response.Blocks?.length || 0,
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        `AWS Textract extraction failed: ${error.message}`,
+        error.stack,
+      );
+
+      if (error.name === 'AccessDeniedException') {
+        throw new Error('OCR service not properly configured. Please contact support.');
+      }
+
+      if (error.name === 'InvalidImageFormatException' || error.name === 'InvalidDocumentException') {
+        throw new Error('Document format not supported for text extraction.');
+      }
+
+      if (error.name === 'ThrottlingException') {
+        throw new Error('OCR service is temporarily busy. Please try again in a few minutes.');
+      }
+
+      // For any other errors, provide a generic message
+      throw new Error('Unable to process document text extraction. Please try again.');
+    }
+  }
+
+  /**
+   * Check if AWS Textract supports this file type
+   * @param mimeType - MIME type to check
+   * @returns true if supported
+   */
+  supportsFileType(mimeType: string): boolean {
+    const supportedTypes = [
+      'image/jpeg',
+      'image/png',
+      'application/pdf',
+      'image/jpg',
+    ];
+    return supportedTypes.includes(mimeType.toLowerCase());
+  }
+
+  /**
+   * Get provider name
+   * @returns Provider name
+   */
+  getProviderName(): string {
+    return 'aws-textract';
+  }
+
+  /**
+   * Calculate average confidence from Textract blocks
+   * @param blocks - Array of Textract blocks
+   * @returns Average confidence score (0-100)
+   */
+  private calculateAverageConfidence(blocks: Block[]): number {
+    if (!blocks || blocks.length === 0) return 0;
+
+    const confidences = blocks
+      .filter((b) => b.Confidence !== undefined && b.Confidence !== null)
+      .map((b) => b.Confidence as number);
+
+    if (confidences.length === 0) return 0;
+
+    const sum = confidences.reduce((a, b) => a + b, 0);
+    const average = sum / confidences.length;
+
+    return Math.round(average * 100) / 100; // Round to 2 decimal places
+  }
+}

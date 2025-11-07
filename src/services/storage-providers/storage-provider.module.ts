@@ -16,7 +16,7 @@ import { S3StorageAdapter } from './adapters/s3.storage.adapter';
         
         if (provider === 's3') {
           // Validate S3 configuration
-          const requiredS3Config = ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET_NAME'];
+          const requiredS3Config = ['AWS_S3_REGION', 'AWS_S3_ACCESS_KEY_ID', 'AWS_S3_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET_NAME'];
           const missingConfig = requiredS3Config.filter(key => !configService.get(key));
           if (missingConfig.length > 0) {
             logger.error(`Missing S3 configuration: ${missingConfig.join(', ')}`);
