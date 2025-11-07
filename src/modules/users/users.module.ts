@@ -19,8 +19,10 @@ import { FieldValue } from '@modules/customfields/entities/field-value.entity';
 import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { AdminModule } from '@modules/admin/admin.module';
 import { DocumentUploadModule } from '@modules/document-upload/document-upload.module';
+import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ConfigModule } from '@nestjs/config';
 import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
+import { VcFieldsService } from '../../common/helper/vcFieldService';
 
 @Module({
   imports: [
@@ -59,6 +61,7 @@ import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
     CustomFieldsModule,
     AdminModule,
     DocumentUploadModule,
+    OcrMappingModule,
   ],
   controllers: [UserController],
   providers: [
@@ -70,6 +73,7 @@ import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
     ApplicationStatusUpdate,
     ProxyService,
     ConfigModule,
+    VcFieldsService,
   ],
    exports: [UserService],
 })
