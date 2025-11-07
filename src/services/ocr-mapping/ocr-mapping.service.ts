@@ -169,11 +169,11 @@ export class OcrMappingService {
       
       const value = this.extractFieldValue(normalizedText, fieldName, fieldConfig.type);
       
-      if (value !== null) {
+      if (value === null) {
+        this.logger.debug(`✗ Failed to extract ${fieldName}`);
+      } else {
         this.logger.debug(`✓ Extracted ${fieldName}: "${value}"`);
         result[fieldName] = value;
-      } else {
-        this.logger.debug(`✗ Failed to extract ${fieldName}`);
       }
     }
 
@@ -226,7 +226,7 @@ export class OcrMappingService {
           // Validate the extracted value is reasonable
           const isValid = this.isValidExtractedValue(cleanedValue, fieldName, fieldType);
           this.logger.debug(`      Validation result: ${isValid}`);
-          if (isValid) {
+          if (isValid === true) {
             const coercedValue = this.coerceValue(cleanedValue, fieldType);
             this.logger.debug(`      Final coerced value: "${coercedValue}"`);
             return coercedValue;
@@ -248,8 +248,8 @@ export class OcrMappingService {
    */
   private cleanOcrValue(value: string): string {
     return value
-      .replace(/[^\w\s\-\.\/]/g, ' ') // Remove special chars except basic ones
-      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replaceAll(/[^\w\s\-\.\/]/g, ' ') // Remove special chars except basic ones
+      .replaceAll(/\s+/g, ' ') // Normalize whitespace
       .trim();
   }
 
@@ -270,7 +270,7 @@ export class OcrMappingService {
     const lowerValue = value.toLowerCase();
     const rejectPatterns = [
       /^[^a-zA-Z0-9]*$/,
-      /^\s*(:|-)?\s*$/,
+      /^\s*[:-]?\s*$/, // Fixed: removed backtracking vulnerability
       /^(enter|fill|write|type|click|select)/i,
     ];
     
@@ -278,7 +278,7 @@ export class OcrMappingService {
       if (pattern.test(lowerValue)) return false;
     }
     
-    // Field-specific validations (more lenient)
+    // Generic field validations based on field type and common patterns
     if (fieldName.includes('name') && fieldType === 'string') {
       // Names should contain letters and be reasonable length
       if (!/[a-zA-Z]/.test(value) || value.length < 2) return false;
@@ -287,85 +287,72 @@ export class OcrMappingService {
       return namePattern.test(value);
     }
     
-    if (fieldName.includes('percentage') || fieldName.includes('cgpa')) {
-      // Should contain numbers
+    // Numeric field validation
+    if (fieldType === 'number' || fieldType === 'integer') {
       return /\d/.test(value);
     }
     
-    // For academic/institutional fields, be more lenient
-    if (fieldName.includes('school') || fieldName.includes('college') || fieldName.includes('result')) {
-      return value.length >= 2 && /[a-zA-Z0-9]/.test(value);
+    // Generic text field validation
+    if (fieldType === 'string') {
+      return value.length >= 1 && /[a-zA-Z0-9]/.test(value);
     }
     
     return true;
   }
 
   /**
-   * Extract numeric values using specific patterns
+   * Extract numeric values using configurable patterns based on field synonyms
    */
   private extractNumericValue(text: string, fieldName: string): number | null {
     const lowerFieldName = fieldName.toLowerCase();
-    
-    // Percentage patterns - look for numbers followed by %
-    if (lowerFieldName.includes('percentage') || lowerFieldName.includes('percent')) {
-      const patterns = [
-        /(\d{1,3}(?:\.\d+)?)\s*%/g,
-        /percentage\s*:?\s*(\d{1,3}(?:\.\d+)?)/gi,
-        /percent\s*:?\s*(\d{1,3}(?:\.\d+)?)/gi,
-      ];
-      
-      for (const pattern of patterns) {
-        const match = pattern.exec(text);
-        if (match) {
-          const value = Number.parseFloat(match[1]);
-          if (value >= 0 && value <= 100) return value;
-        }
-      }
-    }
-    
-    // CGPA patterns - look for CGPA values (typically 0-10)
-    if (lowerFieldName.includes('cgpa') || lowerFieldName.includes('gpa')) {
-      const patterns = [
-        /cgpa\s*:?\s*(\d(?:\.\d+)?)/gi,
-        /gpa\s*:?\s*(\d(?:\.\d+)?)/gi,
-        /cpi\s*:?\s*(\d(?:\.\d+)?)/gi,
-      ];
-      
-      for (const pattern of patterns) {
-        const match = pattern.exec(text);
-        if (match) {
-          const value = Number.parseFloat(match[1]);
-          if (value >= 0 && value <= 10) return value;
-        }
-      }
-    }
-    
-    // Marks patterns
-    if (lowerFieldName.includes('marks') || lowerFieldName.includes('score')) {
-      const patterns = [
-        /marks\s*:?\s*(\d+)/gi,
-        /score\s*:?\s*(\d+)/gi,
-        /total\s*marks\s*:?\s*(\d+)/gi,
-      ];
-      
-      for (const pattern of patterns) {
-        const match = pattern.exec(text);
-        if (match) {
-          const value = Number.parseFloat(match[1]);
-          if (value >= 0 && value <= 1000) return value; // Reasonable range for marks
-        }
-      }
-    }
-    
-    // General numeric patterns with field synonyms
     const synonyms = getFieldSynonyms(lowerFieldName);
+    
+    // Define safe regex patterns without backtracking vulnerabilities
+    const numericPatterns = [
+      // Pattern for numbers followed by % (for percentage fields)
+      { pattern: /(\d{1,3}(?:\.\d{1,2})?)\s*%/, range: [0, 100], suffix: '%' },
+      // Pattern for decimal numbers (for CGPA, GPA fields)
+      { pattern: /(\d{1,2}(?:\.\d{1,2})?)/, range: [0, 10], suffix: '' },
+      // Pattern for integer numbers (for marks, scores)
+      { pattern: /(\d{1,4})/, range: [0, 10000], suffix: '' }
+    ];
+    
+    // Try to extract using field synonyms with safe patterns
     for (const synonym of synonyms) {
-      const pattern = new RegExp(`\\b${this.escapeRegex(synonym)}\\s*:?\\s*(\\d+(?:\\.\\d+)?)`, 'gi');
-      const match = pattern.exec(text);
-      if (match) {
-        const value = Number.parseFloat(match[1]);
-        // Basic validation - reject unreasonable values
-        if (value >= 0 && value <= 10000) return value;
+      const escapedSynonym = this.escapeRegex(synonym);
+      
+      for (const { pattern, range, suffix } of numericPatterns) {
+        // Create safe regex pattern without backtracking
+        const suffixPattern = suffix ? String.raw`\s*` + this.escapeRegex(suffix) : '';
+        const fullPattern = new RegExp(
+          String.raw`${escapedSynonym}\s*:?\s*${pattern.source}${suffixPattern}`,
+          'i'
+        );
+        
+        const match = fullPattern.exec(text);
+        if (match?.[1]) {
+          const value = Number.parseFloat(match[1]);
+          if (Number.isFinite(value) && value >= range[0] && value <= range[1]) {
+            return value;
+          }
+        }
+      }
+    }
+    
+    // Fallback: look for any numeric value near field synonyms
+    for (const synonym of synonyms) {
+      const synonymIndex = text.toLowerCase().indexOf(synonym.toLowerCase());
+      if (synonymIndex !== -1) {
+        // Look for numbers within 50 characters after the synonym
+        const searchText = text.slice(synonymIndex, synonymIndex + 50);
+        const numberPattern = /(\d+(?:\.\d+)?)/;
+        const numberMatch = numberPattern.exec(searchText);
+        if (numberMatch) {
+          const value = Number.parseFloat(numberMatch[1]);
+          if (Number.isFinite(value) && value >= 0 && value <= 10000) {
+            return value;
+          }
+        }
       }
     }
     
@@ -383,7 +370,7 @@ export class OcrMappingService {
     switch (type) {
       case 'number':
       case 'integer': {
-        const numericValue = trimmedValue.replace(/[^\d.-]/g, '');
+        const numericValue = trimmedValue.replaceAll(/[^\d.-]/g, '');
         const parsed = Number.parseFloat(numericValue);
         if (!Number.isFinite(parsed)) return null;
         return type === 'integer' ? Math.round(parsed) : parsed;
@@ -410,13 +397,13 @@ export class OcrMappingService {
     for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
       const value = data[fieldName];
       
-      if (value != null) {
+      if (value !== null && value !== undefined) {
         // Type validation and coercion
         const coercedValue = this.coerceValue(String(value), fieldConfig.type);
-        if (coercedValue !== null) {
-          normalizedData[fieldName] = coercedValue;
-        } else {
+        if (coercedValue === null) {
           warnings.push(`Failed to coerce value "${value}" for field "${fieldName}" to type "${fieldConfig.type}"`);
+        } else {
+          normalizedData[fieldName] = coercedValue;
         }
       }
     }
@@ -428,6 +415,6 @@ export class OcrMappingService {
    * Escape special regex characters
    */
   private escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return str.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
   }
 }

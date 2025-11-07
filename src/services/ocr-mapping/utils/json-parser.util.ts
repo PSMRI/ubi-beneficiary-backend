@@ -36,7 +36,8 @@ export class JsonParserUtil {
    * Try to extract JSON from markdown code blocks
    */
   private static tryCodeBlockExtraction(text: string): Record<string, any> | null {
-    const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+    const codeBlockPattern = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/i;
+    const codeBlockMatch = codeBlockPattern.exec(text);
     if (codeBlockMatch?.[1]) {
       this.logger.debug('Found JSON in markdown code block');
       const jsonString = codeBlockMatch[1].trim();
@@ -49,7 +50,8 @@ export class JsonParserUtil {
    * Try to extract JSON after "Here is the JSON object:" pattern
    */
   private static tryJsonObjectExtraction(text: string): Record<string, any> | null {
-    const jsonObjectMatch = text.match(/here is the json object:\s*```\s*(\{[\s\S]*?\})\s*```/i);
+    const jsonObjectPattern = /here is the json object:\s*```\s*(\{[\s\S]*?\})\s*```/i;
+    const jsonObjectMatch = jsonObjectPattern.exec(text);
     if (jsonObjectMatch?.[1]) {
       this.logger.debug('Found JSON after "Here is the JSON object:"');
       const jsonString = jsonObjectMatch[1].trim();
@@ -62,7 +64,7 @@ export class JsonParserUtil {
    * Try to find the largest valid JSON object in the text
    */
   private static tryLargestJsonExtraction(text: string): Record<string, any> | null {
-    const jsonMatches = text.match(/\{[\s\S]*?\}/g);
+    const jsonMatches = text.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g); // Fixed: removed backtracking vulnerability
     if (!jsonMatches) {
       return null;
     }
