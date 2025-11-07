@@ -270,7 +270,7 @@ export class OcrMappingService {
     const lowerValue = value.toLowerCase();
     const rejectPatterns = [
       /^[^a-zA-Z0-9]*$/,
-      /^\s*[:-]?\s*$/, // Fixed: removed backtracking vulnerability
+      /^[\s:-]*$/,
       /^(enter|fill|write|type|click|select)/i,
     ];
     
