@@ -34,6 +34,8 @@ import { UploadDocumentDto } from './dto/upload-document.dto';
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
 import { OcrService } from '@services/ocr/ocr.service';
+import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
+import { VcFieldsService } from '../../common/helper/vcFieldService';
 
 type StatusUpdateInfo = {
   attempted: boolean;
@@ -64,6 +66,8 @@ export class UserService {
     private readonly fileStorageService: IFileStorageService,
     private readonly documentUploadService: DocumentUploadService,
     private readonly ocrService: OcrService,
+    private readonly ocrMappingService: OcrMappingService,
+    private readonly vcFieldsService: VcFieldsService,
   ) { }
 
 
@@ -1897,6 +1901,31 @@ export class UserService {
       // Perform OCR extraction (throws on failure)
       const ocrResult = await this.performOcr(file, uploadDocumentDto, requiresQRProcessing);
 
+      // Get vcFields configuration for the document type
+      const vcFields = await this.vcFieldsService.getVcFields(
+        uploadDocumentDto.docType,
+        uploadDocumentDto.docSubType,
+      );
+
+      // Map OCR text to structured data based on vcFields configuration
+      let vcMapping = null;
+      if (vcFields) {
+        vcMapping = await this.ocrMappingService.mapAfterOcr({
+          text: ocrResult.extractedText,
+          docType: uploadDocumentDto.docType,
+          docSubType: uploadDocumentDto.docSubType,
+        }, vcFields);
+      } else {
+        Logger.warn(`No vcFields configuration found for docType: ${uploadDocumentDto.docType}, docSubType: ${uploadDocumentDto.docSubType}`);
+        vcMapping = {
+          mapped_data: {},
+          missing_fields: [],
+          confidence: 0,
+          processing_method: 'keyword' as const,
+          warnings: ['No vcFields configuration found'],
+        };
+      }
+
       // Upload file to storage
       const uploadResult = await this.documentUploadService.uploadFile(
         file,
@@ -1911,8 +1940,8 @@ export class UserService {
 
       // Save or update the document record
       const { savedDoc, isUpdate } = existingDoc
-        ? await this.updateExistingDoc(existingDoc, uploadResult, uploadDocumentDto)
-        : await this.createNewDoc(userDetails.user_id, uploadResult, uploadDocumentDto);
+        ? await this.updateExistingDoc(existingDoc, uploadResult, uploadDocumentDto, vcMapping)
+        : await this.createNewDoc(userDetails.user_id, uploadResult, uploadDocumentDto, vcMapping);
 
       // Generate download URL and return standardized response
       const downloadUrl = await this.documentUploadService.generateDownloadUrl(savedDoc.doc_path);
@@ -1933,6 +1962,7 @@ export class UserService {
           is_update: isUpdate,
           download_url: downloadUrl,
           ocr: ocrResult,
+          vc_mapping: vcMapping,
         },
       });
     } catch (error) {
@@ -2066,12 +2096,18 @@ export class UserService {
     existingDoc: UserDoc,
     uploadResult: any,
     uploadDocumentDto: UploadDocumentDto,
+    vcMapping: any,
   ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
     const previousPath = existingDoc.doc_path;
     existingDoc.doc_path = uploadResult.filePath;
     existingDoc.imported_from = uploadDocumentDto.importedFrom;
     existingDoc.doc_datatype = uploadResult.docDatatype;
     existingDoc.uploaded_at = uploadResult.uploadedAt;
+    
+    // Store vc_mapping data in doc_data column (will be automatically encrypted)
+    if (vcMapping) {
+      existingDoc.doc_data = JSON.stringify(vcMapping) as any;
+    }
 
     const savedDoc = await this.userDocsRepository.save(existingDoc);
     if (previousPath) {
@@ -2085,6 +2121,7 @@ export class UserService {
     userId: string,
     uploadResult: any,
     uploadDocumentDto: UploadDocumentDto,
+    vcMapping: any,
   ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
     const newUserDoc = this.userDocsRepository.create({
       user_id: userId,
@@ -2093,7 +2130,7 @@ export class UserService {
       doc_name: uploadDocumentDto.docName,
       imported_from: uploadDocumentDto.importedFrom,
       doc_path: uploadResult.filePath,
-      doc_data: null,
+      doc_data: vcMapping ? JSON.stringify(vcMapping) as any : null,
       doc_datatype: uploadResult.docDatatype,
       doc_verified: null,
       watcher_registered: false,

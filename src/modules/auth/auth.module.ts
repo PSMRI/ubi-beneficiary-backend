@@ -21,7 +21,9 @@ import { CustomFieldsModule } from '@modules/customfields/customfields.module';
 import { RoleGuard } from '../../common/guards/role.guard';
 import { AdminModule } from '@modules/admin/admin.module';
 import { DocumentUploadModule } from '@modules/document-upload/document-upload.module';
+import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ProxyService } from '@services/proxy/proxy.service';
+import { VcFieldsService } from '../../common/helper/vcFieldService';
 
 @Module({
   imports: [
@@ -38,6 +40,7 @@ import { ProxyService } from '@services/proxy/proxy.service';
     CustomFieldsModule,
     AdminModule,
     DocumentUploadModule,
+    OcrMappingModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -51,6 +54,7 @@ import { ProxyService } from '@services/proxy/proxy.service';
     WalletService,
     RoleGuard,
     ProxyService,
+    VcFieldsService,
   ],
   exports: [AuthService, UserService, EncryptionService, WalletService, RoleGuard],
 })
