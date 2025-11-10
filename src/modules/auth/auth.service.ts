@@ -462,18 +462,41 @@ export class AuthService {
   }
 
   public async updatePassword(body: UpdatePasswordDTO) {
-    const { username, newPassword } = body;
+    const { username, oldPassword, newPassword } = body;
 
-    // 1️⃣ Get admin token
+    // 1️⃣ Verify old password via Keycloak token endpoint
+    try {
+      await this.keycloakService.getUserKeycloakToken({
+        username,
+        password: oldPassword,
+      });
+      // If we reach here → old password is valid (either normal or temporary)
+    } catch (error) {
+      if (error.message === 'INVALID_CREDENTIALS') {
+        throw new HttpException('INVALID_OLD_PASSWORD', HttpStatus.UNAUTHORIZED);
+      }
+
+      // Handle "ACCOUNT_NOT_FULLY_SETUP" (temporary password)
+      if (error.message === 'ACCOUNT_NOT_FULLY_SETUP') {
+        // Still a valid old password — Keycloak just needs password update.
+        // So we continue the flow normally.
+      } else {
+        console.error('Error verifying old password:', error);
+        throw new HttpException('PASSWORD_VALIDATION_FAILED', HttpStatus.BAD_REQUEST);
+      }
+    }
+
+    // 2️⃣ Get admin token
     const adminTokenData = await this.keycloakService.getAdminKeycloakToken();
     const adminToken = adminTokenData?.access_token;
 
-    // 2️⃣ Find user in Keycloak
+    // 3️⃣ Find user by username
     const user = await this.keycloakService.getUserByUsername(username);
     if (!user?.user || user.isUserExist === false) {
       throw new HttpException('USER_NOT_FOUND', HttpStatus.NOT_FOUND);
     }
 
+    // 4️⃣ Reset password using admin API
     const success = await this.keycloakService.resetPassword(
       user.user.id,
       adminToken,
@@ -484,10 +507,11 @@ export class AuthService {
       throw new HttpException('PASSWORD_UPDATE_FAILED', HttpStatus.BAD_REQUEST);
     }
 
-    // // 4️⃣ Optionally clear "UPDATE_PASSWORD" required action
-    // await this.keycloakService.clearRequiredAction(user.id, adminToken);
+    // 5️⃣ Optional — clear any pending required actions like UPDATE_PASSWORD
+    // await this.keycloakService.clearRequiredAction(user.user.id, adminToken);
 
     return { message: 'PASSWORD_UPDATED_SUCCESSFULLY' };
   }
+
 
 }
