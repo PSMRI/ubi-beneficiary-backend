@@ -2084,8 +2084,15 @@ export class UserService {
       return ocrResult;
     } catch (ocrError) {
       Logger.error(`OCR processing failed: ${ocrError.message}`);
+      
+      // If it's already a BadRequestException (like QR processing errors), preserve the user-friendly message
+      if (ocrError instanceof BadRequestException) {
+        throw ocrError;
+      }
+      
+      // For other errors, wrap in InternalServerErrorException
       throw new InternalServerErrorException(
-        `${ocrError.message}. Document upload aborted.`
+        `Document processing failed: ${ocrError.message}`
       );
     }
   }

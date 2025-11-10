@@ -102,6 +102,23 @@ export class OcrService {
         };
       }
 
+      // Check if QR processing was required but failed
+      if (qrProcessingResult?.error && qrProcessingResult?.isRequired) {
+        this.logger.error(`QR processing failed for required document: ${qrProcessingResult.error}`);
+        
+        // Provide user-friendly error messages based on error type
+        let userMessage = '';
+        if (qrProcessingResult.errorType === 'QR_NOT_FOUND') {
+          userMessage = 'Please upload a document that contains a valid QR code';
+        } else if (qrProcessingResult.errorType === 'PROCESSING_ERROR') {
+          userMessage = 'QR code could not be read from this document. Please ensure the QR code is clear and try again';
+        } else {
+          userMessage = 'This document requires a valid QR code for processing';
+        }
+        
+        throw new BadRequestException(userMessage);
+      }
+
       // Log QR processing issues but don't fail - allow fallback to original document
       if (qrProcessingResult?.error) {
         this.logger.warn(`QR processing had issues: ${qrProcessingResult.error} - Processing original document instead`);
