@@ -7,6 +7,10 @@ export class UpdatePasswordDTO {
 
     @IsNotEmpty()
     @IsString()
+    oldPassword: string;
+
+    @IsNotEmpty()
+    @IsString()
     @MinLength(8)
     newPassword: string;
 }
