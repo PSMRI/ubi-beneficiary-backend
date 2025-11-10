@@ -1,13 +1,15 @@
 import { Logger } from '@nestjs/common';
 
 /**
- * Common JSON parsing utility for AI responses
+ * Simplified JSON parsing utility for AI responses
+ * Optimized for the new simplified prompts that request raw JSON only
  */
 export class JsonParserUtil {
   private static readonly logger = new Logger(JsonParserUtil.name);
 
   /**
-   * Extract JSON object from AI response text using multiple strategies
+   * Extract JSON object from AI response text - MINIMAL processing
+   * Let AI handle all mapping logic, parser just extracts valid JSON
    * @param text - Raw text response from AI model
    * @returns Parsed JSON object or null if extraction fails
    */
@@ -17,87 +19,74 @@ export class JsonParserUtil {
       return null;
     }
 
+    const trimmedText = text.trim();
+    this.logger.debug(`Attempting to extract JSON from text: ${trimmedText.substring(0, 200)}...`);
+    
+    // Try direct parsing first - AI should return clean JSON
     try {
-      this.logger.debug(`Attempting to extract JSON from text: ${text.substring(0, 200)}...`);
-      
-      return this.tryCodeBlockExtraction(text) ||
-             this.tryJsonObjectExtraction(text) ||
-             this.tryLargestJsonExtraction(text) ||
-             this.tryBasicJsonExtraction(text);
-      
-    } catch (extractError) {
-      this.logger.debug(`Failed to extract JSON from text: ${extractError}`);
-    }
-    
-    return null;
-  }
-
-  /**
-   * Try to extract JSON from markdown code blocks
-   */
-  private static tryCodeBlockExtraction(text: string): Record<string, any> | null {
-    const codeBlockPattern = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/i;
-    const codeBlockMatch = codeBlockPattern.exec(text);
-    if (codeBlockMatch?.[1]) {
-      this.logger.debug('Found JSON in markdown code block');
-      const jsonString = codeBlockMatch[1].trim();
-      return JSON.parse(jsonString);
-    }
-    return null;
-  }
-
-  /**
-   * Try to extract JSON after "Here is the JSON object:" pattern
-   */
-  private static tryJsonObjectExtraction(text: string): Record<string, any> | null {
-    const jsonObjectPattern = /here is the json object:\s*```\s*(\{[\s\S]*?\})\s*```/i;
-    const jsonObjectMatch = jsonObjectPattern.exec(text);
-    if (jsonObjectMatch?.[1]) {
-      this.logger.debug('Found JSON after "Here is the JSON object:"');
-      const jsonString = jsonObjectMatch[1].trim();
-      return JSON.parse(jsonString);
-    }
-    return null;
-  }
-
-  /**
-   * Try to find the largest valid JSON object in the text
-   */
-  private static tryLargestJsonExtraction(text: string): Record<string, any> | null {
-    const jsonMatches = text.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g); // Fixed: removed backtracking vulnerability
-    if (!jsonMatches) {
-      return null;
-    }
-
-    const sortedMatches = jsonMatches.sort((a, b) => b.length - a.length);
-    for (const match of sortedMatches) {
-      try {
-        const cleanedJson = match.trim();
-        const parsed = JSON.parse(cleanedJson);
-        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-          this.logger.debug(`Successfully parsed JSON object with ${Object.keys(parsed).length} keys`);
-          return parsed;
-        }
-      } catch {
-        // Continue to next match
-        continue;
+      const parsed = JSON.parse(trimmedText);
+      if (parsed && typeof parsed === 'object') {
+        this.logger.debug(`Successfully parsed JSON directly with ${Object.keys(parsed).length} keys`);
+        return parsed;
       }
+    } catch (directError) {
+      this.logger.debug(`Direct parsing failed: ${directError}, trying extraction...`);
     }
-    return null;
+    
+    // Simple fallback: find first complete JSON object
+    return this.extractFirstJsonObject(trimmedText);
   }
 
   /**
-   * Try basic JSON extraction using first { and last }
+   * Extract first NON-EMPTY JSON object - skip empty {} objects
+   * AI sometimes returns empty {} followed by actual data
    */
-  private static tryBasicJsonExtraction(text: string): Record<string, any> | null {
-    const startIndex = text.indexOf('{');
-    const endIndex = text.lastIndexOf('}');
+  private static extractFirstJsonObject(text: string): Record<string, any> | null {
+    let currentIndex = 0;
     
-    if (startIndex >= 0 && endIndex > startIndex) {
-      const jsonString = text.slice(startIndex, endIndex + 1);
-      this.logger.debug(`Trying basic extraction: ${jsonString.substring(0, 100)}...`);
-      return JSON.parse(jsonString);
+    // Look for all JSON objects, skip empty ones
+    while (currentIndex < text.length) {
+      const startIndex = text.indexOf('{', currentIndex);
+      if (startIndex === -1) break;
+      
+      // Find matching closing brace
+      let braceCount = 0;
+      let endIndex = -1;
+      
+      for (let i = startIndex; i < text.length; i++) {
+        if (text[i] === '{') braceCount++;
+        if (text[i] === '}') braceCount--;
+        if (braceCount === 0) {
+          endIndex = i;
+          break;
+        }
+      }
+      
+      if (endIndex === -1) {
+        this.logger.debug('No matching closing brace found');
+        break;
+      }
+      
+      try {
+        const jsonString = text.slice(startIndex, endIndex + 1);
+        const parsed = JSON.parse(jsonString);
+        if (parsed && typeof parsed === 'object') {
+          const keys = Object.keys(parsed);
+          if (keys.length > 0) {
+            this.logger.debug(`Found non-empty JSON with ${keys.length} keys: [${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '...' : ''}]`);
+            return parsed;
+          } else {
+            this.logger.debug('Skipping empty JSON object, looking for next one...');
+          }
+        }
+      } catch (error) {
+        this.logger.debug(`Failed to parse JSON candidate: ${error}`);
+      }
+      
+      currentIndex = endIndex + 1;
     }
+    
+    this.logger.debug('No valid non-empty JSON object found');
     return null;
   }
 

@@ -1,7 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { IAiMappingAdapter } from '../interfaces/ocr-mapping.interface';
-import { PromptBuilderUtil, JsonParserUtil } from '../utils';
+import { JsonParserUtil } from '../utils';
+import { getGeminiMappingConfig } from '../../../config/ai-models.config';
+import { buildOcrMappingPrompt } from '../../../config/prompts.config';
+import { handleMappingError } from '../../ocr/utils/error-handler.util';
 
 /**
  * Google Gemini adapter for AI-based OCR text mapping
@@ -9,15 +12,16 @@ import { PromptBuilderUtil, JsonParserUtil } from '../utils';
 export class GeminiAdapter implements IAiMappingAdapter {
   private readonly logger = new Logger(GeminiAdapter.name);
   private readonly genAI: GoogleGenerativeAI;
-  private readonly modelName: string;
+  private readonly config = getGeminiMappingConfig();
 
   constructor() {
     const apiKey = process.env.OCR_MAPPING_GEMINI_API_KEY || '';
-    this.modelName = process.env.OCR_MAPPING_GEMINI_MODEL_NAME || 'gemini-1.5-flash';
     
     if (apiKey) {
       this.genAI = new GoogleGenerativeAI(apiKey);
     }
+    
+    this.logger.log(`Gemini mapping adapter initialized with model: ${this.config.model}`);
   }
 
   /**
@@ -38,21 +42,29 @@ export class GeminiAdapter implements IAiMappingAdapter {
     }
 
     try {
-      this.logger.debug(`Building prompt for model: ${this.modelName}`);
-      const prompt = PromptBuilderUtil.buildMappingPrompt(extractedText, schema, docType);
+      this.logger.debug(`Building prompt for model: ${this.config.model}`);
+      const prompt = buildOcrMappingPrompt(extractedText, schema);
       this.logger.debug(`Prompt length: ${prompt.length} characters`);
+      this.logger.debug(`Prompt preview: ${prompt.substring(0, 300)}...`);
       
       this.logger.debug('Invoking Gemini model...');
       const response = await this.invokeModel(prompt);
       this.logger.debug(`Gemini response received, length: ${response.length} characters`);
+      this.logger.debug(`Raw Gemini response: ${response.substring(0, 500)}...`);
       
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'gemini');
       this.logger.debug(`Parsed result: ${JSON.stringify(parsedResult)}`);
       
+      if (!parsedResult || Object.keys(parsedResult).length === 0) {
+        this.logger.warn('Gemini returned empty or null result');
+        this.logger.debug(`Full response for debugging: ${response}`);
+        return null;
+      }
+      
       return parsedResult;
     } catch (error: any) {
       this.logger.error(`Gemini mapping failed: ${error?.message || error}`, error?.stack);
-      return null;
+      handleMappingError(error, 'gemini');
     }
   }
 
@@ -62,11 +74,11 @@ export class GeminiAdapter implements IAiMappingAdapter {
    */
   private async invokeModel(prompt: string): Promise<string> {
     const model = this.genAI.getGenerativeModel({ 
-      model: this.modelName,
+      model: this.config.model,
       generationConfig: {
-        temperature: 0.1,
-        topP: 0.9,
-        maxOutputTokens: 2000,
+        temperature: this.config.temperature,
+        topP: this.config.topP,
+        maxOutputTokens: this.config.maxOutputTokens,
       },
     });
 

@@ -1,7 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { IAiMappingAdapter } from '../interfaces/ocr-mapping.interface';
-import { PromptBuilderUtil, JsonParserUtil } from '../utils';
+import { JsonParserUtil } from '../utils';
+import { 
+  getBedrockMappingConfig 
+} from '../../../config/ai-models.config';
+import { buildOcrMappingPrompt } from '../../../config/prompts.config';
+import { handleMappingError } from '../../ocr/utils/error-handler.util';
 
 /**
  * Amazon Bedrock adapter for AI-based OCR text mapping
@@ -9,11 +14,10 @@ import { PromptBuilderUtil, JsonParserUtil } from '../utils';
 export class BedrockAdapter implements IAiMappingAdapter {
   private readonly logger = new Logger(BedrockAdapter.name);
   private readonly client: BedrockRuntimeClient;
-  private readonly modelId: string;
+  private readonly config = getBedrockMappingConfig();
 
   constructor() {
     const region = process.env.OCR_MAPPING_BEDROCK_REGION || 'ap-south-1';
-    this.modelId = process.env.OCR_MAPPING_BEDROCK_MODEL_ID || 'meta.llama3-8b-instruct-v1:0';
     
     this.client = new BedrockRuntimeClient({
       region,
@@ -22,6 +26,8 @@ export class BedrockAdapter implements IAiMappingAdapter {
         secretAccessKey: process.env.OCR_MAPPING_BEDROCK_SECRET_ACCESS_KEY || '',
       },
     });
+    
+    this.logger.log(`Bedrock adapter initialized with model: ${this.config.modelId}`);
   }
 
   /**
@@ -46,61 +52,47 @@ export class BedrockAdapter implements IAiMappingAdapter {
     }
 
     try {
-      this.logger.debug(`Building prompt for model: ${this.modelId}`);
-      const prompt = PromptBuilderUtil.buildMappingPrompt(extractedText, schema, docType);
+      this.logger.debug(`Building prompt for model: ${this.config.modelId}`);
+      const prompt = buildOcrMappingPrompt(extractedText, schema);
       this.logger.debug(`Prompt length: ${prompt.length} characters`);
+      this.logger.debug(`Prompt preview: ${prompt.substring(0, 300)}...`);
       
       this.logger.debug('Invoking Bedrock model...');
       const response = await this.invokeModel(prompt);
       this.logger.debug(`Bedrock response received, length: ${response.length} characters`);
+      this.logger.debug(`Raw Bedrock response: ${response.substring(0, 500)}...`);
       
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'bedrock');
       this.logger.debug(`Parsed result: ${JSON.stringify(parsedResult)}`);
       
+      if (!parsedResult || Object.keys(parsedResult).length === 0) {
+        this.logger.warn('Bedrock returned empty or null result');
+        this.logger.debug(`Full response for debugging: ${response}`);
+        return null;
+      }
+      
       return parsedResult;
     } catch (error: any) {
       this.logger.error(`Bedrock mapping failed: ${error?.message || error}`, error?.stack);
-      return null;
+      handleMappingError(error, 'bedrock');
     }
   }
 
 
   /**
-   * Invoke the Bedrock model
+   * Invoke the Bedrock Llama model
    */
   private async invokeModel(prompt: string): Promise<string> {
-    // Different models have different input formats
-    let input: any;
-    
-    if (this.modelId.includes('meta.llama')) {
-      // Meta Llama format
-      input = {
-        prompt,
-        max_gen_len: 2000,
-        temperature: 0.1,
-        top_p: 0.9,
-      };
-    } else if (this.modelId.includes('anthropic.claude')) {
-      // Claude format
-      input = {
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
-        temperature: 0.1,
-      };
-    } else {
-      // Default/Amazon Titan format
-      input = {
-        inputText: prompt,
-        textGenerationConfig: {
-          maxTokenCount: 2000,
-          temperature: 0.1,
-          topP: 0.9,
-        },
-      };
-    }
+    // Using Llama model format with mapping config
+    const input = {
+      prompt,
+      max_gen_len: this.config.maxGenLen,
+      temperature: this.config.temperature,
+      top_p: this.config.topP,
+    };
 
     const command = new InvokeModelCommand({
-      modelId: this.modelId,
+      modelId: this.config.modelId,
       contentType: 'application/json',
       accept: 'application/json',
       body: new TextEncoder().encode(JSON.stringify(input)),

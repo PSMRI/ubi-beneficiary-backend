@@ -10,6 +10,7 @@ import { ITextExtractor, ExtractedText } from './interfaces/text-extractor.inter
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { QRProcessingService } from './services/qr-processing.service';
+import { SUPPORTED_OCR_TYPES } from './constants/mime-types.constants';
 
 /**
  * OCR Service for document text extraction
@@ -261,8 +262,7 @@ export class OcrService {
    * @returns Array of supported MIME types
    */
   getSupportedFileTypes(): string[] {
-    // Standard supported types for most OCR providers
-    return ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    return [...SUPPORTED_OCR_TYPES];
   }
 
   /**

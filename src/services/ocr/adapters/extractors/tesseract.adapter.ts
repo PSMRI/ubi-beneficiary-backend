@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { ITextExtractor, ExtractedText } from '../../interfaces/text-extractor.interface';
 import { createWorker, Worker } from 'tesseract.js';
+import { TESSERACT_SUPPORTED_TYPES } from '../../constants/mime-types.constants';
+import { handleOcrError } from '../../utils/error-handler.util';
 
 export class TesseractAdapter implements ITextExtractor {
   private readonly logger = new Logger(TesseractAdapter.name);
@@ -56,17 +58,12 @@ export class TesseractAdapter implements ITextExtractor {
       };
     } catch (error) {
       this.logger.error(`Tesseract extraction failed: ${error.message}`);
-      throw new Error('Failed to extract text using Tesseract.');
+      handleOcrError(error, 'tesseract');
     }
   }
 
   supportsFileType(mimeType: string): boolean {
-    const supportedTypes = [
-      'image/jpeg',
-      'image/png',
-      'image/jpg',
-    ];
-    return supportedTypes.includes(mimeType.toLowerCase());
+    return TESSERACT_SUPPORTED_TYPES.includes(mimeType.toLowerCase());
   }
 
   getProviderName(): string {
