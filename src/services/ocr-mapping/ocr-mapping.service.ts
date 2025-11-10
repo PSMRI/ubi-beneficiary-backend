@@ -37,7 +37,7 @@ export class OcrMappingService {
       this.logger.log(`Starting OCR mapping for docType: ${input.docType}, docSubType: ${input.docSubType}`);
       this.logger.debug(`OCR text preview (first 500 chars): ${input.text.substring(0, 500)}...`);
       this.logger.debug(`Received vcFields with ${Object.keys(vcFields).length} fields: [${Object.keys(vcFields).join(', ')}]`);
-      
+
       if (!vcFields || Object.keys(vcFields).length === 0) {
         this.logger.warn(`No vcFields provided for mapping`);
         return {
@@ -49,44 +49,14 @@ export class OcrMappingService {
         };
       }
 
-      // Build JSON schema from vcFields
       const schema = this.vcFieldsToSchema(vcFields);
-      let mappedData: Record<string, any> | null = null;
-      let processingMethod: 'ai' | 'keyword' | 'hybrid' = 'keyword';
-
-      // Try AI mapping first if adapter is configured
       const adapterType = (process.env.OCR_MAPPING_PROVIDER || 'bedrock').toLowerCase();
       this.logger.debug(`OCR mapping provider: ${adapterType}, AI configured: ${this.aiAdapter.isConfigured()}`);
-      
-      if ((adapterType === 'bedrock' || adapterType === 'google-gemini') && this.aiAdapter.isConfigured()) {
-        try {
-          this.logger.log(`Attempting AI-based mapping using ${adapterType}`);
-          this.logger.debug(`Schema being sent to AI: ${JSON.stringify(schema, null, 2)}`);
-          mappedData = await this.aiAdapter.mapTextToSchema(input.text, schema);
-          this.logger.debug(`AI raw response: ${JSON.stringify(mappedData)}`);
-          
-          // Check if the response is the full AI response object instead of parsed JSON
-          if (mappedData && typeof mappedData === 'object' && ('generation' in mappedData || 'content' in mappedData)) {
-            this.logger.warn('AI returned full response object instead of parsed JSON, attempting to extract');
-            mappedData = null; // Force fallback to keyword mapping
-          }
-          
-          if (mappedData && Object.keys(mappedData).length > 0) {
-            processingMethod = 'ai';
-            this.logger.log(`AI mapping successful - extracted ${Object.keys(mappedData).length} fields`);
-          } else {
-            this.logger.warn('AI mapping returned empty or null result');
-            mappedData = null;
-          }
-        } catch (error: any) {
-          this.logger.error(`AI mapping failed: ${error?.message || error}`, error?.stack);
-          this.logger.warn(`Falling back to keyword mapping`);
-        }
-      } else {
-        this.logger.log(`Skipping AI mapping - adapter: ${adapterType}, configured: ${this.aiAdapter.isConfigured()}`);
-      }
 
-      // Fallback to keyword-based mapping if AI failed or not configured
+      // Try AI first, then fallback to keywords if needed
+      let mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema);
+      let processingMethod: 'ai' | 'keyword' | 'hybrid' = mappedData && Object.keys(mappedData).length > 0 ? 'ai' : 'keyword';
+
       if (!mappedData || Object.keys(mappedData).length === 0) {
         this.logger.log('Using keyword-based mapping');
         this.logger.debug(`vcFields for keyword mapping: ${JSON.stringify(Object.keys(vcFields))}`);
@@ -95,30 +65,7 @@ export class OcrMappingService {
         processingMethod = processingMethod === 'ai' ? 'hybrid' : 'keyword';
       }
 
-      // Validate and normalize the mapped data
-      const validationResult = this.validateAndNormalize(mappedData, vcFields);
-      
-      // Calculate confidence and missing fields
-      const fieldNames = Object.keys(vcFields);
-      const presentFields = Object.keys(validationResult.data).filter(
-        key => validationResult.data[key] !== null && 
-               validationResult.data[key] !== undefined && 
-               String(validationResult.data[key]).trim() !== ''
-      );
-      const missingFields = fieldNames.filter(key => !presentFields.includes(key));
-      const confidence = fieldNames.length > 0 ? Number((presentFields.length / fieldNames.length).toFixed(2)) : 0;
-
-      this.logger.log(`Mapping completed: ${presentFields.length}/${fieldNames.length} fields mapped, confidence: ${confidence}, method: ${processingMethod}`);
-      this.logger.debug(`Mapped fields: ${JSON.stringify(validationResult.data)}`);
-      this.logger.debug(`Missing fields: ${JSON.stringify(missingFields)}`);
-
-      return {
-        mapped_data: validationResult.data,
-        missing_fields: missingFields,
-        confidence,
-        processing_method: processingMethod,
-        warnings: validationResult.warnings,
-      };
+      return this.computeResultFromMappedData(mappedData, vcFields, processingMethod);
 
     } catch (error: any) {
       this.logger.error(`OCR mapping failed: ${error?.message || error}`);
@@ -130,6 +77,78 @@ export class OcrMappingService {
         warnings: [`Mapping failed: ${error?.message || error}`],
       };
     }
+  }
+
+  /**
+   * Attempt to map using AI adapter, returns null on any failure or unexpected response
+   */
+  private async tryAiMapping(adapterType: string, text: string, schema: Record<string, any>): Promise<Record<string, any> | null> {
+    if (!((adapterType === 'bedrock' || adapterType === 'google-gemini') && this.aiAdapter.isConfigured())) {
+      this.logger.log(`Skipping AI mapping - adapter: ${adapterType}, configured: ${this.aiAdapter.isConfigured()}`);
+      return null;
+    }
+
+    try {
+      this.logger.log(`Attempting AI-based mapping using ${adapterType}`);
+      this.logger.debug(`Schema being sent to AI: ${JSON.stringify(schema, null, 2)}`);
+      const mappedData = await this.aiAdapter.mapTextToSchema(text, schema);
+      this.logger.debug(`AI raw response: ${JSON.stringify(mappedData)}`);
+
+      // Check if the response is the full AI response object instead of parsed JSON
+      if (mappedData && typeof mappedData === 'object' && ('generation' in mappedData || 'content' in mappedData)) {
+        this.logger.warn('AI returned full response object instead of parsed JSON, attempting to extract');
+        return null;
+      }
+
+      if (mappedData && Object.keys(mappedData).length > 0) {
+        this.logger.log(`AI mapping successful - extracted ${Object.keys(mappedData).length} fields`);
+        return mappedData;
+      }
+
+      this.logger.warn('AI mapping returned empty or null result');
+      return null;
+    } catch (error: any) {
+      this.logger.error(`AI mapping failed: ${error?.message || error}`, error?.stack);
+      this.logger.warn(`Falling back to keyword mapping`);
+      return null;
+    }
+  }
+
+  /**
+   * Compute validation, normalization, metrics and final result object
+   */
+  private computeResultFromMappedData(
+    mappedData: Record<string, any> | null,
+    vcFields: VcFields,
+    processingMethod: 'ai' | 'keyword' | 'hybrid'
+  ): OcrMappingResult {
+    mappedData = mappedData || {};
+
+    // Validate and normalize the mapped data
+    const validationResult = this.validateAndNormalize(mappedData, vcFields);
+
+    // Calculate confidence and missing fields
+    const fieldNames = Object.keys(vcFields);
+    const presentFields = Object.keys(validationResult.data).filter(
+      key =>
+        validationResult.data[key] !== null &&
+        validationResult.data[key] !== undefined &&
+        String(validationResult.data[key]).trim() !== ''
+    );
+    const missingFields = fieldNames.filter(key => !presentFields.includes(key));
+    const confidence = fieldNames.length > 0 ? Number((presentFields.length / fieldNames.length).toFixed(2)) : 0;
+
+    this.logger.log(`Mapping completed: ${presentFields.length}/${fieldNames.length} fields mapped, confidence: ${confidence}, method: ${processingMethod}`);
+    this.logger.debug(`Mapped fields: ${JSON.stringify(validationResult.data)}`);
+    this.logger.debug(`Missing fields: ${JSON.stringify(missingFields)}`);
+
+    return {
+      mapped_data: validationResult.data,
+      missing_fields: missingFields,
+      confidence,
+      processing_method: processingMethod,
+      warnings: validationResult.warnings,
+    };
   }
 
 
@@ -200,18 +219,14 @@ export class OcrMappingService {
     for (const synonym of synonyms) {
       this.logger.debug(`    Trying synonym: "${synonym}"`);
       const patterns = [
-        // Pattern: "field: value" (strict colon pattern)
-        new RegExp(`${this.escapeRegex(synonym)}\\s*:\\s*([^\\n\\r:]{1,100})`, 'i'),
-        // Pattern: "field - value" (strict dash pattern)  
-        new RegExp(`${this.escapeRegex(synonym)}\\s*-\\s*([^\\n\\r-]{1,100})`, 'i'),
-        // Pattern: "field" followed by value on next line (limited length)
-        new RegExp(`${this.escapeRegex(synonym)}\\s*\\n\\s*([^\\n\\r]{1,100})`, 'i'),
-        // Pattern: "field" followed by value on same line (more flexible)
-        new RegExp(`${this.escapeRegex(synonym)}\\s+([A-Za-z0-9][^\\n\\r]{0,99})`, 'i'),
-        // Pattern: value after field with optional punctuation
-        new RegExp(`${this.escapeRegex(synonym)}\\s*[:\\-\\.]?\\s*([A-Za-z0-9][^\\n\\r]{0,99})`, 'i'),
-        // Pattern: more flexible word boundary (for cases like "Student's Name")
-        new RegExp(`${this.escapeRegex(synonym)}\\s*[:\\-]?\\s*([^\\n\\r]{1,100})`, 'i'),
+        // Pattern: "field: value" - value until newline or next colon (most specific)
+        new RegExp(`${this.escapeRegex(synonym)}\\s*:\\s*([A-Za-z0-9][^:\\n\\r]{0,50}?)(?=\\s*(?:[A-Z][a-z]+\\s*:|\\n|$))`, 'i'),
+        // Pattern: "field - value" - value until newline or next dash
+        new RegExp(`${this.escapeRegex(synonym)}\\s*-\\s*([A-Za-z0-9][^\\-\\n\\r]{0,50}?)(?=\\s*(?:[A-Z][a-z]+\\s*[-:]|\\n|$))`, 'i'),
+        // Pattern: "field: value" - simpler version without lookahead
+        new RegExp(`${this.escapeRegex(synonym)}\\s*:\\s*([A-Za-z0-9][^:\\n\\r]{0,50}?)\\s*(?:\\n|$)`, 'i'),
+        // Pattern: "field" followed by value on next line
+        new RegExp(`${this.escapeRegex(synonym)}\\s*\\n+\\s*([A-Za-z0-9][^\\n\\r]{0,50})`, 'i'),
       ];
 
       for (let i = 0; i < patterns.length; i++) {
@@ -248,7 +263,7 @@ export class OcrMappingService {
    */
   private cleanOcrValue(value: string): string {
     return value
-      .replaceAll(/[^\w\s\-\.\/]/g, ' ') // Remove special chars except basic ones
+      .replaceAll(/[^\w\s./-]/g, ' ') // Remove special chars except basic ones
       .replaceAll(/\s+/g, ' ') // Normalize whitespace
       .trim();
   }
@@ -257,42 +272,74 @@ export class OcrMappingService {
    * Validate if extracted value is reasonable for the field
    */
   private isValidExtractedValue(value: string, fieldName: string, fieldType?: string): boolean {
-    if (!value || value.length < 1) return false;
+    if (!value || value.length < 1 || value.length > 100) {
+      return false;
+    }
     
-    // Reject values that are too long or contain too many special characters
-    if (value.length > 100) return false;
-    
-    // Reject values that are mostly punctuation or symbols (more lenient)
+    // Reject values that are mostly punctuation or symbols
     const alphanumericRatio = (value.match(/[a-zA-Z0-9]/g) || []).length / value.length;
-    if (alphanumericRatio < 0.2) return false;
+    if (alphanumericRatio < 0.2) {
+      return false;
+    }
     
-    // Reject values that look like field labels or descriptions
-    const lowerValue = value.toLowerCase();
+    const lowerValue = value.toLowerCase().trim();
+    
+    // Check if value looks like a field label
+    if (this.looksLikeFieldLabel(lowerValue)) {
+      return false;
+    }
+    
+    // Validate based on field type
+    return this.validateByFieldType(value, fieldName, fieldType);
+  }
+
+  /**
+   * Check if value looks like a field label rather than actual data
+   */
+  private looksLikeFieldLabel(lowerValue: string): boolean {
     const rejectPatterns = [
       /^[^a-zA-Z0-9]*$/,
       /^[\s:-]*$/,
       /^(enter|fill|write|type|click|select)/i,
     ];
     
-    for (const pattern of rejectPatterns) {
-      if (pattern.test(lowerValue)) return false;
+    if (rejectPatterns.some(pattern => pattern.test(lowerValue))) {
+      return true;
     }
     
-    // Generic field validations based on field type and common patterns
+    // Check for field label suffixes
+    if (lowerValue.endsWith(' no.') || lowerValue.endsWith(' no') || 
+        lowerValue.endsWith(' number') || lowerValue.endsWith(':') ||
+        lowerValue.includes(' id:') || lowerValue.includes(' no:')) {
+      return true;
+    }
+    
+    // Check common field label patterns
+    const labelPatterns = [
+      /^(name|date|gender|mobile|phone|email|address|city|state|country|pincode|zip)\s*(no\.?|number|id)?$/i,
+      /\b(aadhaar|aadhar|pan|voter|passport)\s*(no\.?|number|id)?$/i,
+      /^(father|mother|guardian|spouse)'?s?\s*name$/i,
+    ];
+    
+    return labelPatterns.some(pattern => pattern.test(lowerValue));
+  }
+
+  /**
+   * Validate value based on field type and name
+   */
+  private validateByFieldType(value: string, fieldName: string, fieldType?: string): boolean {
     if (fieldName.includes('name') && fieldType === 'string') {
-      // Names should contain letters and be reasonable length
-      if (!/[a-zA-Z]/.test(value) || value.length < 2) return false;
-      // Allow more characters for names (numbers, spaces, dots, etc.)
-      const namePattern = /^[a-zA-Z0-9\s.'\-\/]{2,100}$/;
+      if (!/[a-zA-Z]/.test(value) || value.length < 2) {
+        return false;
+      }
+      const namePattern = /^[a-zA-Z0-9\s.'\-/]{2,100}$/;
       return namePattern.test(value);
     }
     
-    // Numeric field validation
     if (fieldType === 'number' || fieldType === 'integer') {
       return /\d/.test(value);
     }
     
-    // Generic text field validation
     if (fieldType === 'string') {
       return value.length >= 1 && /[a-zA-Z0-9]/.test(value);
     }
@@ -304,59 +351,103 @@ export class OcrMappingService {
    * Extract numeric values using configurable patterns based on field synonyms
    */
   private extractNumericValue(text: string, fieldName: string): number | null {
-    const lowerFieldName = fieldName.toLowerCase();
-    const synonyms = getFieldSynonyms(lowerFieldName);
+    const synonyms = getFieldSynonyms(fieldName.toLowerCase());
     
-    // Define safe regex patterns without backtracking vulnerabilities
+    // Try pattern-based extraction first
+    const patternResult = this.extractWithNumericPatterns(text, synonyms);
+    if (patternResult !== null) {
+      return patternResult;
+    }
+    
+    // Fallback to proximity-based extraction
+    return this.extractNearSynonyms(text, synonyms);
+  }
+
+  /**
+   * Extract numeric value using predefined patterns
+   */
+  private extractWithNumericPatterns(text: string, synonyms: string[]): number | null {
     const numericPatterns = [
-      // Pattern for numbers followed by % (for percentage fields)
-      { pattern: /(\d{1,3}(?:\.\d{1,2})?)\s*%/, range: [0, 100], suffix: '%' },
-      // Pattern for decimal numbers (for CGPA, GPA fields)
-      { pattern: /(\d{1,2}(?:\.\d{1,2})?)/, range: [0, 10], suffix: '' },
-      // Pattern for integer numbers (for marks, scores)
-      { pattern: /(\d{1,4})/, range: [0, 10000], suffix: '' }
+      { pattern: /(\d{1,3}(?:\.\d{1,2})?)\s*%/, range: [0, 100] as [number, number], suffix: '%' },
+      { pattern: /(\d{1,2}(?:\.\d{1,2})?)/, range: [0, 10] as [number, number], suffix: '' },
+      { pattern: /(\d{1,4})/, range: [0, 10000] as [number, number], suffix: '' }
     ];
     
-    // Try to extract using field synonyms with safe patterns
     for (const synonym of synonyms) {
-      const escapedSynonym = this.escapeRegex(synonym);
-      
-      for (const { pattern, range, suffix } of numericPatterns) {
-        // Create safe regex pattern without backtracking
-        const suffixPattern = suffix ? String.raw`\s*` + this.escapeRegex(suffix) : '';
-        const fullPattern = new RegExp(
-          String.raw`${escapedSynonym}\s*:?\s*${pattern.source}${suffixPattern}`,
-          'i'
-        );
-        
-        const match = fullPattern.exec(text);
-        if (match?.[1]) {
-          const value = Number.parseFloat(match[1]);
-          if (Number.isFinite(value) && value >= range[0] && value <= range[1]) {
-            return value;
-          }
-        }
+      const result = this.tryPatternMatching(text, synonym, numericPatterns);
+      if (result !== null) {
+        return result;
       }
     }
     
-    // Fallback: look for any numeric value near field synonyms
-    for (const synonym of synonyms) {
-      const synonymIndex = text.toLowerCase().indexOf(synonym.toLowerCase());
-      if (synonymIndex !== -1) {
-        // Look for numbers within 50 characters after the synonym
-        const searchText = text.slice(synonymIndex, synonymIndex + 50);
-        const numberPattern = /(\d+(?:\.\d+)?)/;
-        const numberMatch = numberPattern.exec(searchText);
-        if (numberMatch) {
-          const value = Number.parseFloat(numberMatch[1]);
-          if (Number.isFinite(value) && value >= 0 && value <= 10000) {
-            return value;
-          }
+    return null;
+  }
+
+  /**
+   * Try pattern matching for a specific synonym
+   */
+  private tryPatternMatching(text: string, synonym: string, patterns: Array<{pattern: RegExp, range: [number, number], suffix: string}>): number | null {
+    const escapedSynonym = this.escapeRegex(synonym);
+    
+    for (const { pattern, range, suffix } of patterns) {
+      const suffixPattern = suffix ? String.raw`\s*` + this.escapeRegex(suffix) : '';
+      const fullPattern = new RegExp(
+        String.raw`${escapedSynonym}\s*:?\s*${pattern.source}${suffixPattern}`,
+        'i'
+      );
+      
+      const match = fullPattern.exec(text);
+      if (match?.[1]) {
+        const value = Number.parseFloat(match[1]);
+        if (this.isValueInRange(value, range)) {
+          return value;
         }
       }
     }
     
     return null;
+  }
+
+  /**
+   * Extract numeric value by looking near synonyms
+   */
+  private extractNearSynonyms(text: string, synonyms: string[]): number | null {
+    for (const synonym of synonyms) {
+      const synonymIndex = text.toLowerCase().indexOf(synonym.toLowerCase());
+      if (synonymIndex !== -1) {
+        const result = this.extractNumberFromProximity(text, synonymIndex);
+        if (result !== null) {
+          return result;
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Extract number from text near a specific index
+   */
+  private extractNumberFromProximity(text: string, index: number): number | null {
+    const searchText = text.slice(index, index + 50);
+    const numberPattern = /(\d+(?:\.\d+)?)/;
+    const numberMatch = numberPattern.exec(searchText);
+    
+    if (numberMatch) {
+      const value = Number.parseFloat(numberMatch[1]);
+      if (this.isValueInRange(value, [0, 10000])) {
+        return value;
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Check if value is within specified range
+   */
+  private isValueInRange(value: number, range: [number, number]): boolean {
+    return Number.isFinite(value) && value >= range[0] && value <= range[1];
   }
 
   /**
