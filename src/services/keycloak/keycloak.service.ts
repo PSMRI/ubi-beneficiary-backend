@@ -141,7 +141,6 @@ export class KeycloakService {
 				return false;
 			}
 		} catch (e) {
-			console.log('resetPassword', e);
 			return false;
 		}
 	}
@@ -182,7 +181,6 @@ export class KeycloakService {
 				throw new BadRequestException('User not found in keycloak !');
 			}
 		} catch (e) {
-			console.log('error 105' + e.message);
 			throw new HttpException(e.message, HttpStatus.CONFLICT, {
 				cause: e,
 			});
