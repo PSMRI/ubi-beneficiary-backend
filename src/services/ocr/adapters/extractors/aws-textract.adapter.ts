@@ -25,7 +25,7 @@ export class AWSTextractAdapter implements ITextExtractor {
       credentials: config.credentials,
     });
     
-    this.logger.log(`AWS Textract adapter initialized for region: ${config.region}`);
+    this.logger.log(`AWS Textract adapter initialized - region: ${config.region}`);
   }
 
   /**
@@ -35,7 +35,6 @@ export class AWSTextractAdapter implements ITextExtractor {
    */
   async validatePermissions(): Promise<boolean> {
     try {
-      // Create a minimal command with a single pixel buffer for testing
       const singlePixelBuffer = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]);
       const command = new DetectDocumentTextCommand({
         Document: { Bytes: singlePixelBuffer },
@@ -44,8 +43,7 @@ export class AWSTextractAdapter implements ITextExtractor {
       await this.client.send(command);
       return true;
     } catch (error) {
-      // Log detailed error information for debugging
-      this.logger.error(`AWS Textract validation error - Name: ${error.name}, Message: ${error.message}`, error);
+      this.logger.error(`AWS Textract validation failed: ${error.message}`);
       handleValidationError(error, 'aws-textract');
     }
   }
@@ -63,46 +61,34 @@ export class AWSTextractAdapter implements ITextExtractor {
     const startTime = Date.now();
 
     try {
-      this.logger.log(`Starting text extraction for file type: ${mimeType}`);
-
-      // Create Textract command with document bytes
       const command = new DetectDocumentTextCommand({
         Document: { Bytes: fileBuffer },
       });
 
-      // Send request to AWS Textract
       const response = await this.client.send(command);
 
-      // Extract text from LINE blocks (most readable format)
       const fullText =
         response.Blocks?.filter((block) => block.BlockType === 'LINE')
           .map((block) => block.Text)
           .join('\n') || '';
 
-      // Calculate average confidence
       const confidence = this.calculateAverageConfidence(response.Blocks || []);
-
       const processingTime = Date.now() - startTime;
       
-      this.logger.log(
-        `Text extraction completed in ${processingTime}ms with ${fullText.length} characters extracted`,
-      );
+      this.logger.log(`AWS Textract extracted ${fullText.length} characters in ${processingTime}ms`);
 
       return {
         fullText,
         confidence,
         metadata: {
-          pageCount: 1, // DetectDocumentText processes single page
+          pageCount: 1,
           processingTime,
           provider: 'aws-textract',
           blockCount: response.Blocks?.length || 0,
         },
       };
     } catch (error) {
-      this.logger.error(
-        `AWS Textract extraction failed: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`AWS Textract extraction failed: ${error.message}`, error.stack);
       handleOcrError(error, 'aws-textract');
     }
   }
@@ -134,7 +120,7 @@ export class AWSTextractAdapter implements ITextExtractor {
 
     const confidences = blocks
       .filter((b) => b.Confidence !== undefined && b.Confidence !== null)
-      .map((b) => b.Confidence as number);
+      .map((b) => b.Confidence);
 
     if (confidences.length === 0) return 0;
 

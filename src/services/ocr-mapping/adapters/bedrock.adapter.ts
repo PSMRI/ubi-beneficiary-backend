@@ -27,7 +27,7 @@ export class BedrockAdapter implements IAiMappingAdapter {
       },
     });
     
-    this.logger.log(`Bedrock adapter initialized with model: ${this.config.modelId}`);
+    this.logger.log(`Bedrock mapping adapter initialized - model: ${this.config.modelId}, region: ${region}`);
   }
 
   /**
@@ -46,28 +46,17 @@ export class BedrockAdapter implements IAiMappingAdapter {
    */
   async mapTextToSchema(extractedText: string, schema: Record<string, any>, docType?: string): Promise<Record<string, any> | null> {
     if (!this.isConfigured()) {
-      this.logger.warn('Bedrock adapter not properly configured');
-      this.logger.debug(`Configuration check - AccessKey: ${!!process.env.OCR_MAPPING_BEDROCK_ACCESS_KEY_ID}, SecretKey: ${!!process.env.OCR_MAPPING_BEDROCK_SECRET_ACCESS_KEY}, Region: ${!!process.env.OCR_MAPPING_BEDROCK_REGION}`);
+      this.logger.warn('Bedrock adapter not configured - missing credentials');
       return null;
     }
 
     try {
-      this.logger.debug(`Building prompt for model: ${this.config.modelId}`);
       const prompt = buildOcrMappingPrompt(extractedText, schema);
-      this.logger.debug(`Prompt length: ${prompt.length} characters`);
-      this.logger.debug(`Prompt preview: ${prompt.substring(0, 300)}...`);
-      
-      this.logger.debug('Invoking Bedrock model...');
       const response = await this.invokeModel(prompt);
-      this.logger.debug(`Bedrock response received, length: ${response.length} characters`);
-      this.logger.debug(`Raw Bedrock response: ${response.substring(0, 500)}...`);
-      
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'bedrock');
-      this.logger.debug(`Parsed result: ${JSON.stringify(parsedResult)}`);
       
       if (!parsedResult || Object.keys(parsedResult).length === 0) {
-        this.logger.warn('Bedrock returned empty or null result');
-        this.logger.debug(`Full response for debugging: ${response}`);
+        this.logger.warn('Bedrock returned empty result');
         return null;
       }
       
@@ -83,7 +72,6 @@ export class BedrockAdapter implements IAiMappingAdapter {
    * Invoke the Bedrock Llama model
    */
   private async invokeModel(prompt: string): Promise<string> {
-    // Using Llama model format with mapping config
     const input = {
       prompt,
       max_gen_len: this.config.maxGenLen,
@@ -99,10 +87,7 @@ export class BedrockAdapter implements IAiMappingAdapter {
     });
 
     const response = await this.client.send(command);
-    const bodyString = new TextDecoder().decode(response.body);
-    
-    this.logger.debug(`Bedrock response: ${bodyString.substring(0, 500)}...`);
-    return bodyString;
+    return new TextDecoder().decode(response.body);
   }
 
 }

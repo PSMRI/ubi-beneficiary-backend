@@ -21,7 +21,7 @@ export class GeminiAdapter implements IAiMappingAdapter {
       this.genAI = new GoogleGenerativeAI(apiKey);
     }
     
-    this.logger.log(`Gemini mapping adapter initialized with model: ${this.config.model}`);
+    this.logger.log(`Gemini mapping adapter initialized - model: ${this.config.model}`);
   }
 
   /**
@@ -36,28 +36,17 @@ export class GeminiAdapter implements IAiMappingAdapter {
    */
   async mapTextToSchema(extractedText: string, schema: Record<string, any>, docType?: string): Promise<Record<string, any> | null> {
     if (!this.isConfigured()) {
-      this.logger.warn('Gemini adapter not properly configured');
-      this.logger.debug(`Configuration check - API Key: ${!!process.env.OCR_MAPPING_GEMINI_API_KEY}`);
+      this.logger.warn('Gemini adapter not configured - missing API key');
       return null;
     }
 
     try {
-      this.logger.debug(`Building prompt for model: ${this.config.model}`);
       const prompt = buildOcrMappingPrompt(extractedText, schema);
-      this.logger.debug(`Prompt length: ${prompt.length} characters`);
-      this.logger.debug(`Prompt preview: ${prompt.substring(0, 300)}...`);
-      
-      this.logger.debug('Invoking Gemini model...');
       const response = await this.invokeModel(prompt);
-      this.logger.debug(`Gemini response received, length: ${response.length} characters`);
-      this.logger.debug(`Raw Gemini response: ${response.substring(0, 500)}...`);
-      
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'gemini');
-      this.logger.debug(`Parsed result: ${JSON.stringify(parsedResult)}`);
       
       if (!parsedResult || Object.keys(parsedResult).length === 0) {
-        this.logger.warn('Gemini returned empty or null result');
-        this.logger.debug(`Full response for debugging: ${response}`);
+        this.logger.warn('Gemini returned empty result');
         return null;
       }
       
@@ -83,11 +72,7 @@ export class GeminiAdapter implements IAiMappingAdapter {
     });
 
     const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
-    
-    this.logger.debug(`Gemini response: ${text.substring(0, 500)}...`);
-    return text;
+    return result.response.text();
   }
 
 }

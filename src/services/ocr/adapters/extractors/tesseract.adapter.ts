@@ -9,13 +9,12 @@ export class TesseractAdapter implements ITextExtractor {
   private worker: Worker | null = null;
 
   constructor() {
-    this.logger.log('Tesseract adapter initialized');
+    this.logger.log('Tesseract OCR adapter initialized');
   }
 
   private async ensureWorker(): Promise<void> {
     if (!this.worker) {
       this.worker = await createWorker('eng');
-      this.logger.log('Tesseract worker initialized successfully');
     }
   }
 
@@ -35,22 +34,17 @@ export class TesseractAdapter implements ITextExtractor {
 
   async extractText(fileBuffer: Buffer, mimeType: string): Promise<ExtractedText> {
     const startTime = Date.now();
-    this.logger.log(`Starting text extraction for file type: ${mimeType}`);
 
     try {
       await this.ensureWorker();
-
-      const { data: { text } } = await this.worker!.recognize(fileBuffer);
-
+      const { data: { text } } = await this.worker.recognize(fileBuffer);
       const processingTime = Date.now() - startTime;
 
-      this.logger.log(
-        `Text extraction completed in ${processingTime}ms with ${text.length} characters extracted`
-      );
+      this.logger.log(`Tesseract extracted ${text.length} characters in ${processingTime}ms`);
       
       return {
         fullText: text.trim(),
-        confidence: 90, // Assumed high confidence
+        confidence: 90,
         metadata: {
           provider: 'tesseract',
           processingTime,

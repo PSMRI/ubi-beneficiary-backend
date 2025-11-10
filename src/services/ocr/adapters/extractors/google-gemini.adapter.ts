@@ -25,7 +25,8 @@ export class GoogleGeminiAdapter implements ITextExtractor {
       throw new Error('Gemini API key is required');
     }
     this.apiKey = config.apiKey;
-    this.logger.log(`Google Gemini adapter initialized with model: ${this.config.model}`);
+    
+    this.logger.log(`Google Gemini OCR adapter initialized - model: ${this.config.model}`);
   }
 
   /**
@@ -62,13 +63,12 @@ export class GoogleGeminiAdapter implements ITextExtractor {
       );
 
       if (response.data?.candidates) {
-        this.logger.log('Gemini API permissions validated successfully');
         return true;
       }
 
       throw new Error('Invalid response from Gemini API');
     } catch (error) {
-      this.logger.error(`Gemini API validation error: ${error.message}`);
+      this.logger.error(`Gemini API validation failed: ${error.message}`);
       handleValidationError(error, 'google-gemini');
     }
   }
@@ -84,9 +84,7 @@ export class GoogleGeminiAdapter implements ITextExtractor {
     mimeType: string,
   ): Promise<ExtractedText> {
     const startTime = Date.now();
-    this.logger.log(`Starting text extraction for file type: ${mimeType}`);
 
-    // Prepare inputs
     const base64Data = fileBuffer.toString('base64');
     const geminiMimeType = normalizeMimeType(mimeType);
     const prompt = getOcrExtractionPrompt();
@@ -106,10 +104,7 @@ export class GoogleGeminiAdapter implements ITextExtractor {
 
       return this.parseGeminiResponse(response, startTime);
     } catch (error) {
-      this.logger.error(
-        `Google Gemini extraction failed: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Google Gemini extraction failed: ${error.message}`, error.stack);
       handleOcrError(error, 'google-gemini');
     }
   }
@@ -158,13 +153,8 @@ export class GoogleGeminiAdapter implements ITextExtractor {
       throw new Error(`No text content received from Gemini. Reason: ${finishReason}`);
     }
 
-    this.logger.log('Raw Gemini response text extracted successfully');
-
     const processingTime = Date.now() - startTime;
-
-    this.logger.log(
-      `Text extraction completed in ${processingTime}ms with ${fullText.length} characters extracted`,
-    );
+    this.logger.log(`Google Gemini extracted ${fullText.length} characters in ${processingTime}ms`);
 
     return {
       fullText: fullText.trim(),

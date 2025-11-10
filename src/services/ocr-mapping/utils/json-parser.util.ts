@@ -44,50 +44,86 @@ export class JsonParserUtil {
   private static extractFirstJsonObject(text: string): Record<string, any> | null {
     let currentIndex = 0;
     
-    // Look for all JSON objects, skip empty ones
     while (currentIndex < text.length) {
-      const startIndex = text.indexOf('{', currentIndex);
-      if (startIndex === -1) break;
+      const jsonBounds = this.findJsonBounds(text, currentIndex);
+      if (!jsonBounds) break;
       
-      // Find matching closing brace
-      let braceCount = 0;
-      let endIndex = -1;
-      
-      for (let i = startIndex; i < text.length; i++) {
-        if (text[i] === '{') braceCount++;
-        if (text[i] === '}') braceCount--;
-        if (braceCount === 0) {
-          endIndex = i;
-          break;
-        }
+      const parsedJson = this.tryParseJsonAtBounds(text, jsonBounds);
+      if (parsedJson) {
+        return parsedJson;
       }
       
-      if (endIndex === -1) {
-        this.logger.debug('No matching closing brace found');
-        break;
-      }
-      
-      try {
-        const jsonString = text.slice(startIndex, endIndex + 1);
-        const parsed = JSON.parse(jsonString);
-        if (parsed && typeof parsed === 'object') {
-          const keys = Object.keys(parsed);
-          if (keys.length > 0) {
-            this.logger.debug(`Found non-empty JSON with ${keys.length} keys: [${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '...' : ''}]`);
-            return parsed;
-          } else {
-            this.logger.debug('Skipping empty JSON object, looking for next one...');
-          }
-        }
-      } catch (error) {
-        this.logger.debug(`Failed to parse JSON candidate: ${error}`);
-      }
-      
-      currentIndex = endIndex + 1;
+      currentIndex = jsonBounds.endIndex + 1;
     }
     
     this.logger.debug('No valid non-empty JSON object found');
     return null;
+  }
+
+  /**
+   * Find the start and end indices of a JSON object
+   */
+  private static findJsonBounds(text: string, startFrom: number): { startIndex: number; endIndex: number } | null {
+    const startIndex = text.indexOf('{', startFrom);
+    if (startIndex === -1) return null;
+    
+    const endIndex = this.findMatchingCloseBrace(text, startIndex);
+    if (endIndex === -1) {
+      this.logger.debug('No matching closing brace found');
+      return null;
+    }
+    
+    return { startIndex, endIndex };
+  }
+
+  /**
+   * Find the matching closing brace for an opening brace
+   */
+  private static findMatchingCloseBrace(text: string, startIndex: number): number {
+    let braceCount = 0;
+    
+    for (let i = startIndex; i < text.length; i++) {
+      if (text[i] === '{') braceCount++;
+      if (text[i] === '}') braceCount--;
+      if (braceCount === 0) {
+        return i;
+      }
+    }
+    
+    return -1;
+  }
+
+  /**
+   * Try to parse JSON at the given bounds and return if non-empty
+   */
+  private static tryParseJsonAtBounds(text: string, bounds: { startIndex: number; endIndex: number }): Record<string, any> | null {
+    try {
+      const jsonString = text.slice(bounds.startIndex, bounds.endIndex + 1);
+      const parsed = JSON.parse(jsonString);
+      
+      if (parsed && typeof parsed === 'object') {
+        return this.validateAndReturnNonEmptyJson(parsed);
+      }
+    } catch (error) {
+      this.logger.debug(`Failed to parse JSON candidate: ${error}`);
+    }
+    
+    return null;
+  }
+
+  /**
+   * Validate JSON object and return only if it has content
+   */
+  private static validateAndReturnNonEmptyJson(parsed: Record<string, any>): Record<string, any> | null {
+    const keys = Object.keys(parsed);
+    
+    if (keys.length > 0) {
+      this.logger.debug(`Found non-empty JSON with ${keys.length} keys: [${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '...' : ''}]`);
+      return parsed;
+    } else {
+      this.logger.debug('Skipping empty JSON object, looking for next one...');
+      return null;
+    }
   }
 
   /**
