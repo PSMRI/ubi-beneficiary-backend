@@ -4,6 +4,11 @@ import {
   ExtractedText,
 } from '../../interfaces/text-extractor.interface';
 import axios from 'axios';
+import { getGeminiOcrConfig } from '../../../../config/ai-models.config';
+import { getOcrExtractionPrompt, getValidationPrompt } from '../../../../config/prompts.config';
+import { GEMINI_SUPPORTED_TYPES } from '../../constants/mime-types.constants';
+import { normalizeMimeType } from '../../utils/mime-type.utils';
+import { handleOcrError, handleValidationError } from '../../utils/error-handler.util';
 
 /**
  * Google Gemini API adapter for text extraction
@@ -13,14 +18,15 @@ export class GoogleGeminiAdapter implements ITextExtractor {
   private readonly logger = new Logger(GoogleGeminiAdapter.name);
   private readonly apiKey: string;
   private readonly baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
-  private readonly model = 'gemini-2.0-flash-exp';
+  private readonly config = getGeminiOcrConfig();
 
   constructor(config: { apiKey: string }) {
     if (!config.apiKey) {
       throw new Error('Gemini API key is required');
     }
     this.apiKey = config.apiKey;
-    this.logger.log('Google Gemini adapter initialized');
+    
+    this.logger.log(`Google Gemini OCR adapter initialized - model: ${this.config.model}`);
   }
 
   /**
@@ -32,57 +38,38 @@ export class GoogleGeminiAdapter implements ITextExtractor {
     try {
       // Test with a simple text-only request to validate API key
       const response = await axios.post(
-        `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`,
+        `${this.baseUrl}/models/${this.config.model}:generateContent?key=${this.apiKey}`,
         {
           contents: [
             {
               parts: [
                 {
-                  text: 'Test'
+                  text: getValidationPrompt()
                 }
               ]
             }
           ],
           generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 10,
+            temperature: this.config.temperature,
+            maxOutputTokens: this.config.validationMaxTokens,
           }
         },
         {
           headers: {
             'Content-Type': 'application/json',
           },
-          timeout: 10000,
+          timeout: this.config.validationTimeout,
         }
       );
 
       if (response.data?.candidates) {
-        this.logger.log('Gemini API permissions validated successfully');
         return true;
       }
 
       throw new Error('Invalid response from Gemini API');
     } catch (error) {
-      this.logger.error(`Gemini API validation error: ${error.message}`);
-
-      if (error.response?.status === 400 && error.response?.data?.error?.message?.includes('API key not valid')) {
-        throw new Error('Gemini API key is invalid. Please check your GEMINI_API_KEY configuration.');
-      }
-
-      if (error.response?.status === 403) {
-        throw new Error('Gemini API access denied. Please check your API key permissions.');
-      }
-
-      if (error.response?.status === 429) {
-        throw new Error('Gemini API rate limit exceeded. Please try again later.');
-      }
-
-      if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-        throw new Error('Gemini API connection timeout. Please check your internet connection.');
-      }
-
-      // For any other errors
-      throw new Error(`Gemini API configuration error: ${error.message}`);
+      this.logger.error(`Gemini API validation failed: ${error.message}`);
+      handleValidationError(error, 'google-gemini');
     }
   }
 
@@ -97,33 +84,28 @@ export class GoogleGeminiAdapter implements ITextExtractor {
     mimeType: string,
   ): Promise<ExtractedText> {
     const startTime = Date.now();
-    this.logger.log(`Starting text extraction for file type: ${mimeType}`);
 
-    // Prepare inputs
     const base64Data = fileBuffer.toString('base64');
-    const geminiMimeType = this.mapMimeType(mimeType);
-    const prompt = `Extract all text from this document. Return only the extracted text, preserving the original layout and formatting as much as possible. Do not add any explanations, comments, or additional formatting.`;
+    const geminiMimeType = normalizeMimeType(mimeType);
+    const prompt = getOcrExtractionPrompt();
     const payload = this.buildGeneratePayload(base64Data, geminiMimeType, prompt);
 
     try {
       const response = await axios.post(
-        `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`,
+        `${this.baseUrl}/models/${this.config.model}:generateContent?key=${this.apiKey}`,
         payload,
         {
           headers: {
             'Content-Type': 'application/json',
           },
-          timeout: 60000, // 60 second timeout for large documents
+          timeout: this.config.timeout,
         }
       );
 
       return this.parseGeminiResponse(response, startTime);
     } catch (error) {
-      this.logger.error(
-        `Google Gemini extraction failed: ${error.message}`,
-        error.stack,
-      );
-      this.handleExtractionError(error);
+      this.logger.error(`Google Gemini extraction failed: ${error.message}`, error.stack);
+      handleOcrError(error, 'google-gemini');
     }
   }
 
@@ -145,10 +127,10 @@ export class GoogleGeminiAdapter implements ITextExtractor {
         }
       ],
       generationConfig: {
-        temperature: 0.1,
-        topK: 32,
-        topP: 1,
-        maxOutputTokens: 8192, // Increased for longer documents
+        temperature: this.config.temperature,
+        topK: this.config.topK,
+        topP: this.config.topP,
+        maxOutputTokens: this.config.maxOutputTokens,
       }
     };
   }
@@ -171,13 +153,8 @@ export class GoogleGeminiAdapter implements ITextExtractor {
       throw new Error(`No text content received from Gemini. Reason: ${finishReason}`);
     }
 
-    this.logger.log('Raw Gemini response text extracted successfully');
-
     const processingTime = Date.now() - startTime;
-
-    this.logger.log(
-      `Text extraction completed in ${processingTime}ms with ${fullText.length} characters extracted`,
-    );
+    this.logger.log(`Google Gemini extracted ${fullText.length} characters in ${processingTime}ms`);
 
     return {
       fullText: fullText.trim(),
@@ -186,44 +163,12 @@ export class GoogleGeminiAdapter implements ITextExtractor {
         pageCount: 1,
         processingTime,
         provider: 'google-gemini',
-        model: this.model,
+        model: this.config.model,
         finishReason: candidate.finishReason,
       },
     };
   }
 
-  private handleExtractionError(error: any): never {
-    // Handle specific error cases (re-throw with clearer messages)
-    if (error.response?.status === 400) {
-      const msg = error.response.data?.error?.message || '';
-      if (msg.includes('API key not valid')) {
-        throw new Error('Gemini API key is invalid. Please check configuration.');
-      }
-      if (msg.includes('unsupported MIME type')) {
-        throw new Error('Document format not supported by Gemini API.');
-      }
-      throw new Error(`Invalid request to Gemini API: ${msg || 'Unknown error'}`);
-    }
-
-    if (error.response?.status === 403) {
-      throw new Error('Gemini API access denied. Please check your API key permissions.');
-    }
-
-    if (error.response?.status === 429) {
-      throw new Error('Gemini API rate limit exceeded. Please try again in a few minutes.');
-    }
-
-    if (error.response?.status === 500 || error.response?.status === 503) {
-      throw new Error('Gemini API service is temporarily unavailable. Please try again later.');
-    }
-
-    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-      throw new Error('Request timeout while processing document. Please try with a smaller file.');
-    }
-
-    // For any other errors, provide a generic message
-    throw new Error('Unable to process document text extraction with Gemini. Please try again.');
-  }
 
   /**
    * Check if Google Gemini API supports this file type
@@ -231,16 +176,7 @@ export class GoogleGeminiAdapter implements ITextExtractor {
    * @returns true if supported
    */
   supportsFileType(mimeType: string): boolean {
-    const supportedTypes = [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/webp',
-      'image/heic',
-      'image/heif',
-      'application/pdf',
-    ];
-    return supportedTypes.includes(mimeType.toLowerCase());
+    return GEMINI_SUPPORTED_TYPES.includes(mimeType.toLowerCase());
   }
 
   /**
@@ -251,30 +187,4 @@ export class GoogleGeminiAdapter implements ITextExtractor {
     return 'google-gemini';
   }
 
-  /**
-   * Map common MIME types to Gemini-compatible format
-   * @param mimeType - Input MIME type
-   * @returns Gemini-compatible MIME type
-   */
-  private mapMimeType(mimeType: string): string {
-    const mimeTypeMap: Record<string, string> = {
-      'image/jpg': 'image/jpeg',
-      'image/jpeg': 'image/jpeg',
-      'image/png': 'image/png',
-      'image/webp': 'image/webp',
-      'image/heic': 'image/heic',
-      'image/heif': 'image/heif',
-      'application/pdf': 'application/pdf',
-    };
-
-    const normalized = mimeType.toLowerCase();
-    const mapped = mimeTypeMap[normalized];
-
-    if (!mapped) {
-      this.logger.warn(`Unsupported MIME type: ${mimeType}, defaulting to image/jpeg`);
-      return 'image/jpeg';
-    }
-
-    return mapped;
-  }
 }

@@ -17,7 +17,7 @@ export enum QRContentType {
  */
 export interface QRProcessingResult {
   qrCodeDetected: boolean;
-  qrCodeContent: string;
+  qrCodeContent: string | null;
   contentType: QRContentType;
   processedData?: any;
   downloadedDocument?: {
@@ -28,6 +28,7 @@ export interface QRProcessingResult {
   error?: string;
   errorType?: string;
   technicalError?: string;
+  isRequired?: boolean; // Indicates if QR processing was required for this document type
 }
 
 /**

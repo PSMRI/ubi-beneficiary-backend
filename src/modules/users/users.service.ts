@@ -1892,6 +1892,9 @@ export class UserService {
         },
       });
 
+      // Validate document type and subtype
+      this.validateDocumentType(uploadDocumentDto);
+      
       // Determine document config and whether QR processing is required
       const { requiresQRProcessing } = await this.getDocumentConfig(uploadDocumentDto);
 
@@ -2032,6 +2035,17 @@ export class UserService {
     return { requiresQRProcessing, documentConfig };
   }
 
+  // Helper to validate document type and subtype
+  private validateDocumentType(uploadDocumentDto: UploadDocumentDto) {
+    if (!uploadDocumentDto.docType || uploadDocumentDto.docType.trim() === '') {
+      throw new BadRequestException('Document type is required and cannot be empty.');
+    }
+    
+    if (!uploadDocumentDto.docSubType || uploadDocumentDto.docSubType.trim() === '') {
+      throw new BadRequestException('Document subtype is required and cannot be empty.');
+    }
+  }
+
   // Helper to validate file type when QR processing is required
   private validateFileTypeForQr(requiresQRProcessing: boolean, mimetype: string) {
     if (requiresQRProcessing && mimetype === 'application/pdf') {
@@ -2074,18 +2088,32 @@ export class UserService {
           ? ` (QR code processed)` : '')
       );
 
-      if (extractedData.fullText.length === 0 || extractedData.confidence === 0) {
-        Logger.error(`OCR validation failed: No readable text found in document (${extractedData.fullText.length} characters, ${extractedData.confidence}% confidence)`);
+      if (extractedData.fullText.length === 0) {
+        Logger.error(`OCR validation failed: No text extracted from document`);
         throw new BadRequestException(
-          'Document validation failed: No readable text found in the uploaded document. Please upload a valid document with readable text.'
+          'Document validation failed: No readable text found in the uploaded document. Please ensure the document contains clear, readable text and try again.'
+        );
+      }
+      
+      if (extractedData.confidence < 10) {
+        Logger.error(`OCR validation failed: Very low confidence (${extractedData.confidence}%)`);
+        throw new BadRequestException(
+          'Document validation failed: The document quality is too poor for reliable text extraction. Please upload a clearer, higher-quality image or document.'
         );
       }
 
       return ocrResult;
     } catch (ocrError) {
       Logger.error(`OCR processing failed: ${ocrError.message}`);
+      
+      // If it's already a BadRequestException (like QR processing errors), preserve the user-friendly message
+      if (ocrError instanceof BadRequestException) {
+        throw ocrError;
+      }
+      
+      // For other errors, wrap in InternalServerErrorException
       throw new InternalServerErrorException(
-        `${ocrError.message}. Document upload aborted.`
+        `Document processing failed: ${ocrError.message}`
       );
     }
   }

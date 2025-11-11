@@ -14,6 +14,8 @@ import {
 } from '@zxing/library';
 import jsQR from 'jsqr';
 import { IQRCodeDetector } from '../interfaces/qr-code-detector.interface';
+import { QR_SUPPORTED_TYPES } from '../constants/mime-types.constants';
+import { detectMimeTypeFromUrl, isImageType } from '../utils/mime-type.utils';
 
 /**
  * Service for detecting and processing QR codes from image documents
@@ -46,7 +48,7 @@ export class QRCodeDetectorService implements IQRCodeDetector {
         throw new Error('PDF QR code detection is not supported. Please convert your PDF to an image (PNG, JPEG) and try again.');
       }
       
-      if (!this.isImageType(mimeType)) {
+      if (!isImageType(mimeType)) {
         throw new Error(`Unsupported file type for QR code detection: ${mimeType}. Only image formats (PNG, JPEG) are supported.`);
       }
 
@@ -244,7 +246,7 @@ export class QRCodeDetectorService implements IQRCodeDetector {
         throw new Error(`Downloaded file exceeds maximum size of ${this.maxDownloadSize} bytes`);
       }
       
-      const mimeType = response.headers['content-type'] || this.detectMimeTypeFromUrl(url);
+      const mimeType = response.headers['content-type'] || detectMimeTypeFromUrl(url);
 
       this.logger.log(`Downloaded ${buffer.length} bytes, detected type: ${mimeType}`);
 
@@ -261,29 +263,8 @@ export class QRCodeDetectorService implements IQRCodeDetector {
    * @returns true if supported
    */
   supportsFileType(mimeType: string): boolean {
-    const supportedTypes = [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'application/pdf',
-    ];
-    return supportedTypes.includes(mimeType.toLowerCase());
+    return QR_SUPPORTED_TYPES.includes(mimeType.toLowerCase());
   }
-
-      /**
-   * Detect MIME type from URL extension
-   */
-  private detectMimeTypeFromUrl(url: string): string {
-    const extension = path.extname(url).toLowerCase();
-    const mimeMap: Record<string, string> = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-    };
-    return mimeMap[extension] || 'application/octet-stream';
-  }
-
-
 
   /**
    * Enhance image for better QR code detection
@@ -301,13 +282,6 @@ export class QRCodeDetectorService implements IQRCodeDetector {
       this.logger.debug(`Image enhancement failed: ${error.message}`);
       return imageBuffer;
     }
-  }
-
-  /**
-   * Check if MIME type is an image type
-   */
-  private isImageType(mimeType: string): boolean {
-    return ['image/jpeg', 'image/jpg', 'image/png'].includes(mimeType.toLowerCase());
   }
 
   /**

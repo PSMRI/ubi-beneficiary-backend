@@ -1,19 +1,20 @@
 import { Logger } from '@nestjs/common';
 import { ITextExtractor, ExtractedText } from '../../interfaces/text-extractor.interface';
 import { createWorker, Worker } from 'tesseract.js';
+import { TESSERACT_SUPPORTED_TYPES } from '../../constants/mime-types.constants';
+import { handleOcrError } from '../../utils/error-handler.util';
 
 export class TesseractAdapter implements ITextExtractor {
   private readonly logger = new Logger(TesseractAdapter.name);
   private worker: Worker | null = null;
 
   constructor() {
-    this.logger.log('Tesseract adapter initialized');
+    this.logger.log('Tesseract OCR adapter initialized');
   }
 
   private async ensureWorker(): Promise<void> {
     if (!this.worker) {
       this.worker = await createWorker('eng');
-      this.logger.log('Tesseract worker initialized successfully');
     }
   }
 
@@ -33,22 +34,17 @@ export class TesseractAdapter implements ITextExtractor {
 
   async extractText(fileBuffer: Buffer, mimeType: string): Promise<ExtractedText> {
     const startTime = Date.now();
-    this.logger.log(`Starting text extraction for file type: ${mimeType}`);
 
     try {
       await this.ensureWorker();
-
-      const { data: { text } } = await this.worker!.recognize(fileBuffer);
-
+      const { data: { text } } = await this.worker.recognize(fileBuffer);
       const processingTime = Date.now() - startTime;
 
-      this.logger.log(
-        `Text extraction completed in ${processingTime}ms with ${text.length} characters extracted`
-      );
+      this.logger.log(`Tesseract extracted ${text.length} characters in ${processingTime}ms`);
       
       return {
         fullText: text.trim(),
-        confidence: 90, // Assumed high confidence
+        confidence: 90,
         metadata: {
           provider: 'tesseract',
           processingTime,
@@ -56,17 +52,12 @@ export class TesseractAdapter implements ITextExtractor {
       };
     } catch (error) {
       this.logger.error(`Tesseract extraction failed: ${error.message}`);
-      throw new Error('Failed to extract text using Tesseract.');
+      handleOcrError(error, 'tesseract');
     }
   }
 
   supportsFileType(mimeType: string): boolean {
-    const supportedTypes = [
-      'image/jpeg',
-      'image/png',
-      'image/jpg',
-    ];
-    return supportedTypes.includes(mimeType.toLowerCase());
+    return TESSERACT_SUPPORTED_TYPES.includes(mimeType.toLowerCase());
   }
 
   getProviderName(): string {

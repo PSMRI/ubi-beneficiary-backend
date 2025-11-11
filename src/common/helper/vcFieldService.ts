@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AdminService } from '@modules/admin/admin.service';
 
 export type VcFields = Record<string, { 
-  type?: 'string' | 'number' | 'boolean' | 'integer';
+  type?: 'string' | 'number' | 'boolean' | 'integer' | 'object';
   required?: boolean;
   description?: string;
 }>;
