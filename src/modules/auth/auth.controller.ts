@@ -48,6 +48,71 @@ export class AuthController {
     return await this.authService.registerWithUsernamePassword(body);
   }
 
+  @Post('/register_with_document')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: 'Register user with OTR Certificate document. All user data (name, phone) is extracted from the certificate via OCR.',
+    schema: {
+      type: 'object',
+      required: ['docType', 'docSubType', 'file'],
+      properties: {
+        docType: {
+          type: 'string',
+          description: 'Type of document',
+          example: 'certificate',
+        },
+        docSubType: {
+          type: 'string',
+          description: 'Must be otrCertificate',
+          example: 'otrCertificate',
+        },
+        docName: {
+          type: 'string',
+          description: 'Name of the document',
+          example: 'OTR Certificate',
+        },
+        importedFrom: {
+          type: 'string',
+          description: 'Source of import',
+          example: 'registration',
+        },
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'OTR Certificate document file (PDF/Image). Must contain firstName, lastName, and phoneNumber for extraction.',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OTR processed, user registered, and document uploaded successfully. Username and credentials are auto-generated.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Registration successful, but document upload failed. Please upload after login.',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad Request - Required fields could not be extracted from certificate or invalid data',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'User already exists (phone number duplicate)',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal Server Error',
+  })
+  public async registerWithDocument(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: any,
+    @Req() req: any,
+  ) {
+    return await this.authService.processOtrAndRegisterWithUpload(body, file, req);
+  }
+
   @Post('/login')
   @UsePipes(new ValidationPipe())
   @ApiBody({ type: LoginDTO })
@@ -56,33 +121,6 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'BAD_REQUEST' })
   public async login(@Body() body: LoginDTO) {
     return await this.authService.login(body);
-  }
-
-  @Post('process-otr-certificate')
-  @HttpCode(HttpStatus.OK)
-  @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-        docType: { type: 'string' },
-        docSubType: { type: 'string' },
-        docName: { type: 'string' },
-        importedFrom: { type: 'string' },
-      },
-    },
-  })
-  async processOtrCertificate(
-    @Req() req: any,
-    @UploadedFile() file: Express.Multer.File,
-    @Body() uploadDocumentDto: UploadDocumentDto,
-  ): Promise<SuccessResponse | ErrorResponse> {
-    return this.authService.processOtrCertificate(req, file, uploadDocumentDto);
   }
 
 
