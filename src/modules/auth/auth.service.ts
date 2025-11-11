@@ -1,5 +1,5 @@
 import { UserService } from '@modules/users/users.service';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ErrorResponse } from 'src/common/responses/error-response';
 import { SuccessResponse } from 'src/common/responses/success-response';
@@ -8,6 +8,7 @@ import { WalletService } from 'src/services/wallet/wallet.service';
 
 import { KeycloakService } from 'src/services/keycloak/keycloak.service';
 import { LoginDTO } from './dto/login.dto';
+import { UpdatePasswordDTO } from './dto/update-password.dto';
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -30,17 +31,30 @@ export class AuthService {
   ) { }
 
   public async login(body: LoginDTO) {
+    try {
+      const token = await this.keycloakService.getUserKeycloakToken(body);
 
-    const token = await this.keycloakService.getUserKeycloakToken(body);
-    
-    if (token) {
-      // First try to get Keycloak user details
+      if (!token) {
+        return new ErrorResponse({
+          statusCode: HttpStatus.UNAUTHORIZED,
+          errorMessage: 'INVALID_USERNAME_PASSWORD_MESSAGE',
+        });
+      }
+
+      // 🔹 Fetch user details
       const keycloakUser = await this.keycloakService.getUserByUsername(body.username);
+
       if (keycloakUser?.user?.id) {
-        // Try to find user by Keycloak ID (sso_id)
+        const requiredActions = keycloakUser.user.requiredActions || [];
+
+        if (requiredActions.includes('UPDATE_PASSWORD')) {
+          return new ErrorResponse({
+            statusCode: HttpStatus.FORBIDDEN,
+            errorMessage: 'PASSWORD_UPDATE_REQUIRED',
+          });
+        }
+
         const user = await this.userService.findBySsoId(keycloakUser.user.id);
-        this.loggerService.log(`User found by Keycloak ID: ${JSON.stringify(user)}`);
-        
         if (user) {
           return new SuccessResponse({
             statusCode: HttpStatus.OK,
@@ -51,79 +65,102 @@ export class AuthService {
               walletToken: user.walletToken || null,
             },
           });
-        } else {
-          // User exists in Keycloak but not in database
+        }
+
+        return new ErrorResponse({
+          statusCode: HttpStatus.UNAUTHORIZED,
+          errorMessage: 'User account not found in system',
+        });
+      }
+
+      return new ErrorResponse({
+        statusCode: HttpStatus.UNAUTHORIZED,
+        errorMessage: 'INVALID_USERNAME_PASSWORD_MESSAGE',
+      });
+
+    } catch (error) {
+      if (error.message === 'ACCOUNT_NOT_FULLY_SETUP') {
+        const keycloakUser = await this.keycloakService.getUserByUsername(body.username);
+        const requiredActions = keycloakUser?.user?.requiredActions || [];
+
+        if (requiredActions.includes('UPDATE_PASSWORD')) {
           return new ErrorResponse({
-            statusCode: HttpStatus.UNAUTHORIZED,
-            errorMessage: 'User account not found in system',
+            statusCode: HttpStatus.FORBIDDEN,
+            errorMessage: 'PASSWORD_UPDATE_REQUIRED',
           });
         }
-      } else {
-        // Could not find user in Keycloak
+
+        return new ErrorResponse({
+          statusCode: HttpStatus.FORBIDDEN,
+          errorMessage: 'ACCOUNT_NOT_FULLY_SETUP',
+        });
+      }
+
+      if (error.message === 'INVALID_CREDENTIALS') {
         return new ErrorResponse({
           statusCode: HttpStatus.UNAUTHORIZED,
           errorMessage: 'INVALID_USERNAME_PASSWORD_MESSAGE',
         });
       }
-    } else {
-      return new ErrorResponse({
-        statusCode: HttpStatus.UNAUTHORIZED,
-        errorMessage: 'INVALID_USERNAME_PASSWORD_MESSAGE',
-      });
+
+      // Catch-all
+      throw error;
     }
   }
 
-/*   public async register(body) {
-    try {
-      // let wallet_api_url = process.env.WALLET_API_URL;
-      // Step 1: Check if mobile number exists in the database
-      await this.checkMobileExistence(body?.phoneNumber);
 
-      // Step 2: Prepare user data for Keycloak registration
-      const dataToCreateUser = this.prepareUserData(body);
 
-      // Step 3: Get Keycloak admin token
-      const token = await this.keycloakService.getAdminKeycloakToken();
-      this.validateToken(token);
-
-      // Step 4: Register user in Keycloak
-      const keycloakId = await this.registerUserInKeycloak(
-        dataToCreateUser,
-        token.access_token,
-      );
-
-      // Step 5: Register user in PostgreSQL
-      const userData = {
-        ...body,
-        keycloak_id: keycloakId,
-        username: dataToCreateUser.username,
-      };
-      const user = await this.userService.createKeycloakData(userData); */
-
-      /*
-      if (user) {
-        //create user payload
-        let wallet_user_payload = {
-          firstName: user?.firstName,
-          lastName: user?.lastName,
-          sso_provider: user?.sso_provider,
-          sso_id: user?.sso_id,
-          phoneNumber: user?.phoneNumber,
+  /*   public async register(body) {
+      try {
+        // let wallet_api_url = process.env.WALLET_API_URL;
+        // Step 1: Check if mobile number exists in the database
+        await this.checkMobileExistence(body?.phoneNumber);
+  
+        // Step 2: Prepare user data for Keycloak registration
+        const dataToCreateUser = this.prepareUserData(body);
+  
+        // Step 3: Get Keycloak admin token
+        const token = await this.keycloakService.getAdminKeycloakToken();
+        this.validateToken(token);
+  
+        // Step 4: Register user in Keycloak
+        const keycloakId = await this.registerUserInKeycloak(
+          dataToCreateUser,
+          token.access_token,
+        );
+  
+        // Step 5: Register user in PostgreSQL
+        const userData = {
+          ...body,
+          keycloak_id: keycloakId,
+          username: dataToCreateUser.username,
         };
+        const user = await this.userService.createKeycloakData(userData); */
 
-        await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
-      }*/
+  /*
+  if (user) {
+    //create user payload
+    let wallet_user_payload = {
+      firstName: user?.firstName,
+      lastName: user?.lastName,
+      sso_provider: user?.sso_provider,
+      sso_id: user?.sso_id,
+      phoneNumber: user?.phoneNumber,
+    };
 
-      // Step 6: Return success response
-      /* return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User created successfully',
-        data: user,
-      });
-    } catch (error) {
-      return this.handleRegistrationError(error, body?.keycloak_id);
-    }
-  } */
+    await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
+  }*/
+
+  // Step 6: Return success response
+  /* return new SuccessResponse({
+    statusCode: HttpStatus.OK,
+    message: 'User created successfully',
+    data: user,
+  });
+} catch (error) {
+  return this.handleRegistrationError(error, body?.keycloak_id);
+}
+} */
 
   public async registerWithUsernamePassword(body) {
     try {
@@ -200,11 +237,11 @@ export class AuthService {
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User created successfully',
-        data: { 
-          user, 
+        data: {
+          user,
           userName: userName.toLowerCase(),
           // password,
-          walletOnboarded: !!walletToken 
+          walletOnboarded: !!walletToken
         },
       });
     } catch (error) {
@@ -318,7 +355,7 @@ export class AuthService {
           field.value !== null && field.value !== undefined ? String(field.value) : '',
         ])
       );
-      
+
       return {
         ...userInfo,
         ...customFieldsObj
@@ -423,4 +460,58 @@ export class AuthService {
       });
     }
   }
+
+  public async updatePassword(body: UpdatePasswordDTO) {
+    const { username, oldPassword, newPassword } = body;
+
+    // 1️⃣ Verify old password via Keycloak token endpoint
+    try {
+      await this.keycloakService.getUserKeycloakToken({
+        username,
+        password: oldPassword,
+      });
+      // If we reach here → old password is valid (either normal or temporary)
+    } catch (error) {
+      if (error.message === 'INVALID_CREDENTIALS') {
+        throw new HttpException('INVALID_OLD_PASSWORD', HttpStatus.UNAUTHORIZED);
+      }
+
+      // Handle "ACCOUNT_NOT_FULLY_SETUP" (temporary password)
+      if (error.message === 'ACCOUNT_NOT_FULLY_SETUP') {
+        // Still a valid old password — Keycloak just needs password update.
+        // So we continue the flow normally.
+      } else {
+        console.error('Error verifying old password:', error);
+        throw new HttpException('PASSWORD_VALIDATION_FAILED', HttpStatus.BAD_REQUEST);
+      }
+    }
+
+    // 2️⃣ Get admin token
+    const adminTokenData = await this.keycloakService.getAdminKeycloakToken();
+    const adminToken = adminTokenData?.access_token;
+
+    // 3️⃣ Find user by username
+    const user = await this.keycloakService.getUserByUsername(username);
+    if (!user?.user || user.isUserExist === false) {
+      throw new HttpException('USER_NOT_FOUND', HttpStatus.NOT_FOUND);
+    }
+
+    // 4️⃣ Reset password using admin API
+    const success = await this.keycloakService.resetPassword(
+      user.user.id,
+      adminToken,
+      newPassword,
+    );
+
+    if (!success) {
+      throw new HttpException('PASSWORD_UPDATE_FAILED', HttpStatus.BAD_REQUEST);
+    }
+
+    // 5️⃣ Optional — clear any pending required actions like UPDATE_PASSWORD
+    // await this.keycloakService.clearRequiredAction(user.user.id, adminToken);
+
+    return { message: 'PASSWORD_UPDATED_SUCCESSFULLY' };
+  }
+
+
 }
