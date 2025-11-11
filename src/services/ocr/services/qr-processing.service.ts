@@ -65,7 +65,14 @@ export class QRProcessingService {
 
       if (!qrContent) {
         this.logger.error('QR processing failed: No QR code detected');
-        throw new Error('QR processing failed: No QR code detected');
+        return {
+          qrCodeDetected: false,
+          qrCodeContent: null,
+          contentType: documentConfig.docQRContains as any,
+          error: 'QR code not found in the uploaded document',
+          errorType: 'QR_NOT_FOUND',
+          isRequired: true, // Mark as required so OCR service knows this is a failure
+        };
       }
 
       this.logger.log(`QR code detected with content: ${qrContent.substring(0, 100)}...`);
@@ -75,8 +82,16 @@ export class QRProcessingService {
     } catch (error) {
       this.logger.error(`QR processing failed: ${error.message}`, error.stack);
       
-      // Return null for any processing errors
-      return null;
+      // Return error result for processing failures when QR is required
+      return {
+        qrCodeDetected: false,
+        qrCodeContent: null,
+        contentType: documentSubType as any,
+        error: 'Unable to process QR code from the document',
+        errorType: 'PROCESSING_ERROR',
+        isRequired: true,
+        technicalError: error.message,
+      };
     }
   }
 

@@ -8,6 +8,8 @@ import {
   DetectDocumentTextCommand,
   Block,
 } from '@aws-sdk/client-textract';
+import { SUPPORTED_OCR_TYPES } from '../../constants/mime-types.constants';
+import { handleOcrError, handleValidationError } from '../../utils/error-handler.util';
 
 /**
  * AWS Textract adapter for text extraction
@@ -23,7 +25,7 @@ export class AWSTextractAdapter implements ITextExtractor {
       credentials: config.credentials,
     });
     
-    this.logger.log(`AWS Textract adapter initialized for region: ${config.region}`);
+    this.logger.log(`AWS Textract adapter initialized - region: ${config.region}`);
   }
 
   /**
@@ -33,7 +35,6 @@ export class AWSTextractAdapter implements ITextExtractor {
    */
   async validatePermissions(): Promise<boolean> {
     try {
-      // Create a minimal command with a single pixel buffer for testing
       const singlePixelBuffer = Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46]);
       const command = new DetectDocumentTextCommand({
         Document: { Bytes: singlePixelBuffer },
@@ -42,35 +43,8 @@ export class AWSTextractAdapter implements ITextExtractor {
       await this.client.send(command);
       return true;
     } catch (error) {
-      // Log detailed error information for debugging
-      this.logger.error(`AWS Textract validation error - Name: ${error.name}, Message: ${error.message}`, error);
-
-      if (error.name === 'AccessDeniedException') {
-        throw new Error('OCR service not properly configured. Please contact support.');
-      }
-      
-      // InvalidDocument error means we have valid permissions
-      if (error.name === 'InvalidDocumentException' || error.name === 'InvalidImageFormatException') {
-        this.logger.log('AWS Textract permissions validated successfully');
-        return true;
-      }
-
-      // For credential errors, be more specific
-      if (error.name === 'UnrecognizedClientException' || error.name === 'InvalidSignatureException') {
-        throw new Error('OCR service credentials are invalid. Please check AWS access key and secret.');
-      }
-
-      if (error.name === 'ExpiredToken') {
-        throw new Error('OCR service credentials have expired. Please update AWS credentials.');
-      }
-
-      // For region errors
-      if (error.name === 'UnknownEndpoint') {
-        throw new Error('OCR service region configuration is invalid. Please check AWS region setting.');
-      }
-
-      // For any other AWS errors, include the error name for better debugging
-      throw new Error(`OCR service configuration error: ${error.name}. Please try again later.`);
+      this.logger.error(`AWS Textract validation failed: ${error.message}`);
+      handleValidationError(error, 'aws-textract');
     }
   }
 
@@ -87,61 +61,35 @@ export class AWSTextractAdapter implements ITextExtractor {
     const startTime = Date.now();
 
     try {
-      this.logger.log(`Starting text extraction for file type: ${mimeType}`);
-
-      // Create Textract command with document bytes
       const command = new DetectDocumentTextCommand({
         Document: { Bytes: fileBuffer },
       });
 
-      // Send request to AWS Textract
       const response = await this.client.send(command);
 
-      // Extract text from LINE blocks (most readable format)
       const fullText =
         response.Blocks?.filter((block) => block.BlockType === 'LINE')
           .map((block) => block.Text)
           .join('\n') || '';
 
-      // Calculate average confidence
       const confidence = this.calculateAverageConfidence(response.Blocks || []);
-
       const processingTime = Date.now() - startTime;
       
-      this.logger.log(
-        `Text extraction completed in ${processingTime}ms with ${fullText.length} characters extracted`,
-      );
+      this.logger.log(`AWS Textract extracted ${fullText.length} characters in ${processingTime}ms`);
 
       return {
         fullText,
         confidence,
         metadata: {
-          pageCount: 1, // DetectDocumentText processes single page
+          pageCount: 1,
           processingTime,
           provider: 'aws-textract',
           blockCount: response.Blocks?.length || 0,
         },
       };
     } catch (error) {
-      this.logger.error(
-        `AWS Textract extraction failed: ${error.message}`,
-        error.stack,
-      );
-
-      if (error.name === 'AccessDeniedException') {
-        throw new Error('OCR service not properly configured. Please contact support.');
-      }
-
-      if (error.name === 'InvalidImageFormatException' || error.name === 'InvalidDocumentException') {
-        throw new Error('Document format not supported for text extraction.');
-      }
-
-      if (error.name === 'ThrottlingException') {
-        throw new Error('OCR service is temporarily busy. Please try again in a few minutes.');
-      }
-
-      // For any other errors, provide a generic message
-      throw new Error('Unable to process document text extraction. Please try again.');
+      this.logger.error(`AWS Textract extraction failed: ${error.message}`, error.stack);
+      handleOcrError(error, 'aws-textract');
     }
   }
 
@@ -151,13 +99,7 @@ export class AWSTextractAdapter implements ITextExtractor {
    * @returns true if supported
    */
   supportsFileType(mimeType: string): boolean {
-    const supportedTypes = [
-      'image/jpeg',
-      'image/png',
-      'application/pdf',
-      'image/jpg',
-    ];
-    return supportedTypes.includes(mimeType.toLowerCase());
+    return SUPPORTED_OCR_TYPES.includes(mimeType.toLowerCase());
   }
 
   /**
@@ -178,7 +120,7 @@ export class AWSTextractAdapter implements ITextExtractor {
 
     const confidences = blocks
       .filter((b) => b.Confidence !== undefined && b.Confidence !== null)
-      .map((b) => b.Confidence as number);
+      .map((b) => b.Confidence);
 
     if (confidences.length === 0) return 0;
 

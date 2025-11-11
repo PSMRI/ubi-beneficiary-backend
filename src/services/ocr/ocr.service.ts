@@ -10,6 +10,7 @@ import { ITextExtractor, ExtractedText } from './interfaces/text-extractor.inter
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { QRProcessingService } from './services/qr-processing.service';
+import { SUPPORTED_OCR_TYPES } from './constants/mime-types.constants';
 
 /**
  * OCR Service for document text extraction
@@ -99,6 +100,23 @@ export class OcrService {
           },
           qrProcessing: qrProcessingResult,
         };
+      }
+
+      // Check if QR processing was required but failed
+      if (qrProcessingResult?.error && qrProcessingResult?.isRequired) {
+        this.logger.error(`QR processing failed for required document: ${qrProcessingResult.error}`);
+        
+        // Provide user-friendly error messages based on error type
+        let userMessage = '';
+        if (qrProcessingResult.errorType === 'QR_NOT_FOUND') {
+          userMessage = 'Please upload a document that contains a valid QR code';
+        } else if (qrProcessingResult.errorType === 'PROCESSING_ERROR') {
+          userMessage = 'QR code could not be read from this document. Please ensure the QR code is clear and try again';
+        } else {
+          userMessage = 'This document requires a valid QR code for processing';
+        }
+        
+        throw new BadRequestException(userMessage);
       }
 
       // Log QR processing issues but don't fail - allow fallback to original document
@@ -261,8 +279,7 @@ export class OcrService {
    * @returns Array of supported MIME types
    */
   getSupportedFileTypes(): string[] {
-    // Standard supported types for most OCR providers
-    return ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    return [...SUPPORTED_OCR_TYPES];
   }
 
   /**
