@@ -9,6 +9,7 @@ import { WalletService } from 'src/services/wallet/wallet.service';
 import { KeycloakService } from 'src/services/keycloak/keycloak.service';
 import { LoginDTO } from './dto/login.dto';
 import { UploadDocumentDto } from '@modules/users/dto/upload-document.dto';
+import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -28,6 +29,7 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly loggerService: LoggerService,
     private readonly walletService: WalletService,
+    private readonly documentUploadService: DocumentUploadService,
   ) { }
 
   public async login(body: LoginDTO) {
@@ -131,7 +133,6 @@ export class AuthService {
       // Step 1: Prepare user data for Keycloak registration
       const dataToCreateUser = this.prepareUserDataV2(body);
       let { password, ...rest } = dataToCreateUser;
-      let userName = dataToCreateUser.username;
 
       // Step 2: Get Keycloak admin token
       const token = await this.keycloakService.getAdminKeycloakToken();
@@ -146,7 +147,6 @@ export class AuthService {
       const userData = {
         ...body,
         keycloak_id: keycloakId,
-        username: dataToCreateUser.username,
       };
       const user = await this.userService.createKeycloakData(userData);
 
@@ -159,7 +159,7 @@ export class AuthService {
             lastName: body.lastName.trim(),
             phone: body.phoneNumber.trim(),
             password: password,
-            username: userName.toLowerCase(),
+            username: body.username.trim(),
           };
 
           this.loggerService.log('Starting wallet onboarding for user', 'AuthService');
@@ -203,7 +203,7 @@ export class AuthService {
         message: 'User created successfully',
         data: {
           user,
-          userName: userName.toLowerCase(),
+          userName: body.username.trim(),
           // password,
           walletOnboarded: !!walletToken
         },
@@ -256,6 +256,7 @@ export class AuthService {
     const trimmedFirstName = body?.firstName?.trim();
     const trimmedLastName = body?.lastName?.trim();
     const trimmedPhoneNumber = body?.phoneNumber?.trim();
+    const trimmedUsername = body?.username?.trim();
     const password =
       body?.password?.trim() ?? process.env.SIGNUP_DEFAULT_PASSWORD;
 
@@ -263,13 +264,7 @@ export class AuthService {
       enabled: 'true',
       firstName: trimmedFirstName,
       lastName: trimmedLastName,
-      username: (
-        trimmedFirstName +
-        '_' +
-        trimmedLastName?.charAt(0) +
-        '_' +
-        trimmedPhoneNumber?.slice(-4)
-      ).toLowerCase(),
+      username: trimmedUsername,
       credentials: [
         {
           type: 'password',
@@ -397,91 +392,6 @@ export class AuthService {
         'Error during user registration. Keycloak user has been rolled back.',
     });
   }
-  async processOtrCertificate(
-    req: any,
-    file: Express.Multer.File,
-    uploadDocumentDto: UploadDocumentDto,
-  ) {
-    try {
-      // Step 1: Validate document type
-      if (uploadDocumentDto.docSubType !== 'otrCertificate') {
-        throw new BadRequestException('Only OTR Certificate is allowed for this flow');
-      }
-
-      // Step 2: Get document config (QR or OCR requirement)
-      const { requiresQRProcessing } = await this.userService.getDocumentConfig(uploadDocumentDto);
-
-      // Step 3: Validate file type
-      this.userService.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
-
-      // Step 4: Perform OCR
-      const ocrResult = await this.userService.performOcr(file, uploadDocumentDto, requiresQRProcessing);
-
-      // Step 5: Fetch vcFields configuration
-      const vcFields = await this.userService.getVcFieldsForDocument(
-        uploadDocumentDto.docType,
-        uploadDocumentDto.docSubType,
-      );
-
-      // Step 6: Map OCR text to structured data
-      let vcMapping = null;
-      if (vcFields) {
-        vcMapping = await this.userService.ocrMapping.mapAfterOcr(
-          {
-            text: ocrResult.extractedText,
-            docType: uploadDocumentDto.docType,
-            docSubType: uploadDocumentDto.docSubType,
-          },
-          vcFields,
-        );
-      } else {
-        vcMapping = {
-          mapped_data: {},
-          missing_fields: [],
-          confidence: 0,
-          processing_method: 'keyword' as const,
-          warnings: ['No vcFields configuration found'],
-        };
-      }
-
-      // Step 7: Skip upload — just return data
-      Logger.debug('Skipping permanent file upload (pre-registration flow)');
-
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'OTR Certificate processed successfully',
-        data: {
-          doc_type: uploadDocumentDto.docType,
-          doc_subtype: uploadDocumentDto.docSubType,
-          doc_name: uploadDocumentDto.docName,
-          ocr: ocrResult,
-          vc_mapping: vcMapping,
-        },
-      });
-    } catch (error) {
-      Logger.error('auth.service:processOtrCertificate', error?.message ?? error, error?.stack);
-
-      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
-        return new ErrorResponse({
-          statusCode: error.getStatus(),
-          errorMessage: error.message,
-        });
-      }
-
-      if (error?.response?.statusCode && error?.response?.message) {
-        return new ErrorResponse({
-          statusCode: error.response.statusCode,
-          errorMessage: error.response.message,
-        });
-      }
-
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error?.message || 'Failed to process OTR Certificate',
-      });
-    }
-  }
-
 
   public async logout(req) {
     const accessToken = req.body.access_token;
@@ -509,4 +419,223 @@ export class AuthService {
       });
     }
   }
+
+  /**
+ * Sets Keycloak required actions for a given user (e.g., UPDATE_PASSWORD)
+ */
+
+  private async processOtrCertificate(
+    file: Express.Multer.File,
+    uploadDocumentDto: UploadDocumentDto,
+  ) {
+    try {
+      if (uploadDocumentDto.docSubType !== 'otrCertificate') {
+        throw new BadRequestException('Only OTR Certificate is allowed for this flow');
+      }
+
+      // Step 2: Document config (QR requirement)
+      const { requiresQRProcessing } = await this.userService.getDocumentConfig(uploadDocumentDto);
+
+      // Step 3: File type validation
+      this.userService.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+
+      // Step 4: OCR extraction
+      const ocrResult = await this.userService.performOcr(
+        file,
+        uploadDocumentDto,
+        requiresQRProcessing,
+      );
+
+      // Step 5: Fetch vcFields
+      const vcFields = await this.userService.getVcFieldsForDocument(
+        uploadDocumentDto.docType,
+        uploadDocumentDto.docSubType,
+      );
+
+      // Step 6: OCR → structured mapping
+      let vcMapping = null;
+      if (vcFields) {
+        vcMapping = await this.userService.ocrMapping.mapAfterOcr(
+          {
+            text: ocrResult.extractedText,
+            docType: uploadDocumentDto.docType,
+            docSubType: uploadDocumentDto.docSubType,
+          },
+          vcFields,
+        );
+      } else {
+        vcMapping = {
+          mapped_data: {},
+          missing_fields: [],
+          confidence: 0,
+          processing_method: 'keyword' as const,
+          warnings: ['No vcFields configuration found'],
+        };
+      }
+
+      this.loggerService.log('OTR Certificate processed successfully (OCR + mapping done)');
+
+      return { ocrResult, vcMapping };
+    } catch (error) {
+      this.loggerService.error('processOtrCertificate', error.message, error.stack);
+      throw new ErrorResponse({
+        statusCode: error.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error.message ?? 'Failed to process OTR Certificate',
+      });
+    }
+  }
+
+  /**
+   * Step 2 + 3 combined:
+   * Process OTR → Register user → Upload document
+   * All user data is extracted from the OTR Certificate
+   */
+  async processOtrAndRegisterWithUpload(
+    body: any,
+    file: Express.Multer.File,
+    req: any,
+  ) {
+    let user = null;
+    let ocrResult = null;
+    let vcMapping = null;
+    let isUserRegistered = false;
+    let generatedUsername = null;
+
+    try {
+      // 🟩 Step 1: Pre-process OTR Certificate
+      const uploadDocumentDto: UploadDocumentDto = {
+        docType: body.docType,
+        docSubType: body.docSubType,
+        docName: body.docName,
+        importedFrom: body.importedFrom ?? 'registration',
+        file,
+      };
+      const otrResult = await this.processOtrCertificate(file, uploadDocumentDto);
+
+      ocrResult = otrResult.ocrResult;
+      vcMapping = otrResult.vcMapping;
+
+      // 🟩 Step 2: Enrich registration payload with OTR extracted data
+      const payload = {
+        firstName: vcMapping?.mapped_data?.firstname || '',
+        lastName: vcMapping?.mapped_data?.lastname || '',
+        username: `${vcMapping?.mapped_data?.otr_number.toString()}_008` || '',
+        phoneNumber: vcMapping?.mapped_data?.phoneNumber.toString() || '',
+        password: process.env.SIGNUP_DEFAULT_PASSWORD,
+      };
+
+      // 🟩 Step 3.1: Validate required fields
+      this.validateRegistrationPayload(payload);
+
+      // 🟩 Step 4: Register user
+      const registrationResponse = await this.registerWithUsernamePassword(
+        payload,
+      );
+      // Check if registration was successful
+      if (registrationResponse instanceof ErrorResponse) {
+        return registrationResponse;
+      }
+
+      user = registrationResponse.data;
+      isUserRegistered = true;
+      const registeredUser = (registrationResponse.data as any).user;
+
+      // 🟩 Step 5: Upload OTR Certificate file
+      // Upload file to storage
+      const uploadResult = await this.documentUploadService.uploadFile(
+        file,
+        {
+          docType: uploadDocumentDto.docType,
+          docSubType: uploadDocumentDto.docSubType,
+          docName: uploadDocumentDto.docName,
+          importedFrom: uploadDocumentDto.importedFrom,
+        },
+        registeredUser.user_id,
+      );
+
+      // Save or update the document record
+      const savedDoc = await this.userService.createNewDoc(registeredUser.user_id, uploadResult, uploadDocumentDto, vcMapping);
+
+
+      // 🟩 Step 6: Return success response
+      return new SuccessResponse({
+        statusCode: HttpStatus.OK,
+        message: 'OTR processed, user registered, and document uploaded successfully',
+        data: {
+          user,
+          document: {
+            doc_id: savedDoc.savedDoc.doc_id,
+            doc_path: savedDoc.savedDoc.doc_path,
+            doc_type: savedDoc.savedDoc.doc_type,
+            doc_subtype: savedDoc.savedDoc.doc_subtype,
+            doc_name: savedDoc.savedDoc.doc_name,
+            imported_from: savedDoc.savedDoc.imported_from,
+          },
+          username: body.username,
+        },
+      });
+    } catch (error) {
+      this.loggerService.error('processOtrAndRegisterWithUpload', error.message, error.stack);
+
+      // If user was registered but document upload failed, return partial success
+      if (isUserRegistered && (error?.message?.includes('upload') || error?.message?.includes('document'))) {
+        this.loggerService.warn(`User registered successfully but document upload failed for: ${generatedUsername}`);
+
+        return new SuccessResponse({
+          statusCode: HttpStatus.CREATED,
+          message: 'Registration successful, but document upload failed. Please upload the OTR Certificate after login.',
+          data: {
+            user,
+            document: null,
+            username: body.username,
+          },
+        });
+      }
+
+      // For all other errors (OTR processing or registration failures)
+      return new ErrorResponse({
+        statusCode: error.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error.message ?? 'Failed OTR registration flow',
+      });
+    }
+  }
+
+  /**
+   * Validates registration payload for required fields
+   */
+  private validateRegistrationPayload(payload: any) {
+
+    const missingFields: string[] = [];
+
+    if (!payload.firstName || payload.firstName.trim() === '') {
+      missingFields.push('firstName');
+    }
+    if (!payload.lastName || payload.lastName.trim() === '') {
+      missingFields.push('lastName');
+    }
+    if (!payload.username || payload.username.trim() === '') {
+      missingFields.push('username');
+    }
+    if (!payload.phoneNumber || payload.phoneNumber.trim() === '') {
+      missingFields.push('phoneNumber');
+    }
+
+    if (missingFields.length > 0) {
+      throw new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: `Missing required fields: ${missingFields.join(', ')}. Please reupload document again.`,
+      });
+    }
+
+    // Additional validation for phoneNumber format
+    if (!/^\d{10}$/.test(payload.phoneNumber.trim())) {
+      throw new ErrorResponse({
+        statusCode: HttpStatus.BAD_REQUEST,
+        errorMessage: 'Invalid phone number format. Phone number must be 10 digits.',
+      });
+    }
+  }
+
+
+
 }
