@@ -519,7 +519,7 @@ export class AuthService {
       const payload = {
         firstName: vcMapping?.mapped_data?.firstname || '',
         lastName: vcMapping?.mapped_data?.lastname || '',
-        username: `${vcMapping?.mapped_data?.otr_number.toString()}_008` || '',
+        username: `${vcMapping?.mapped_data?.otr_number.toString()}_010` || '',
         phoneNumber: vcMapping?.mapped_data?.phoneNumber.toString() || '',
         password: process.env.SIGNUP_DEFAULT_PASSWORD,
       };
@@ -575,10 +575,11 @@ export class AuthService {
         },
       });
     } catch (error) {
-      this.loggerService.error('processOtrAndRegisterWithUpload', error.message, error.stack);
+      const errorMessage = error instanceof ErrorResponse ? error.errorMessage : error.message;
+      this.loggerService.error('processOtrAndRegisterWithUpload', errorMessage, error.stack);
 
       // If user was registered but document upload failed, return partial success
-      if (isUserRegistered && (error?.message?.includes('upload') || error?.message?.includes('document'))) {
+      if (isUserRegistered && (errorMessage?.includes('upload') || errorMessage?.includes('document'))) {
         this.loggerService.warn(`User registered successfully but document upload failed for: ${generatedUsername}`);
 
         return new SuccessResponse({
@@ -593,9 +594,15 @@ export class AuthService {
       }
 
       // For all other errors (OTR processing or registration failures)
+      // If error is already an ErrorResponse, return it directly
+      if (error instanceof ErrorResponse) {
+        return error;
+      }
+
+      // Otherwise, wrap the error in an ErrorResponse
       return new ErrorResponse({
         statusCode: error.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message ?? 'Failed OTR registration flow',
+        errorMessage: errorMessage ?? 'Failed OTR registration flow',
       });
     }
   }
