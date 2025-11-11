@@ -13,13 +13,11 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiResponse, ApiTags, ApiConsumes } from '@nestjs/swagger';
-import { Request, Response } from 'express';
+import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDTO } from './dto/register.dto';
 import { LoginDTO } from './dto/login.dto';
-import { SuccessResponse } from 'src/common/responses/success-response';
-import { ErrorResponse } from 'src/common/responses/error-response';
-import { UploadDocumentDto } from '@modules/users/dto/upload-document.dto';
+import { UpdatePasswordDTO } from './dto/update-password.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -129,4 +127,18 @@ export class AuthController {
   logout(@Req() req: Request) {
     return this.authService.logout(req);
   }
+
+  @Post('/update-password')
+  @UsePipes(new ValidationPipe())
+  @ApiBody({
+    type: UpdatePasswordDTO,
+    description: 'Update user password after PASSWORD_UPDATE_REQUIRED',
+  })
+  @ApiResponse({ status: 200, description: 'PASSWORD_UPDATED_SUCCESSFULLY' })
+  @ApiResponse({ status: 404, description: 'USER_NOT_FOUND' })
+  @ApiResponse({ status: 400, description: 'BAD_REQUEST' })
+  public async updatePassword(@Body() body: UpdatePasswordDTO) {
+    return await this.authService.updatePassword(body);
+  }
+
 }
