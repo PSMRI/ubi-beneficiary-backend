@@ -1461,7 +1461,7 @@ export class UserService {
   ) {
     try {
       // Skip update if statusData is null or status is not present
-      if (!statusData || !statusData?.status) {
+      if (!statusData?.status) {
         Logger.log(`Skipping status update for application ${application.id}: No status data received from BPP`);
         return;
       }
