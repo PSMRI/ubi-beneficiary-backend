@@ -1,5 +1,5 @@
 import { UserService } from '@modules/users/users.service';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ErrorResponse } from 'src/common/responses/error-response';
 import { SuccessResponse } from 'src/common/responses/success-response';
@@ -8,6 +8,7 @@ import { WalletService } from 'src/services/wallet/wallet.service';
 
 import { KeycloakService } from 'src/services/keycloak/keycloak.service';
 import { LoginDTO } from './dto/login.dto';
+import { UploadDocumentDto } from '@modules/users/dto/upload-document.dto';
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -32,7 +33,7 @@ export class AuthService {
   public async login(body: LoginDTO) {
 
     const token = await this.keycloakService.getUserKeycloakToken(body);
-    
+
     if (token) {
       // First try to get Keycloak user details
       const keycloakUser = await this.keycloakService.getUserByUsername(body.username);
@@ -40,7 +41,7 @@ export class AuthService {
         // Try to find user by Keycloak ID (sso_id)
         const user = await this.userService.findBySsoId(keycloakUser.user.id);
         this.loggerService.log(`User found by Keycloak ID: ${JSON.stringify(user)}`);
-        
+
         if (user) {
           return new SuccessResponse({
             statusCode: HttpStatus.OK,
@@ -73,57 +74,57 @@ export class AuthService {
     }
   }
 
-/*   public async register(body) {
-    try {
-      // let wallet_api_url = process.env.WALLET_API_URL;
-      // Step 1: Check if mobile number exists in the database
-      await this.checkMobileExistence(body?.phoneNumber);
-
-      // Step 2: Prepare user data for Keycloak registration
-      const dataToCreateUser = this.prepareUserData(body);
-
-      // Step 3: Get Keycloak admin token
-      const token = await this.keycloakService.getAdminKeycloakToken();
-      this.validateToken(token);
-
-      // Step 4: Register user in Keycloak
-      const keycloakId = await this.registerUserInKeycloak(
-        dataToCreateUser,
-        token.access_token,
-      );
-
-      // Step 5: Register user in PostgreSQL
-      const userData = {
-        ...body,
-        keycloak_id: keycloakId,
-        username: dataToCreateUser.username,
-      };
-      const user = await this.userService.createKeycloakData(userData); */
-
-      /*
-      if (user) {
-        //create user payload
-        let wallet_user_payload = {
-          firstName: user?.firstName,
-          lastName: user?.lastName,
-          sso_provider: user?.sso_provider,
-          sso_id: user?.sso_id,
-          phoneNumber: user?.phoneNumber,
+  /*   public async register(body) {
+      try {
+        // let wallet_api_url = process.env.WALLET_API_URL;
+        // Step 1: Check if mobile number exists in the database
+        await this.checkMobileExistence(body?.phoneNumber);
+  
+        // Step 2: Prepare user data for Keycloak registration
+        const dataToCreateUser = this.prepareUserData(body);
+  
+        // Step 3: Get Keycloak admin token
+        const token = await this.keycloakService.getAdminKeycloakToken();
+        this.validateToken(token);
+  
+        // Step 4: Register user in Keycloak
+        const keycloakId = await this.registerUserInKeycloak(
+          dataToCreateUser,
+          token.access_token,
+        );
+  
+        // Step 5: Register user in PostgreSQL
+        const userData = {
+          ...body,
+          keycloak_id: keycloakId,
+          username: dataToCreateUser.username,
         };
+        const user = await this.userService.createKeycloakData(userData); */
 
-        await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
-      }*/
+  /*
+  if (user) {
+    //create user payload
+    let wallet_user_payload = {
+      firstName: user?.firstName,
+      lastName: user?.lastName,
+      sso_provider: user?.sso_provider,
+      sso_id: user?.sso_id,
+      phoneNumber: user?.phoneNumber,
+    };
 
-      // Step 6: Return success response
-      /* return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User created successfully',
-        data: user,
-      });
-    } catch (error) {
-      return this.handleRegistrationError(error, body?.keycloak_id);
-    }
-  } */
+    await axios.post(`${wallet_api_url}/users/create`, wallet_user_payload);
+  }*/
+
+  // Step 6: Return success response
+  /* return new SuccessResponse({
+    statusCode: HttpStatus.OK,
+    message: 'User created successfully',
+    data: user,
+  });
+} catch (error) {
+  return this.handleRegistrationError(error, body?.keycloak_id);
+}
+} */
 
   public async registerWithUsernamePassword(body) {
     try {
@@ -200,11 +201,11 @@ export class AuthService {
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User created successfully',
-        data: { 
-          user, 
+        data: {
+          user,
           userName: userName.toLowerCase(),
           // password,
-          walletOnboarded: !!walletToken 
+          walletOnboarded: !!walletToken
         },
       });
     } catch (error) {
@@ -318,7 +319,7 @@ export class AuthService {
           field.value !== null && field.value !== undefined ? String(field.value) : '',
         ])
       );
-      
+
       return {
         ...userInfo,
         ...customFieldsObj
@@ -396,6 +397,91 @@ export class AuthService {
         'Error during user registration. Keycloak user has been rolled back.',
     });
   }
+  async processOtrCertificate(
+    req: any,
+    file: Express.Multer.File,
+    uploadDocumentDto: UploadDocumentDto,
+  ) {
+    try {
+      // Step 1: Validate document type
+      if (uploadDocumentDto.docSubType !== 'otrCertificate') {
+        throw new BadRequestException('Only OTR Certificate is allowed for this flow');
+      }
+
+      // Step 2: Get document config (QR or OCR requirement)
+      const { requiresQRProcessing } = await this.userService.getDocumentConfig(uploadDocumentDto);
+
+      // Step 3: Validate file type
+      this.userService.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+
+      // Step 4: Perform OCR
+      const ocrResult = await this.userService.performOcr(file, uploadDocumentDto, requiresQRProcessing);
+
+      // Step 5: Fetch vcFields configuration
+      const vcFields = await this.userService.getVcFieldsForDocument(
+        uploadDocumentDto.docType,
+        uploadDocumentDto.docSubType,
+      );
+
+      // Step 6: Map OCR text to structured data
+      let vcMapping = null;
+      if (vcFields) {
+        vcMapping = await this.userService.ocrMapping.mapAfterOcr(
+          {
+            text: ocrResult.extractedText,
+            docType: uploadDocumentDto.docType,
+            docSubType: uploadDocumentDto.docSubType,
+          },
+          vcFields,
+        );
+      } else {
+        vcMapping = {
+          mapped_data: {},
+          missing_fields: [],
+          confidence: 0,
+          processing_method: 'keyword' as const,
+          warnings: ['No vcFields configuration found'],
+        };
+      }
+
+      // Step 7: Skip upload — just return data
+      Logger.debug('Skipping permanent file upload (pre-registration flow)');
+
+      return new SuccessResponse({
+        statusCode: HttpStatus.OK,
+        message: 'OTR Certificate processed successfully',
+        data: {
+          doc_type: uploadDocumentDto.docType,
+          doc_subtype: uploadDocumentDto.docSubType,
+          doc_name: uploadDocumentDto.docName,
+          ocr: ocrResult,
+          vc_mapping: vcMapping,
+        },
+      });
+    } catch (error) {
+      Logger.error('auth.service:processOtrCertificate', error?.message ?? error, error?.stack);
+
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        return new ErrorResponse({
+          statusCode: error.getStatus(),
+          errorMessage: error.message,
+        });
+      }
+
+      if (error?.response?.statusCode && error?.response?.message) {
+        return new ErrorResponse({
+          statusCode: error.response.statusCode,
+          errorMessage: error.response.message,
+        });
+      }
+
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error?.message || 'Failed to process OTR Certificate',
+      });
+    }
+  }
+
 
   public async logout(req) {
     const accessToken = req.body.access_token;
