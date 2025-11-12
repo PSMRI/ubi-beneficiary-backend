@@ -6,6 +6,7 @@ import {
   InternalServerErrorException,
   Logger,
   BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository, QueryRunner, In, Not, IsNull } from 'typeorm';
@@ -19,8 +20,8 @@ import { CreateUserApplicationDto } from './dto/create-user-application-dto';
 import { KeycloakService } from '@services/keycloak/keycloak.service';
 import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import ProfilePopulator from 'src/common/helper/profileUpdate/profile-update';
 import { CustomFieldsService } from '@modules/customfields/customfields.service';
 import { AdminService } from '@modules/admin/admin.service';
@@ -29,6 +30,12 @@ import { FieldContext } from '@modules/customfields/entities/field.entity';
 import { ConfigService } from '@nestjs/config';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
+import { UploadDocumentDto } from './dto/upload-document.dto';
+import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
+import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
+import { OcrService } from '@services/ocr/ocr.service';
+import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
+import { VcFieldsService } from '../../common/helper/vcFieldService';
 
 type StatusUpdateInfo = {
   attempted: boolean;
@@ -55,26 +62,32 @@ export class UserService {
     private readonly configService: ConfigService,
     private readonly proxyService: ProxyService,
     private readonly adminService: AdminService,
+    @Inject('FileStorageService')
+    private readonly fileStorageService: IFileStorageService,
+    private readonly documentUploadService: DocumentUploadService,
+    private readonly ocrService: OcrService,
+    private readonly ocrMappingService: OcrMappingService,
+    private readonly vcFieldsService: VcFieldsService,
   ) { }
 
 
- /*  async create(createUserDto: CreateUserDto) {
-    const user = this.userRepository.create(createUserDto);
-    try {
-      const savedUser = await this.userRepository.save(user);
-
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK, // Created
-        message: 'User created successfully.',
-        data: savedUser,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
-        errorMessage: error.message,
-      });
-    }
-  } */
+  /*  async create(createUserDto: CreateUserDto) {
+     const user = this.userRepository.create(createUserDto);
+     try {
+       const savedUser = await this.userRepository.save(user);
+ 
+       return new SuccessResponse({
+         statusCode: HttpStatus.OK, // Created
+         message: 'User created successfully.',
+         data: savedUser,
+       });
+     } catch (error) {
+       return new ErrorResponse({
+         statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
+         errorMessage: error.message,
+       });
+     }
+   } */
 
   async update(userId: string, updateUserDto: any) {
     // Destructure userInfo from the payload
@@ -208,7 +221,7 @@ export class UserService {
 
   async findUserDocs(user_id: string, decryptData: boolean) {
     const userDocs = await this.userDocsRepository.find({ where: { user_id } });
-    
+
     // Retrieve supported document subtypes from settings (vcConfiguration)
     let docTypes = [];
     try {
@@ -218,12 +231,22 @@ export class UserService {
       Logger.error('Failed to fetch vcConfiguration:', error);
       docTypes = [];
     }
-  
-    return userDocs.map((doc) => ({
-      ...doc,
-      is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
-    }));
+
+    // Generate pre-signed URLs for documents if using S3
+    const docsWithUrls = await Promise.all(
+      userDocs.map(async (doc) => {
+        const downloadUrl = await this.documentUploadService.generateDownloadUrl(doc.doc_path);
+        return {
+          ...doc,
+          is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
+          download_url: downloadUrl,
+        };
+      })
+    );
+
+    return docsWithUrls;
   }
+
 
   async findUserConsent(user_id: string): Promise<any> {
     const consents = await this.consentRepository.find({
@@ -284,35 +307,35 @@ export class UserService {
   }
 
   // User docs save
-/*   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
-    try {
-      // Stringify the JSON doc_data before encryption
-      const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
-
-      const newUserDoc = this.userDocsRepository.create({
-        ...createUserDocDto,
-        doc_data: stringifiedDocData,
-      });
-
-      const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User docs added to DB successfully.',
-        data: savedUserDoc,
-      });
-    } catch (error) {
-      if (error.code == '23505') {
+  /*   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
+      try {
+        // Stringify the JSON doc_data before encryption
+        const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
+  
+        const newUserDoc = this.userDocsRepository.create({
+          ...createUserDocDto,
+          doc_data: stringifiedDocData,
+        });
+  
+        const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
+        return new SuccessResponse({
+          statusCode: HttpStatus.OK,
+          message: 'User docs added to DB successfully.',
+          data: savedUserDoc,
+        });
+      } catch (error) {
+        if (error.code == '23505') {
+          return new ErrorResponse({
+            statusCode: HttpStatus.BAD_REQUEST,
+            errorMessage: error.detail,
+          });
+        }
         return new ErrorResponse({
-          statusCode: HttpStatus.BAD_REQUEST,
-          errorMessage: error.detail,
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          errorMessage: error,
         });
       }
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error,
-      });
-    }
-  } */
+    } */
 
   async getDoc(createUserDocDto: CreateUserDocDTO) {
     const existingDoc = await this.userDocsRepository.findOne({
@@ -666,7 +689,7 @@ export class UserService {
     limit?: number;
   }) {
     const { filters = {}, search, page = 1, limit = 10 } = requestBody;
-    
+
     let statusUpdateInfo: StatusUpdateInfo;
     if (filters.benefit_id) {
       // skipped due to benefit_id filter
@@ -694,8 +717,8 @@ export class UserService {
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User applications list retrieved successfully.',
-        data: { 
-          applications: userApplication, 
+        data: {
+          applications: userApplication,
           total,
           statusUpdate: statusUpdateInfo
         },
@@ -717,7 +740,7 @@ export class UserService {
     try {
       statusUpdateInfo.attempted = true;
       const applicationsForUpdate = await this.getApplications(userId);
-      
+
       if (applicationsForUpdate.length > 0) {
         await this.processApplications(applicationsForUpdate);
         statusUpdateInfo.success = true;
@@ -967,8 +990,8 @@ export class UserService {
       return;
     }
 
-    const callbackUrl = createUserDocDto.watcher_callback_url || 
-                       `${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
+    const callbackUrl = createUserDocDto.watcher_callback_url ||
+      `${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
 
     try {
       const watcherResult = await this.registerWatcher(
@@ -985,10 +1008,10 @@ export class UserService {
         savedDoc.watcher_registered = true;
         savedDoc.watcher_email = email;
         savedDoc.watcher_callback_url = callbackUrl;
-        
+
         // Save the updated document
         await this.userDocsRepository.save(savedDoc);
-        
+
         Logger.log(`Watcher registered successfully for document: ${savedDoc.doc_id}`);
       } else {
         Logger.warn(`Watcher registration failed for document: ${savedDoc.doc_id}, Error: ${watcherResult.message}`);
@@ -1041,6 +1064,9 @@ export class UserService {
           'You are not authorized to modify or delete this resourse',
       });
 
+    // Store the file path before deleting from database
+    const filePath = existingDoc.doc_path;
+
     // Delete the document
     const queryRunner =
       this.userDocsRepository.manager.connection.createQueryRunner();
@@ -1051,8 +1077,19 @@ export class UserService {
       // Reset the field along with deleting the document
       await this.resetField(existingDoc, queryRunner);
       await queryRunner.commitTransaction();
+
+      // Delete the physical file using document upload service
+      if (filePath) {
+        try {
+          await this.documentUploadService.deleteFile(filePath);
+        } catch (fileError) {
+          Logger.error(`Failed to delete file from storage: ${fileError}`);
+          // Don't fail the entire operation if file deletion fails
+        }
+      }
     } catch (error) {
       Logger.error('Error while deleting the document: ', error);
+      await queryRunner.rollbackTransaction();
       await queryRunner.release();
       return new ErrorResponse({
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1269,7 +1306,7 @@ export class UserService {
     userDetails: any,
   ): Promise<{ success: boolean; message?: string; data?: any }> {
     try {
-      const walletUrl = process.env.WALLET_BASE_URL+ '/api/wallet/vcs/watch';
+      const walletUrl = process.env.WALLET_BASE_URL + '/api/wallet/vcs/watch';
       const authToken = userDetails.walletToken || '';
 
       if (!authToken) {
@@ -1451,7 +1488,7 @@ export class UserService {
       return applications;
     } catch (error) {
       Logger.error(`Error while getting user applications: ${error}`);
-      throw new InternalServerErrorException(  'Failed to fetch user applications');
+      throw new InternalServerErrorException('Failed to fetch user applications');
     }
   }
 
@@ -1515,10 +1552,10 @@ export class UserService {
     const bppId = userApplication.benefit_provider_id;
     const bppUri = userApplication.benefit_provider_uri;
     const transactionId = userApplication.transaction_id;
-    if (!bapId || !bapUri || !bppId || !bppUri || !transactionId) {  
+    if (!bapId || !bapUri || !bppId || !bppUri || !transactionId) {
       throw new Error('Missing required configuration for BAP/BPP or transaction_id not found in database');
     }
-    
+
     const body = {
       context: {
         domain: this.configService.get<string>('DOMAIN'),
@@ -1533,15 +1570,15 @@ export class UserService {
         transaction_id: transactionId,
         message_id: uuidv4(),
         location: {
-					country: {
-						name: 'India',
-						code: 'IND',
-					},
-					city: {
-						name: 'Bangalore',
-						code: 'std:080',
-					},
-				},
+          country: {
+            name: 'India',
+            code: 'IND',
+          },
+          city: {
+            name: 'Bangalore',
+            code: 'std:080',
+          },
+        },
       },
       message: {
         order_id: orderId,
@@ -1597,7 +1634,7 @@ export class UserService {
   async updateApplicationStatuses(req?: any) {
     try {
       let userId: string | undefined;
-      
+
       // If req is provided, extract user_id from token
       if (req) {
         userId = req.mw_userid;
@@ -1645,10 +1682,10 @@ export class UserService {
     }
 
     // Check if any document has empty doc_data_link
-    const invalidDocs = userDocs.filter(doc => 
+    const invalidDocs = userDocs.filter(doc =>
       !doc.doc_data_link || doc.doc_data_link === '' || doc.doc_data_link === null
     );
-    
+
     if (invalidDocs.length > 0) {
       Logger.warn(`Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`);
       return new ErrorResponse({
@@ -1714,7 +1751,7 @@ export class UserService {
     for (const userDoc of userDocs) {
       userDoc.doc_data = JSON.stringify(updatedDocData) as any;
       userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
-      
+
       // Save the updated document
       const updatedUserDoc = await this.userDocsRepository.save(userDoc);
       updatedUserDocs.push(updatedUserDoc);
@@ -1724,7 +1761,7 @@ export class UserService {
 
   private async writeDocumentsToFiles(updatedUserDocs: any[], updatedDocData: any) {
     const baseFolder = path.join(__dirname, 'userData');
-    
+
     for (const updatedUserDoc of updatedUserDocs) {
       const userFilePath = path.join(baseFolder, "undefined.json");
 
@@ -1758,7 +1795,7 @@ export class UserService {
   private async updateUserProfiles(updatedUserDocs: any[]) {
     // Get unique user IDs to avoid duplicate profile updates
     const uniqueUserIds = [...new Set(updatedUserDocs.map(doc => doc.user_id))];
-    
+
     for (const userId of uniqueUserIds) {
       try {
         const userDetails = await this.userRepository.findOne({
@@ -1840,5 +1877,321 @@ export class UserService {
         errorMessage: 'Failed to process wallet callback',
       });
     }
+  }
+
+
+  /**
+   * Upload a document file with metadata and store it in the database
+   * If a document with the same type, subtype, and name exists for the user, it will be updated
+   * @param req The request object containing authenticated user information
+   * @param file The uploaded file (from multer)
+   * @param uploadDocumentDto Metadata for the document
+   * @returns Success response with document details
+   */
+  async uploadDocument(
+    req: any,
+    file: Express.Multer.File,
+    uploadDocumentDto: UploadDocumentDto,
+  ) {
+    try {
+      const userDetails = await this.getUserDetails(req);
+
+      const existingDoc = await this.userDocsRepository.findOne({
+        where: {
+          user_id: userDetails.user_id,
+          doc_type: uploadDocumentDto.docType,
+          doc_subtype: uploadDocumentDto.docSubType,
+          doc_name: uploadDocumentDto.docName,
+        },
+      });
+
+      // Validate document type and subtype
+      this.validateDocumentType(uploadDocumentDto);
+
+      // Determine document config and whether QR processing is required
+      const { requiresQRProcessing } = await this.getDocumentConfig(uploadDocumentDto);
+
+      // Validate file type for QR processing
+      this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+
+      // Perform OCR extraction (throws on failure)
+      const ocrResult = await this.performOcr(file, uploadDocumentDto, requiresQRProcessing);
+
+      // Get vcFields configuration for the document type
+      const vcFields = await this.vcFieldsService.getVcFields(
+        uploadDocumentDto.docType,
+        uploadDocumentDto.docSubType,
+      );
+
+      // Map OCR text to structured data based on vcFields configuration
+      let vcMapping = null;
+      if (vcFields) {
+        vcMapping = await this.ocrMappingService.mapAfterOcr({
+          text: ocrResult.extractedText,
+          docType: uploadDocumentDto.docType,
+          docSubType: uploadDocumentDto.docSubType,
+        }, vcFields);
+      } else {
+        Logger.warn(`No vcFields configuration found for docType: ${uploadDocumentDto.docType}, docSubType: ${uploadDocumentDto.docSubType}`);
+        vcMapping = {
+          mapped_data: {},
+          missing_fields: [],
+          confidence: 0,
+          processing_method: 'keyword' as const,
+          warnings: ['No vcFields configuration found'],
+        };
+      }
+
+      // Upload file to storage
+      const uploadResult = await this.documentUploadService.uploadFile(
+        file,
+        {
+          docType: uploadDocumentDto.docType,
+          docSubType: uploadDocumentDto.docSubType,
+          docName: uploadDocumentDto.docName,
+          importedFrom: uploadDocumentDto.importedFrom,
+        },
+        userDetails.user_id,
+      );
+
+      // Save or update the document record
+      const { savedDoc, isUpdate } = existingDoc
+        ? await this.updateExistingDoc(existingDoc, uploadResult, uploadDocumentDto, vcMapping)
+        : await this.createNewDoc(userDetails.user_id, uploadResult, uploadDocumentDto, vcMapping);
+
+      // Generate download URL and return standardized response
+      const downloadUrl = await this.documentUploadService.generateDownloadUrl(savedDoc.doc_path);
+
+      return new SuccessResponse({
+        statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
+        message: isUpdate ? 'Document updated successfully' : 'Document uploaded successfully',
+        data: {
+          doc_id: savedDoc.doc_id,
+          doc_path: savedDoc.doc_path,
+          user_id: savedDoc.user_id,
+          doc_type: savedDoc.doc_type,
+          doc_subtype: savedDoc.doc_subtype,
+          doc_name: savedDoc.doc_name,
+          imported_from: savedDoc.imported_from,
+          doc_datatype: savedDoc.doc_datatype,
+          uploaded_at: savedDoc.uploaded_at,
+          is_update: isUpdate,
+          download_url: downloadUrl,
+          ocr: ocrResult,
+          vc_mapping: vcMapping,
+        },
+      });
+    } catch (error) {
+      Logger.error(
+        'users.service:uploadDocument',
+        error?.message ?? error,
+        error?.stack,
+      );
+
+      if (error?.code === '23505') {
+        return new ErrorResponse({
+          statusCode: HttpStatus.BAD_REQUEST,
+          errorMessage: 'Duplicate document entry',
+        });
+      }
+
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        return new ErrorResponse({
+          statusCode: error.getStatus(),
+          errorMessage: error.message,
+        });
+      }
+
+      // Handle nested service errors
+      if (error?.response?.statusCode && error?.response?.message) {
+        return new ErrorResponse({
+          statusCode: error.response.statusCode,
+          errorMessage: error.response.message,
+        });
+      }
+
+      return new ErrorResponse({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorMessage: error?.message || 'Failed to upload document',
+      });
+    }
+  }
+
+  // Wrapper method to get vcFields for a document type
+  public async getVcFieldsForDocument(docType: string, docSubType: string) {
+    return await this.vcFieldsService.getVcFields(docType, docSubType);
+  }
+
+  // Expose ocrMapping service for external use
+  public get ocrMapping() {
+    return this.ocrMappingService;
+  }
+
+  // Helper to get document configuration and QR processing requirement
+  public async getDocumentConfig(uploadDocumentDto: UploadDocumentDto): Promise<{ requiresQRProcessing: boolean; documentConfig?: any }> {
+    let requiresQRProcessing = false;
+    let documentConfig = null;
+
+    if (!uploadDocumentDto.docSubType) {
+      return { requiresQRProcessing, documentConfig };
+    }
+
+    try {
+      const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
+      if (vcConfig?.value && Array.isArray(vcConfig.value)) {
+        documentConfig = vcConfig.value.find(
+          (doc: any) => doc.documentSubType === uploadDocumentDto.docSubType
+        );
+
+        if (documentConfig) {
+          requiresQRProcessing = documentConfig.issueVC?.toLowerCase() === 'no';
+          Logger.log(
+            `Document config for ${uploadDocumentDto.docSubType}: issueVC=${documentConfig.issueVC}, ` +
+            `requiresQRProcessing=${requiresQRProcessing}`
+          );
+        }
+      }
+    } catch (configError) {
+      Logger.warn(`Failed to fetch document configuration: ${configError.message}`);
+    }
+
+    return { requiresQRProcessing, documentConfig };
+  }
+
+  // Helper to validate document type and subtype
+  public async validateDocumentType(uploadDocumentDto: UploadDocumentDto) {
+    if (!uploadDocumentDto.docType || uploadDocumentDto.docType.trim() === '') {
+      throw new BadRequestException('Document type is required and cannot be empty.');
+    }
+
+    if (!uploadDocumentDto.docSubType || uploadDocumentDto.docSubType.trim() === '') {
+      throw new BadRequestException('Document subtype is required and cannot be empty.');
+    }
+  }
+
+  // Helper to validate file type when QR processing is required
+  public async validateFileTypeForQr(requiresQRProcessing: boolean, mimetype: string) {
+    if (requiresQRProcessing && mimetype === 'application/pdf') {
+      throw new BadRequestException(
+        'QR processing failed: PDF QR code extraction is not supported. Please upload an image with a QR code.'
+      );
+    }
+  }
+
+  // Helper to perform OCR extraction and validations
+  public async performOcr(file: Express.Multer.File, uploadDocumentDto: UploadDocumentDto, requiresQRProcessing: boolean) {
+    try {
+      Logger.log(
+        `Starting OCR extraction ${requiresQRProcessing ? 'with QR processing' : 'without QR processing'} for document validation`
+      );
+
+      const extractedData = requiresQRProcessing
+        ? await this.ocrService.extractTextFromBufferWithQR(
+          file.buffer,
+          file.mimetype,
+          uploadDocumentDto.docSubType,
+        )
+        : await this.ocrService.extractTextFromBuffer(
+          file.buffer,
+          file.mimetype,
+        );
+
+      const ocrResult = {
+        extractedText: extractedData.fullText,
+        confidence: extractedData.confidence,
+        metadata: extractedData.metadata,
+        qrProcessing: requiresQRProcessing && 'qrProcessing' in extractedData
+          ? extractedData.qrProcessing
+          : undefined,
+      };
+
+      Logger.log(
+        `OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
+        (requiresQRProcessing && 'qrProcessing' in extractedData && extractedData.qrProcessing && (extractedData.qrProcessing as any)?.qrCodeDetected
+          ? ` (QR code processed)` : '')
+      );
+
+      if (extractedData.fullText.length === 0) {
+        Logger.error(`OCR validation failed: No text extracted from document`);
+        throw new BadRequestException(
+          'Document validation failed: No readable text found in the uploaded document. Please ensure the document contains clear, readable text and try again.'
+        );
+      }
+
+      if (extractedData.confidence < 10) {
+        Logger.error(`OCR validation failed: Very low confidence (${extractedData.confidence}%)`);
+        throw new BadRequestException(
+          'Document validation failed: The document quality is too poor for reliable text extraction. Please upload a clearer, higher-quality image or document.'
+        );
+      }
+
+      return ocrResult;
+    } catch (ocrError) {
+      Logger.error(`OCR processing failed: ${ocrError.message}`);
+
+      // If it's already a BadRequestException (like QR processing errors), preserve the user-friendly message
+      if (ocrError instanceof BadRequestException) {
+        throw ocrError;
+      }
+
+      // For other errors, wrap in InternalServerErrorException
+      throw new InternalServerErrorException(
+        `Document processing failed: ${ocrError.message}`
+      );
+    }
+  }
+
+  // Helper methods for document management
+
+  private async updateExistingDoc(
+    existingDoc: UserDoc,
+    uploadResult: any,
+    uploadDocumentDto: UploadDocumentDto,
+    vcMapping: any,
+  ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+    const previousPath = existingDoc.doc_path;
+    existingDoc.doc_path = uploadResult.filePath;
+    existingDoc.imported_from = uploadDocumentDto.importedFrom;
+    existingDoc.doc_datatype = uploadResult.docDatatype;
+    existingDoc.uploaded_at = uploadResult.uploadedAt;
+
+    // Store vc_mapping data in doc_data column (will be automatically encrypted)
+    if (vcMapping) {
+      existingDoc.doc_data = JSON.stringify(vcMapping) as any;
+    }
+
+    const savedDoc = await this.userDocsRepository.save(existingDoc);
+    if (previousPath) {
+      await this.documentUploadService.deleteFile(previousPath);
+    }
+    Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
+    return { savedDoc, isUpdate: true };
+  }
+
+  public async createNewDoc(
+    userId: string,
+    uploadResult: any,
+    uploadDocumentDto: UploadDocumentDto,
+    vcMapping: any,
+  ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+    const newUserDoc = this.userDocsRepository.create({
+      user_id: userId,
+      doc_type: uploadDocumentDto.docType,
+      doc_subtype: uploadDocumentDto.docSubType,
+      doc_name: uploadDocumentDto.docName,
+      imported_from: uploadDocumentDto.importedFrom,
+      doc_path: uploadResult.filePath,
+      doc_data: vcMapping ? JSON.stringify(vcMapping) as any : null,
+      doc_datatype: uploadResult.docDatatype,
+      doc_verified: null,
+      watcher_registered: false,
+      watcher_email: null,
+      watcher_callback_url: null,
+      doc_data_link: null,
+    });
+
+    const savedDoc = await this.userDocsRepository.save(newUserDoc);
+    Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}`);
+    return { savedDoc, isUpdate: false };
   }
 }

@@ -11,8 +11,15 @@ import {
 	InternalServerErrorException,
 	UnauthorizedException,
 	Logger,
+	UseInterceptors,
+	UploadedFile,
+	BadRequestException,
+  ParseFilePipe,
+  MaxFileSizeValidator,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from '../users/users.service';
+import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 import {
   ApiBasicAuth,
   ApiBody,
@@ -20,6 +27,7 @@ import {
   ApiQuery,
   ApiResponse,
   ApiTags,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { CreateConsentDto } from './dto/create-consent.dto';
@@ -30,6 +38,7 @@ import { Request } from 'express';
 import { FetchVcUrlDto } from './dto/fetch-vc-url.dto';
 import { WalletCallbackDto } from './dto/wallet-callback.dto';
 import { UploadDocDTO } from './dto/upload-doc.dto';
+import { UploadDocumentDto } from './dto/upload-document.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -205,9 +214,12 @@ export class UserController {
 
   @Delete('/delete-doc/:doc_id')
   @UseGuards(AuthGuard)
-  @ApiOperation({ summary: 'Delete a document' })
+  @ApiOperation({ 
+    summary: 'Delete a document',
+    description: 'Deletes a document from the database and removes the associated file from the uploads folder'
+  })
   @ApiBasicAuth('access-token')
-  @ApiResponse({ status: 200, description: 'Document deleted successfully' })
+  @ApiResponse({ status: 200, description: 'Document deleted successfully (both database record and physical file)' })
   @ApiResponse({ status: 400, description: 'Document not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
@@ -243,5 +255,98 @@ export class UserController {
   @ApiResponse({ status: 500, description: 'Internal server error' })
   async handleWalletCallback(@Body() walletCallbackDto: WalletCallbackDto) {
     return await this.userService.handleWalletCallback(walletCallbackDto);
+  }
+
+  @Post('/upload-document')
+  @UseGuards(AuthGuard)
+  @ApiBasicAuth('access-token')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ 
+    summary: 'Upload a document file with metadata',
+    description: 'Uploads a new document or updates an existing one if a document with the same type, subtype, and name already exists for the user. Old file will be replaced with the new one.'
+  })
+  @ApiBody({
+    description: 'Document upload with metadata',
+    type: UploadDocumentDto,
+  })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Document uploaded successfully (new document created)',
+    schema: {
+      example: {
+        success: true,
+        statusCode: 201,
+        message: 'Document uploaded successfully',
+        data: {
+          doc_id: 'a3d8fa45-bdfa-49d1-8b3f-54bafcf3aabb',
+          doc_path: 'uploads/file-1635789456123-123456789.pdf',
+          user_id: 'b4e9gb56-cefb-5ae2-9c4g-65cbgdg4bbcc',
+          doc_type: 'associationProof',
+          doc_subtype: 'enrollmentCertificate',
+          doc_name: 'Enrollment Certificate',
+          imported_from: 'Manual Upload',
+          doc_datatype: 'PDF',
+          uploaded_at: '2025-10-29T10:30:00.000Z',
+          is_update: false,
+          download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-123.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
+        }
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Document updated successfully (existing document replaced)',
+    schema: {
+      example: {
+        success: true,
+        statusCode: 200,
+        message: 'Document updated successfully',
+        data: {
+          doc_id: 'a3d8fa45-bdfa-49d1-8b3f-54bafcf3aabb',
+          doc_path: 'uploads/file-1635789456123-987654321.pdf',
+          user_id: 'b4e9gb56-cefb-5ae2-9c4g-65cbgdg4bbcc',
+          doc_type: 'associationProof',
+          doc_subtype: 'enrollmentCertificate',
+          doc_name: 'Enrollment Certificate',
+          imported_from: 'Manual Upload',
+          doc_datatype: 'PDF',
+          uploaded_at: '2025-10-29T11:45:00.000Z',
+          is_update: true,
+          download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-456.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request - Invalid file or metadata' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async uploadDocument(
+    @Req() req: Request,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: FILE_UPLOAD_LIMITS.MAX_FILE_SIZE }),
+        ],
+        errorHttpStatusCode: 400,
+      })
+    ) file: Express.Multer.File,
+    @Body() uploadDocumentDto: UploadDocumentDto,
+  ) {
+    try {
+      return await this.userService.uploadDocument(req, file, uploadDocumentDto);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
+        throw error;
+      }
+      Logger.error(
+        error?.message ?? 'Failed to upload document',
+        error?.stack,
+        'users.controller:uploadDocument',
+      );
+      throw new InternalServerErrorException(
+        'An error occurred while uploading the document',
+      );
+    }
   }
 }

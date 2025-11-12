@@ -23,6 +23,9 @@ import { CustomFieldsModule } from './modules/customfields/customfields.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
 import { NetworkCache } from './entity/network-cache.entity';
+import { StorageProviderModule } from './services/storage-providers/storage-provider.module';
+import { OcrModule } from './services/ocr/ocr.module';
+import { OcrMappingModule } from './services/ocr-mapping/ocr-mapping.module';
 
 @Module({
 	imports: [
@@ -59,6 +62,9 @@ import { NetworkCache } from './entity/network-cache.entity';
 		CustomFieldsModule,
 		AdminModule,
 		HousekeepingModule,
+		StorageProviderModule,
+		OcrModule,
+		OcrMappingModule,
 	],
 	controllers: [AppController],
 	providers: [
