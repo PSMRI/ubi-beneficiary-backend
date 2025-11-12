@@ -52,6 +52,7 @@ export class BedrockAdapter implements IAiMappingAdapter {
 
     try {
       const prompt = buildOcrMappingPrompt(extractedText, schema);
+      this.logger.debug(`Sending request to Bedrock (${Object.keys(schema.properties || {}).length} fields)`);
       const response = await this.invokeModel(prompt);
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'bedrock');
       
@@ -60,9 +61,10 @@ export class BedrockAdapter implements IAiMappingAdapter {
         return null;
       }
       
+      this.logger.debug(`Bedrock extracted ${Object.keys(parsedResult).length} fields`);
       return parsedResult;
     } catch (error: any) {
-      this.logger.error(`Bedrock mapping failed: ${error?.message || error}`, error?.stack);
+      this.logger.error(`Bedrock mapping failed: ${error?.message || error}`);
       handleMappingError(error, 'bedrock');
     }
   }
@@ -70,8 +72,11 @@ export class BedrockAdapter implements IAiMappingAdapter {
 
   /**
    * Invoke the Bedrock Llama model
+   * Reference: AWS Bedrock Llama 3 requires specific parameter format
+   * https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-meta.html
    */
   private async invokeModel(prompt: string): Promise<string> {
+    // AWS Bedrock Llama 3 request format - all parameters are required
     const input = {
       prompt,
       max_gen_len: this.config.maxGenLen,
@@ -81,13 +86,20 @@ export class BedrockAdapter implements IAiMappingAdapter {
 
     const command = new InvokeModelCommand({
       modelId: this.config.modelId,
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: new TextEncoder().encode(JSON.stringify(input)),
+      body: JSON.stringify(input),
     });
 
-    const response = await this.client.send(command);
-    return new TextDecoder().decode(response.body);
+    try {
+      const response = await this.client.send(command);
+      const responseBody = new TextDecoder().decode(response.body);
+      return responseBody;
+    } catch (error: any) {
+      this.logger.error(`Bedrock API error: ${error?.message}`, {
+        name: error?.name,
+        statusCode: error?.$metadata?.httpStatusCode,
+      });
+      throw error;
+    }
   }
 
 }

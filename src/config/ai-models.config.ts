@@ -1,7 +1,8 @@
 /**
  * AI Model Configuration
  * Centralizes AI model configurations for OCR and mapping services.
- * Only essential credentials come from env vars, all other params use optimal defaults.
+ * 
+ * For detailed parameter documentation, see: docs/AI_MODEL_PARAMETERS.md
  */
 
 export interface AIModelConfig {
@@ -49,12 +50,13 @@ export const GEMINI_CONFIG = {
 } as const;
 
 // AWS Bedrock (Llama) configurations for OCR and mapping
+// NOTE: Llama 3 8B has a maximum of 2048 tokens for max_gen_len
 export const BEDROCK_CONFIG = {
   ocr: {
     modelId: process.env.OCR_BEDROCK_MODEL_ID || 'meta.llama3-8b-instruct-v1:0',
     temperature: 0.1,        // Low randomness for consistent extraction
-    maxTokens: 8192,
-    maxGenLen: 8192,
+    maxTokens: 2048,
+    maxGenLen: 2048,
     topP: 1,                 // Full sampling for complete text
     timeout: 60000,
   },
@@ -62,9 +64,9 @@ export const BEDROCK_CONFIG = {
   mapping: {
     modelId: process.env.OCR_MAPPING_BEDROCK_MODEL_ID || 'meta.llama3-8b-instruct-v1:0',
     temperature: 0.1,        // Low randomness for consistent JSON
-    maxTokens: 2000,
-    maxGenLen: 2000,
-    topP: 0.9,               // Focused sampling for structured output
+    maxTokens: 2048,        // Llama 3 8B maximum limit
+    maxGenLen: 2048,        // Llama 3 8B maximum limit
+    topP: 1,                // Full sampling for complete text
     timeout: 30000,
   },
 } as const;
