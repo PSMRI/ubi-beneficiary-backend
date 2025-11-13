@@ -9,7 +9,7 @@ import {
 	Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
+import { ILike, Repository, QueryRunner, In, Not, IsNull } from 'typeorm';
 import { User } from '../../entity/user.entity';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
@@ -71,22 +71,22 @@ export class UserService {
 	) {}
 
 	/*  async create(createUserDto: CreateUserDto) {
-	 const user = this.userRepository.create(createUserDto);
-	 try {
-	   const savedUser = await this.userRepository.save(user);
- 
-	   return new SuccessResponse({
-		 statusCode: HttpStatus.OK, // Created
-		 message: 'User created successfully.',
-		 data: savedUser,
-	   });
-	 } catch (error) {
-	   return new ErrorResponse({
-		 statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
-		 errorMessage: error.message,
-	   });
-	 }
-   } */
+	   const user = this.userRepository.create(createUserDto);
+	   try {
+		 const savedUser = await this.userRepository.save(user);
+   
+		 return new SuccessResponse({
+		   statusCode: HttpStatus.OK, // Created
+		   message: 'User created successfully.',
+		   data: savedUser,
+		 });
+	   } catch (error) {
+		 return new ErrorResponse({
+		   statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
+		   errorMessage: error.message,
+		 });
+	   }
+	 } */
 
 	async update(userId: string, updateUserDto: any) {
 		// Destructure userInfo from the payload
@@ -319,34 +319,34 @@ export class UserService {
 
 	// User docs save
 	/*   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
-	  try {
-		// Stringify the JSON doc_data before encryption
-		const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
-  
-		const newUserDoc = this.userDocsRepository.create({
-		  ...createUserDocDto,
-		  doc_data: stringifiedDocData,
-		});
-  
-		const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
-		return new SuccessResponse({
-		  statusCode: HttpStatus.OK,
-		  message: 'User docs added to DB successfully.',
-		  data: savedUserDoc,
-		});
-	  } catch (error) {
-		if (error.code == '23505') {
+		try {
+		  // Stringify the JSON doc_data before encryption
+		  const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
+	
+		  const newUserDoc = this.userDocsRepository.create({
+			...createUserDocDto,
+			doc_data: stringifiedDocData,
+		  });
+	
+		  const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
+		  return new SuccessResponse({
+			statusCode: HttpStatus.OK,
+			message: 'User docs added to DB successfully.',
+			data: savedUserDoc,
+		  });
+		} catch (error) {
+		  if (error.code == '23505') {
+			return new ErrorResponse({
+			  statusCode: HttpStatus.BAD_REQUEST,
+			  errorMessage: error.detail,
+			});
+		  }
 		  return new ErrorResponse({
-			statusCode: HttpStatus.BAD_REQUEST,
-			errorMessage: error.detail,
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			errorMessage: error,
 		  });
 		}
-		return new ErrorResponse({
-		  statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-		  errorMessage: error,
-		});
-	  }
-	} */
+	  } */
 
 	async getDoc(createUserDocDto: CreateUserDocDTO) {
 		const existingDoc = await this.userDocsRepository.findOne({
@@ -570,38 +570,35 @@ export class UserService {
 		userDetails: any,
 		baseFolder: string,
 	): Promise<UserDoc | null> {
-		// Skip VC verification if imported_from is "VC Create"
-		const skipVerification =
-			createUserDocDto.imported_from?.trim().toLowerCase() === 'vc create';
+		// Call the verification method before further processing
+		let verificationResult;
+		try {
+			// Extract issuer from doc_data if available, otherwise use undefined (will fallback to default)
+			const issuer = (createUserDocDto as any).issuer || undefined;
+			verificationResult = await this.verifyVcWithApi(
+				createUserDocDto.doc_data,
+				issuer,
+			);
+		} catch (error) {
+			// Extract a user-friendly message
+			let message =
+				error?.response?.data?.message ??
+				error?.message ??
+				'VC Verification failed';
+			throw new BadRequestException({
+				message: message,
+				error: 'Bad Request',
+				statusCode: 400,
+			});
+		}
 
-		if (!skipVerification) {
-			// Call the verification method before further processing
-			let verificationResult;
-			try {
-				verificationResult = await this.verifyVcWithApi(
-					createUserDocDto.doc_data,
-				);
-			} catch (error) {
-				// Extract a user-friendly message
-				let message =
-					error?.response?.data?.message ??
-					error?.message ??
-					'VC Verification failed';
-				throw new BadRequestException({
-					message: message,
-					error: 'Bad Request',
-					statusCode: 400,
-				});
-			}
-
-			if (!verificationResult.success) {
-				throw new BadRequestException({
-					message: verificationResult.message ?? 'VC Verification failed',
-					errors: verificationResult.errors ?? [],
-					statusCode: 400,
-					error: 'Bad Request',
-				});
-			}
+		if (!verificationResult.success) {
+			throw new BadRequestException({
+				message: verificationResult.message ?? 'VC Verification failed',
+				errors: verificationResult.errors ?? [],
+				statusCode: 400,
+				error: 'Bad Request',
+			});
 		}
 
 		const userFilePath = path.join(
@@ -1342,13 +1339,20 @@ export class UserService {
 
 	private async verifyVcWithApi(
 		vcData: any,
+		issuer?: string,
 	): Promise<{ success: boolean; message?: string; errors?: any[] }> {
 		try {
+			// Try to extract issuer from VC data if not provided
+			// VC data may have issuer as a string (DID) or object with id property
+
+			const issuerName =
+				issuer || process.env.VC_DEFAULT_ISSUER_NAME || 'dhiway';
+
 			const verificationPayload = {
 				credential: vcData,
 				config: {
 					method: 'online',
-					issuerName: process.env.VC_DEFAULT_ISSUER_NAME ?? 'dhiway',
+					issuerName: issuerName,
 				},
 			};
 
@@ -1361,10 +1365,14 @@ export class UserService {
 				};
 			}
 
-			const response = await axios.post(verificationUrl, verificationPayload, {
-				headers: { 'Content-Type': 'application/json' },
-				timeout: 8000,
-			});
+			const response = await axios.post(
+				`${verificationUrl}/verification`,
+				verificationPayload,
+				{
+					headers: { 'Content-Type': 'application/json' },
+					timeout: 8000,
+				},
+			);
 
 			// Use the API's response format directly
 			return {
@@ -1596,6 +1604,7 @@ export class UserService {
 		try {
 			const whereCondition: any = {
 				status: Not(In(['amount received', 'rejected', 'disbursed'])),
+				bpp_application_id: Not(IsNull()), // Only fetch applications with order_id
 			};
 
 			if (userId) {
@@ -1620,7 +1629,13 @@ export class UserService {
 		statusData: { status: string; comment: string },
 	) {
 		try {
-			if (!statusData?.status) return;
+			// Skip update if statusData is null or status is not present
+			if (!statusData?.status) {
+				Logger.log(
+					`Skipping status update for application ${application.id}: No status data received from BPP`,
+				);
+				return;
+			}
 
 			application.status = statusData.status.toLowerCase(); // e.g., "approved"
 			application.remark = statusData.comment || ''; // Save the comment
@@ -1645,6 +1660,11 @@ export class UserService {
 	}
 
 	async getStatus(orderId: string) {
+		// Skip if orderId is null or empty
+		if (!orderId) {
+			Logger.warn('Skipping status check: order_id is null or empty');
+			return null;
+		}
 		const bapId = this.configService.get<string>('BAP_ID');
 		const bapUri = this.configService.get<string>('BAP_URI');
 
@@ -1702,7 +1722,12 @@ export class UserService {
 			const rawStatus =
 				response?.responses[0]?.message?.order?.fulfillments[0]?.state
 					?.descriptor?.name;
-			if (!rawStatus) return null;
+			if (!rawStatus) {
+				Logger.warn(
+					`No fulfillments received in status response for order_id: ${orderId}`,
+				);
+				return null;
+			}
 
 			// Parse status stringified JSON
 			const parsedStatus = JSON.parse(rawStatus);
@@ -1838,10 +1863,10 @@ export class UserService {
 		return updatedDocData;
 	}
 
-	private async verifyVcData(vcData: any) {
+	private async verifyVcData(vcData: any, issuer?: string) {
 		let verificationResult;
 		try {
-			verificationResult = await this.verifyVcWithApi(vcData);
+			verificationResult = await this.verifyVcWithApi(vcData, issuer);
 		} catch (error) {
 			Logger.error(`VC Verification failed for wallet callback: ${error}`);
 			return new ErrorResponse({
@@ -2037,14 +2062,17 @@ export class UserService {
 		try {
 			const userDetails = await this.getUserDetails(req);
 
+			const existingDoc = await this.userDocsRepository.findOne({
+				where: {
+					user_id: userDetails.user_id,
+					doc_type: uploadDocumentDto.docType,
+					doc_subtype: uploadDocumentDto.docSubType,
+					doc_name: uploadDocumentDto.docName,
+				},
+			});
+
 			// Validate document type and subtype
 			this.validateDocumentType(uploadDocumentDto);
-
-			// Get issue_vc flag EARLY to determine if we should proceed with full upload
-			const issueVc = await this.getIssueVcFlag(
-				uploadDocumentDto.docType,
-				uploadDocumentDto.docSubType,
-			);
 
 			// Determine document config and whether QR processing is required
 			const { requiresQRProcessing } =
@@ -2090,53 +2118,6 @@ export class UserService {
 				};
 			}
 
-			// CONDITION 1: If VC mapping failed (no mapped_data or empty), return error without uploading to S3
-			if (
-				!vcMapping?.mapped_data ||
-				Object.keys(vcMapping.mapped_data).length === 0
-			) {
-				Logger.error(
-					`VC mapping failed for docType: ${uploadDocumentDto.docType}, docSubType: ${uploadDocumentDto.docSubType}`,
-				);
-				return new ErrorResponse({
-					statusCode: HttpStatus.BAD_REQUEST,
-					errorMessage:
-						'Document processing failed: Unable to extract required data from the document. Please ensure the document is clear and contains all necessary information.',
-				});
-			}
-
-			// CONDITION 2: If issue_vc is "yes", return response WITHOUT uploading to S3 or saving to DB
-			if (issueVc === 'yes') {
-				Logger.log(
-					`Skipping S3 upload and DB save for docType: ${uploadDocumentDto.docType}, docSubType: ${uploadDocumentDto.docSubType} (issue_vc: yes)`,
-				);
-
-				// Return minimal response with only required fields
-				return new SuccessResponse({
-					statusCode: HttpStatus.CREATED,
-					message: 'Document processed successfully',
-					data: {
-						doc_type: uploadDocumentDto.docType,
-						doc_subtype: uploadDocumentDto.docSubType,
-						doc_name: uploadDocumentDto.docName,
-						imported_from: uploadDocumentDto.importedFrom,
-						issue_vc: issueVc,
-						mapped_data: vcMapping.mapped_data,
-					},
-				});
-			}
-
-			// If we reach here, issue_vc is "no" and mapping succeeded - proceed with full upload
-
-			const existingDoc = await this.userDocsRepository.findOne({
-				where: {
-					user_id: userDetails.user_id,
-					doc_type: uploadDocumentDto.docType,
-					doc_subtype: uploadDocumentDto.docSubType,
-					doc_name: uploadDocumentDto.docName,
-				},
-			});
-
 			// Upload file to storage
 			const uploadResult = await this.documentUploadService.uploadFile(
 				file,
@@ -2169,35 +2150,26 @@ export class UserService {
 				savedDoc.doc_path,
 			);
 
-			// Build optimized response
-			const responseData: any = {
-				doc_id: savedDoc.doc_id,
-				user_id: savedDoc.user_id,
-				doc_type: savedDoc.doc_type,
-				doc_subtype: savedDoc.doc_subtype,
-				doc_name: savedDoc.doc_name,
-				imported_from: savedDoc.imported_from,
-				doc_datatype: savedDoc.doc_datatype,
-				uploaded_at: savedDoc.uploaded_at,
-				is_update: isUpdate,
-				download_url: downloadUrl,
-				issue_vc: issueVc,
-			};
-
-			// Add mapped_data only if it exists and has values
-			if (
-				vcMapping?.mapped_data &&
-				Object.keys(vcMapping.mapped_data).length > 0
-			) {
-				responseData.mapped_data = vcMapping.mapped_data;
-			}
-
 			return new SuccessResponse({
 				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
 				message: isUpdate
 					? 'Document updated successfully'
 					: 'Document uploaded successfully',
-				data: responseData,
+				data: {
+					doc_id: savedDoc.doc_id,
+					doc_path: savedDoc.doc_path,
+					user_id: savedDoc.user_id,
+					doc_type: savedDoc.doc_type,
+					doc_subtype: savedDoc.doc_subtype,
+					doc_name: savedDoc.doc_name,
+					imported_from: savedDoc.imported_from,
+					doc_datatype: savedDoc.doc_datatype,
+					uploaded_at: savedDoc.uploaded_at,
+					is_update: isUpdate,
+					download_url: downloadUrl,
+					ocr: ocrResult,
+					vc_mapping: vcMapping,
+				},
 			});
 		} catch (error) {
 			Logger.error(
@@ -2282,32 +2254,6 @@ export class UserService {
 		}
 
 		return { requiresQRProcessing, documentConfig };
-	}
-
-	/**
-	 * Get issue_vc flag for the document type
-	 * Returns 'yes' or 'no' based on configuration
-	 */
-	private async getIssueVcFlag(
-		docType: string,
-		docSubType: string,
-	): Promise<string> {
-		try {
-			const vcConfig =
-				await this.adminService.getConfigByKey('vcConfiguration');
-			if (vcConfig?.value && Array.isArray(vcConfig.value)) {
-				const documentConfig = vcConfig.value.find(
-					(doc: any) => doc.documentSubType === docSubType,
-				);
-
-				return documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
-			}
-		} catch (error) {
-			Logger.warn(`Failed to fetch issue_vc flag: ${error.message}`);
-		}
-
-		// Default to 'no' if config not found
-		return 'no';
 	}
 
 	// Helper to validate document type and subtype
@@ -2425,12 +2371,12 @@ export class UserService {
 		const previousPath = existingDoc.doc_path;
 		existingDoc.doc_path = uploadResult.filePath;
 		existingDoc.imported_from = uploadDocumentDto.importedFrom;
-		existingDoc.doc_datatype = 'Application/JSON'; // Always JSON since we store mapped_data as JSON
+		existingDoc.doc_datatype = uploadResult.docDatatype;
 		existingDoc.uploaded_at = uploadResult.uploadedAt;
 
-		// Store only mapped_data (not the entire vcMapping object)
-		if (vcMapping?.mapped_data) {
-			existingDoc.doc_data = JSON.stringify(vcMapping.mapped_data) as any;
+		// Store vc_mapping data in doc_data column (will be automatically encrypted)
+		if (vcMapping) {
+			existingDoc.doc_data = JSON.stringify(vcMapping) as any;
 		}
 
 		const savedDoc = await this.userDocsRepository.save(existingDoc);
@@ -2454,10 +2400,8 @@ export class UserService {
 			doc_name: uploadDocumentDto.docName,
 			imported_from: uploadDocumentDto.importedFrom,
 			doc_path: uploadResult.filePath,
-			doc_data: vcMapping?.mapped_data
-				? (JSON.stringify(vcMapping.mapped_data) as any)
-				: null,
-			doc_datatype: 'Application/JSON', // Always JSON since we store mapped_data as JSON
+			doc_data: vcMapping ? (JSON.stringify(vcMapping) as any) : null,
+			doc_datatype: uploadResult.docDatatype,
 			doc_verified: null,
 			watcher_registered: false,
 			watcher_email: null,
