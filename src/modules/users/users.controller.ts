@@ -279,17 +279,31 @@ export class UserController {
         statusCode: 201,
         message: 'Document uploaded successfully',
         data: {
-          doc_id: 'a3d8fa45-bdfa-49d1-8b3f-54bafcf3aabb',
-          doc_path: 'uploads/file-1635789456123-123456789.pdf',
-          user_id: 'b4e9gb56-cefb-5ae2-9c4g-65cbgdg4bbcc',
-          doc_type: 'associationProof',
-          doc_subtype: 'enrollmentCertificate',
-          doc_name: 'Enrollment Certificate',
+          doc_id: '0bf1e149-1dd0-4899-b42a-f77255a86fde',
+          user_id: '82192ec3-6897-4288-ab8e-f8a191b0445c',
+          doc_type: 'marksProof',
+          doc_subtype: 'marksheet',
+          doc_name: 'Marksheet',
           imported_from: 'Manual Upload',
-          doc_datatype: 'PDF',
-          uploaded_at: '2025-10-29T10:30:00.000Z',
+          doc_datatype: 'Application/JSON',
+          uploaded_at: '2025-11-12T05:42:43.345Z',
           is_update: false,
           download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-123.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
+          issue_vc: 'yes',
+          mapped_data: {
+            firstname: 'MD ARSH',
+            schoolname: 'ANITA INTERMEDIATE COLLEGE KANKE RANCHI',
+            currentclass: 11,
+            markstotal: 166,
+            result: 'PROMOTED',
+            academicyear: '2024',
+            issuedby: 'PRINCIPAL',
+            issuerauthority: 'Jharkhand Academic Council, Ranchi',
+            issueddate: '17-05-2024',
+            issuingauthorityaddress: 'Kanke, Ranchi',
+            issuingauthoritystate: 'Jharkhand',
+            issuingauthoritycountry: 'India'
+          }
         }
       }
     }
@@ -304,16 +318,20 @@ export class UserController {
         message: 'Document updated successfully',
         data: {
           doc_id: 'a3d8fa45-bdfa-49d1-8b3f-54bafcf3aabb',
-          doc_path: 'uploads/file-1635789456123-987654321.pdf',
           user_id: 'b4e9gb56-cefb-5ae2-9c4g-65cbgdg4bbcc',
-          doc_type: 'associationProof',
-          doc_subtype: 'enrollmentCertificate',
-          doc_name: 'Enrollment Certificate',
+          doc_type: 'marksProof',
+          doc_subtype: 'marksheet',
+          doc_name: 'Marksheet',
           imported_from: 'Manual Upload',
-          doc_datatype: 'PDF',
+          doc_datatype: 'Application/JSON',
           uploaded_at: '2025-10-29T11:45:00.000Z',
           is_update: true,
           download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-456.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
+          issue_vc: 'yes',
+          mapped_data: {
+            firstname: 'MD ARSH',
+            schoolname: 'ANITA INTERMEDIATE COLLEGE KANKE RANCHI'
+          }
         }
       }
     }
