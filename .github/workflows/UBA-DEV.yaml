@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - 'phase-3-ocr'  # Trigger on any branch push
-
 jobs:
   Deploy:
     runs-on: ubuntu-latest
