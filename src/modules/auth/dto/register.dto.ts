@@ -19,6 +19,11 @@ export class RegisterDTO {
   lastName: string;
 
   @ApiProperty({})
+  @IsNotEmpty({ message: 'Username is required' })
+  @IsString({ message: 'Username must be a string' })
+  username: string;
+
+  @ApiProperty({})
   @IsNotEmpty({ message: 'Mobile number is required' })
   @Matches(/^[5-9]\d{9}$/, {
     message:
