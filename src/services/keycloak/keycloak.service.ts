@@ -65,14 +65,15 @@ export class KeycloakService {
 	}
 
 	public async getUserKeycloakToken(data) {
+
 		const url = `${this.keycloak_url}/realms/${this.realm_name_app}/protocol/openid-connect/token`;
 
-    let payload = {
-      client_id: this.client_name_app,
-      grant_type: 'password',
-      username: data.username.toLowerCase(),
-      password: data.password,
-    };
+		let payload = {
+			client_id: this.client_name_app,
+			grant_type: 'password',
+			username: data.username.toLowerCase(),
+			password: data.password,
+		};
 
 		const config: AxiosRequestConfig = {
 			headers: {
@@ -86,20 +87,33 @@ export class KeycloakService {
 				payload,
 				config,
 			);
+
 			if (keycloakData.status !== 200) {
 				throw new InternalServerErrorException(
 					'Failed to get Keycloak user token',
 				);
 			}
 
+
 			return keycloakData.data;
-		} catch (e) {
-			console.log('getUserKeycloakToken', e.message);
+		} catch (error) {
+			const response = error.response?.data;
+
+			if (response?.error === 'invalid_grant') {
+				if (response?.error_description === 'Account is not fully set up') {
+					throw new Error('ACCOUNT_NOT_FULLY_SETUP');
+				}
+				if (response?.error_description === 'Invalid user credentials') {
+					throw new Error('INVALID_CREDENTIALS');
+				}
+			}
+
+			throw new InternalServerErrorException('Keycloak token request failed');
 		}
 	}
 
 	public async resetPassword(keycloak_id, token, password) {
-		
+
 		const data = {
 			temporary: false,
 			type: 'password',
@@ -119,7 +133,7 @@ export class KeycloakService {
 			const observable = this.httpService.put(url, data, config);
 			const promise = observable.toPromise();
 			const response = await promise;
-			
+
 
 			if (response.status === 204) {
 				return true;
@@ -127,7 +141,6 @@ export class KeycloakService {
 				return false;
 			}
 		} catch (e) {
-			console.log('resetPassword', e.message);
 			return false;
 		}
 	}
@@ -141,39 +154,38 @@ export class KeycloakService {
 					'KEYCLOAK_URL',
 				)}/admin/realms/${this.realm_name_app}/users`;
 
-        const {
-          headers,
-          status,
-          data: [user],
-        } = await lastValueFrom(
-          this.httpService
-            .get(url, {
-              params: { username: username.toLowerCase(), exact: true },
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${adminResultData.access_token}`,
-              },
-            })
-            .pipe(map((res) => res)),
-        );
-        if (!user) {
-          return { isUserExist: false, user: null };
-        }
-        return {
-          headers,
-          status,
-          user,
-        };
-      } else {
-        throw new BadRequestException('User not found in keycloak !');
-      }
-    } catch (e) {
-      console.log('error 105' + e.message);
-      throw new HttpException(e.message, HttpStatus.CONFLICT, {
-        cause: e,
-      });
-    }
-  }
+				const {
+					headers,
+					status,
+					data: [user],
+				} = await lastValueFrom(
+					this.httpService
+						.get(url, {
+							params: { username: username.toLowerCase(), exact: true },
+							headers: {
+								'Content-Type': 'application/json',
+								Authorization: `Bearer ${adminResultData.access_token}`,
+							},
+						})
+						.pipe(map((res) => res)),
+				);
+				if (!user) {
+					return { isUserExist: false, user: null };
+				}
+				return {
+					headers,
+					status,
+					user,
+				};
+			} else {
+				throw new BadRequestException('User not found in keycloak !');
+			}
+		} catch (e) {
+			throw new HttpException(e.message, HttpStatus.CONFLICT, {
+				cause: e,
+			});
+		}
+	}
 
 	public async createUser(userData): Promise<{ [key: string]: any }> {
 		try {
@@ -277,7 +289,7 @@ export class KeycloakService {
 	}
 
 	public async findUser(data, token) {
-		
+
 
 		const url = `${this.keycloak_url}/admin/realms/${this.realm_name_app}/users?username=${data}`;
 
