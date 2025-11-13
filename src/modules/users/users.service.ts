@@ -570,35 +570,39 @@ export class UserService {
 		userDetails: any,
 		baseFolder: string,
 	): Promise<UserDoc | null> {
-		// Call the verification method before further processing
-		let verificationResult;
-		try {
-			// Extract issuer from doc_data if available, otherwise use undefined (will fallback to default)
-			const issuer = (createUserDocDto as any).issuer || undefined;
-			verificationResult = await this.verifyVcWithApi(
-				createUserDocDto.doc_data,
-				issuer,
-			);
-		} catch (error) {
-			// Extract a user-friendly message
-			let message =
-				error?.response?.data?.message ??
-				error?.message ??
-				'VC Verification failed';
-			throw new BadRequestException({
-				message: message,
-				error: 'Bad Request',
-				statusCode: 400,
-			});
-		}
+		// Skip verification if imported_from is "VC Create"
+		const importSource = createUserDocDto.imported_from?.trim().toLowerCase();
+		if (importSource !== 'vc create') {
+			// Call the verification method before further processing
+			let verificationResult;
+			try {
+				// Extract issuer from doc_data if available, otherwise use undefined (will fallback to default)
+				const issuer = (createUserDocDto as any).issuer || undefined;
+				verificationResult = await this.verifyVcWithApi(
+					createUserDocDto.doc_data,
+					issuer,
+				);
+			} catch (error) {
+				// Extract a user-friendly message
+				let message =
+					error?.response?.data?.message ??
+					error?.message ??
+					'VC Verification failed';
+				throw new BadRequestException({
+					message: message,
+					error: 'Bad Request',
+					statusCode: 400,
+				});
+			}
 
-		if (!verificationResult.success) {
-			throw new BadRequestException({
-				message: verificationResult.message ?? 'VC Verification failed',
-				errors: verificationResult.errors ?? [],
-				statusCode: 400,
-				error: 'Bad Request',
-			});
+			if (!verificationResult.success) {
+				throw new BadRequestException({
+					message: verificationResult.message ?? 'VC Verification failed',
+					errors: verificationResult.errors ?? [],
+					statusCode: 400,
+					error: 'Bad Request',
+				});
+			}
 		}
 
 		const userFilePath = path.join(
@@ -2075,8 +2079,12 @@ export class UserService {
 			this.validateDocumentType(uploadDocumentDto);
 
 			// Determine document config and whether QR processing is required
-			const { requiresQRProcessing } =
+			const { requiresQRProcessing, documentConfig } =
 				await this.getDocumentConfig(uploadDocumentDto);
+
+			// Get issue_vc flag from document config
+			const issueVC =
+				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
 
 			// Validate file type for QR processing
 			this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
@@ -2118,17 +2126,38 @@ export class UserService {
 				};
 			}
 
-			// Upload file to storage
-			const uploadResult = await this.documentUploadService.uploadFile(
-				file,
-				{
-					docType: uploadDocumentDto.docType,
-					docSubType: uploadDocumentDto.docSubType,
-					docName: uploadDocumentDto.docName,
-					importedFrom: uploadDocumentDto.importedFrom,
-				},
-				userDetails.user_id,
-			);
+			// Conditionally upload to S3 based on issue_vc flag
+			let uploadResult;
+			let downloadUrl = null;
+
+			if (issueVC === 'yes') {
+				// Skip S3 upload when issue_vc is "yes"
+				Logger.log(
+					`Skipping S3 upload for document (issue_vc: yes): ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
+				);
+				uploadResult = {
+					filePath: `local://${userDetails.user_id}/${Date.now()}-${file.originalname}`,
+					docDatatype: file.mimetype,
+					uploadedAt: new Date(),
+				};
+			} else {
+				// Upload file to storage when issue_vc is "no"
+				uploadResult = await this.documentUploadService.uploadFile(
+					file,
+					{
+						docType: uploadDocumentDto.docType,
+						docSubType: uploadDocumentDto.docSubType,
+						docName: uploadDocumentDto.docName,
+						importedFrom: uploadDocumentDto.importedFrom,
+					},
+					userDetails.user_id,
+				);
+
+				// Generate download URL only if uploaded to S3
+				downloadUrl = await this.documentUploadService.generateDownloadUrl(
+					uploadResult.filePath,
+				);
+			}
 
 			// Save or update the document record
 			const { savedDoc, isUpdate } = existingDoc
@@ -2145,31 +2174,36 @@ export class UserService {
 						vcMapping,
 					);
 
-			// Generate download URL and return standardized response
-			const downloadUrl = await this.documentUploadService.generateDownloadUrl(
-				savedDoc.doc_path,
-			);
+			// Build response data - clean format without OCR details, only mapped_data
+			const responseData: any = {
+				doc_id: savedDoc.doc_id,
+				user_id: savedDoc.user_id,
+				doc_type: savedDoc.doc_type,
+				doc_subtype: savedDoc.doc_subtype,
+				doc_name: savedDoc.doc_name,
+				imported_from: savedDoc.imported_from,
+				doc_datatype: savedDoc.doc_datatype,
+				uploaded_at: savedDoc.uploaded_at,
+				is_update: isUpdate,
+				issue_vc: issueVC,
+			};
+
+			// Add download_url only if file was uploaded to S3
+			if (downloadUrl) {
+				responseData.download_url = downloadUrl;
+			}
+
+			// Add mapped_data from vc_mapping if available
+			if (vcMapping?.mapped_data) {
+				responseData.mapped_data = vcMapping.mapped_data;
+			}
 
 			return new SuccessResponse({
 				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
 				message: isUpdate
 					? 'Document updated successfully'
 					: 'Document uploaded successfully',
-				data: {
-					doc_id: savedDoc.doc_id,
-					doc_path: savedDoc.doc_path,
-					user_id: savedDoc.user_id,
-					doc_type: savedDoc.doc_type,
-					doc_subtype: savedDoc.doc_subtype,
-					doc_name: savedDoc.doc_name,
-					imported_from: savedDoc.imported_from,
-					doc_datatype: savedDoc.doc_datatype,
-					uploaded_at: savedDoc.uploaded_at,
-					is_update: isUpdate,
-					download_url: downloadUrl,
-					ocr: ocrResult,
-					vc_mapping: vcMapping,
-				},
+				data: responseData,
 			});
 		} catch (error) {
 			Logger.error(
@@ -2374,9 +2408,9 @@ export class UserService {
 		existingDoc.doc_datatype = uploadResult.docDatatype;
 		existingDoc.uploaded_at = uploadResult.uploadedAt;
 
-		// Store vc_mapping data in doc_data column (will be automatically encrypted)
-		if (vcMapping) {
-			existingDoc.doc_data = JSON.stringify(vcMapping) as any;
+		// Store only mapped_data in doc_data column (will be automatically encrypted)
+		if (vcMapping?.mapped_data) {
+			existingDoc.doc_data = JSON.stringify(vcMapping.mapped_data) as any;
 		}
 
 		const savedDoc = await this.userDocsRepository.save(existingDoc);
@@ -2400,7 +2434,9 @@ export class UserService {
 			doc_name: uploadDocumentDto.docName,
 			imported_from: uploadDocumentDto.importedFrom,
 			doc_path: uploadResult.filePath,
-			doc_data: vcMapping ? (JSON.stringify(vcMapping) as any) : null,
+			doc_data: vcMapping?.mapped_data
+				? (JSON.stringify(vcMapping.mapped_data) as any)
+				: null,
 			doc_datatype: uploadResult.docDatatype,
 			doc_verified: null,
 			watcher_registered: false,
