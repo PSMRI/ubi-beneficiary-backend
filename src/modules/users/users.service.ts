@@ -9,7 +9,7 @@ import {
   Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
+import { ILike, Repository, QueryRunner, In, Not, IsNull } from 'typeorm';
 import { User } from '../../entity/user.entity';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
@@ -1474,6 +1474,7 @@ export class UserService {
     try {
       const whereCondition: any = {
         status: Not(In(['amount received', 'rejected', 'disbursed'])),
+        bpp_application_id: Not(IsNull()), // Only fetch applications with order_id
       };
 
       if (userId) {
@@ -1496,7 +1497,11 @@ export class UserService {
     statusData: { status: string; comment: string },
   ) {
     try {
-      if (!statusData?.status) return;
+      // Skip update if statusData is null or status is not present
+      if (!statusData?.status) {
+        Logger.log(`Skipping status update for application ${application.id}: No status data received from BPP`);
+        return;
+      }
 
       application.status = statusData.status.toLowerCase(); // e.g., "approved"
       application.remark = statusData.comment || ''; // Save the comment
@@ -1521,8 +1526,13 @@ export class UserService {
   }
 
   async getStatus(orderId: string) {
-    const bapId = this.configService.get<string>('BAP_ID');
-    const bapUri = this.configService.get<string>('BAP_URI');
+    // Skip if orderId is null or empty
+    if (!orderId) {
+      Logger.warn('Skipping status check: order_id is null or empty');
+      return null;
+    }
+    const bapId = this.configService.get<string>('BAP_ID'); 
+    const bapUri = this.configService.get<string>('BAP_URI'); 
 
 
     // Fetch BPP info from userApplication table
@@ -1581,7 +1591,10 @@ export class UserService {
       const rawStatus =
         response?.responses[0]?.message?.order?.fulfillments[0]?.state
           ?.descriptor?.name;
-      if (!rawStatus) return null;
+      if (!rawStatus) {
+        Logger.warn(`No fulfillments received in status response for order_id: ${orderId}`);
+        return null;
+      }
 
       // Parse status stringified JSON
       const parsedStatus = JSON.parse(rawStatus);
