@@ -2063,197 +2063,60 @@ export class UserService {
 	) {
 		try {
 			const userDetails = await this.getUserDetails(req);
+			const existingDoc = await this.findExistingDocument(
+				userDetails.user_id,
+				uploadDocumentDto,
+			);
 
-			const existingDoc = await this.userDocsRepository.findOne({
-				where: {
-					user_id: userDetails.user_id,
-					doc_type: uploadDocumentDto.docType,
-					doc_subtype: uploadDocumentDto.docSubType,
-					doc_name: uploadDocumentDto.docName,
-				},
-			});
-
-			// Validate document type and subtype
-			this.validateDocumentType(uploadDocumentDto);
-
-			// Determine document config and whether QR processing is required
+			// Validate and prepare document
+			await this.validateDocumentType(uploadDocumentDto);
 			const { requiresQRProcessing, documentConfig } =
 				await this.getDocumentConfig(uploadDocumentDto);
-
-			// Get issue_vc flag from document config
 			const issueVC =
 				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
 
-			// Validate file type for QR processing
+			// Process document
 			this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
-
-			// Perform OCR extraction (throws on failure)
 			const ocrResult = await this.performOcr(
 				file,
 				uploadDocumentDto,
 				requiresQRProcessing,
 			);
-
-			// Get vcFields configuration for the document type
-			const vcFields = await this.vcFieldsService.getVcFields(
-				uploadDocumentDto.docType,
-				uploadDocumentDto.docSubType,
+			const vcMapping = await this.prepareVcMapping(
+				ocrResult,
+				uploadDocumentDto,
 			);
 
-			// Map OCR text to structured data based on vcFields configuration
-			let vcMapping = null;
-			if (vcFields) {
-				vcMapping = await this.ocrMappingService.mapAfterOcr(
-					{
-						text: ocrResult.extractedText,
-						docType: uploadDocumentDto.docType,
-						docSubType: uploadDocumentDto.docSubType,
-					},
-					vcFields,
-				);
-			} else {
-				Logger.warn(
-					`No vcFields configuration found for docType: ${uploadDocumentDto.docType}, docSubType: ${uploadDocumentDto.docSubType}`,
-				);
-				vcMapping = {
-					mapped_data: {},
-					missing_fields: [],
-					confidence: 0,
-					processing_method: 'keyword' as const,
-					warnings: ['No vcFields configuration found'],
-				};
-			}
-
-		// Conditionally upload to S3 and/or create VC based on issue_vc flag
-		let uploadResult;
-		let downloadUrl = null;
-		let vcCreationResult = null;
-		// Use issuer from DTO if provided, otherwise use from config, fallback to 'dhiway'
-		let issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
-
-		if (issueVC === 'yes') {
-			// Create VC using adapter when issue_vc is "yes"
-			Logger.log(
-				`Creating VC for document: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
-			);
-
-			// Extract spaceId from document config
-			const spaceId = documentConfig?.spaceId;
-			
-			Logger.debug(`VC Configuration - Issuer: ${issuer}, SpaceId: ${spaceId}`);
-			Logger.debug(`Mapped data to be sent for VC creation: ${JSON.stringify(vcMapping.mapped_data, null, 2)}`);
-
-			if (!spaceId) {
-				throw new BadRequestException(
-					'Space ID is required for VC creation. Please configure spaceId in vcConfiguration.',
-				);
-			}
-
-			// Validate required fields before VC creation using OCR mapping results
-			Logger.log(`Starting required field validation for VC creation...`);
-			await this.validateRequiredFieldsFromOcrMapping(vcFields, vcMapping, uploadDocumentDto);
-			Logger.log(`Required field validation passed - proceeding with VC creation`);
-
-			// Create VC record using the appropriate adapter
-			vcCreationResult = await this.vcAdapterFactory.createRecord(
-				issuer,
-				spaceId,
-				vcMapping.mapped_data,
-				file,
-				userDetails.user_id, // Pass userId from authenticated user
-			);
-
-			if (!vcCreationResult.success) {
-				Logger.error(
-					`VC creation failed: ${vcCreationResult.message}`,
-					vcCreationResult.error,
-				);
-				throw new InternalServerErrorException(
-					vcCreationResult.message || 'Failed to create VC record',
-				);
-			}				Logger.log(
-					`VC created successfully - Record ID: ${vcCreationResult.recordId}, Verification URL: ${vcCreationResult.verificationUrl}`,
-				);
-
-				// Skip S3 upload, use placeholder for DB record
-				uploadResult = {
-					filePath: `local://${userDetails.user_id}/${Date.now()}-${file.originalname}`,
-					docDatatype: file.mimetype,
-					uploadedAt: new Date(),
-				};
-			} else {
-				// Upload file to storage when issue_vc is "no"
-				uploadResult = await this.documentUploadService.uploadFile(
+			// Handle VC creation or file upload
+			const { uploadResult, downloadUrl, vcCreationResult, issuer } =
+				await this.handleDocumentStorage(
 					file,
-					{
-						docType: uploadDocumentDto.docType,
-						docSubType: uploadDocumentDto.docSubType,
-						docName: uploadDocumentDto.docName,
-						importedFrom: uploadDocumentDto.importedFrom,
-					},
-					userDetails.user_id,
+					uploadDocumentDto,
+					documentConfig,
+					issueVC,
+					vcMapping,
+					userDetails,
 				);
 
-				// Generate download URL only if uploaded to S3
-				downloadUrl = await this.documentUploadService.generateDownloadUrl(
-					uploadResult.filePath,
-				);
-			}
+			// Save document record
+			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
+				existingDoc,
+				userDetails.user_id,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
+			);
 
-			// Save or update the document record
-			const { savedDoc, isUpdate } = existingDoc
-				? await this.updateExistingDoc(
-						existingDoc,
-						uploadResult,
-						uploadDocumentDto,
-						vcMapping,
-						vcCreationResult?.verificationUrl, // Pass verificationUrl as doc_data_link
-						issueVC, // Pass issueVC flag
-						issuer, // Pass issuer
-					)
-				: await this.createNewDoc(
-						userDetails.user_id,
-						uploadResult,
-						uploadDocumentDto,
-						vcMapping,
-						vcCreationResult?.verificationUrl, // Pass verificationUrl as doc_data_link
-						issueVC, // Pass issueVC flag
-						issuer, // Pass issuer
-					);
-
-			// Build response data - clean format without OCR details, only mapped_data
-			const responseData: any = {
-				doc_id: savedDoc.doc_id,
-				user_id: savedDoc.user_id,
-				doc_type: savedDoc.doc_type,
-				doc_subtype: savedDoc.doc_subtype,
-				doc_name: savedDoc.doc_name,
-				imported_from: savedDoc.imported_from,
-				doc_datatype: savedDoc.doc_datatype,
-				uploaded_at: savedDoc.uploaded_at,
-				is_update: isUpdate,
-				issue_vc: issueVC,
-			};
-
-			// Add download_url only if file was uploaded to S3
-			if (downloadUrl) {
-				responseData.download_url = downloadUrl;
-			}
-
-			// Add VC creation details if VC was created
-			if (vcCreationResult?.success) {
-				responseData.vc_creation = {
-					success: true,
-					record_id: vcCreationResult.recordId,
-					verification_url: vcCreationResult.verificationUrl,
-				};
-				responseData.doc_data_link = vcCreationResult.verificationUrl;
-			}
-
-			// Add mapped_data from vc_mapping if available
-			if (vcMapping?.mapped_data) {
-				responseData.mapped_data = vcMapping.mapped_data;
-			}
+			// Build and return response
+			const responseData = this.buildResponseData(
+				savedDoc,
+				isUpdate,
+				issueVC,
+				downloadUrl,
+				vcCreationResult,
+				vcMapping,
+			);
 
 			return new SuccessResponse({
 				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
@@ -2263,42 +2126,279 @@ export class UserService {
 				data: responseData,
 			});
 		} catch (error) {
-			Logger.error(
-				'users.service:uploadDocument',
-				error?.message ?? error,
-				error?.stack,
+			return this.handleUploadError(error);
+		}
+	}
+
+	private async findExistingDocument(
+		userId: string,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		return await this.userDocsRepository.findOne({
+			where: {
+				user_id: userId,
+				doc_type: uploadDocumentDto.docType,
+				doc_subtype: uploadDocumentDto.docSubType,
+				doc_name: uploadDocumentDto.docName,
+			},
+		});
+	}
+
+	private async prepareVcMapping(
+		ocrResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		const vcFields = await this.vcFieldsService.getVcFields(
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
+
+		if (!vcFields) {
+			Logger.warn(
+				`No vcFields configuration found for docType: ${uploadDocumentDto.docType}, docSubType: ${uploadDocumentDto.docSubType}`,
 			);
+			return {
+				mapped_data: {},
+				missing_fields: [],
+				confidence: 0,
+				processing_method: 'keyword' as const,
+				warnings: ['No vcFields configuration found'],
+			};
+		}
 
-			if (error?.code === '23505') {
-				return new ErrorResponse({
-					statusCode: HttpStatus.BAD_REQUEST,
-					errorMessage: 'Duplicate document entry',
-				});
-			}
+		return await this.ocrMappingService.mapAfterOcr(
+			{
+				text: ocrResult.extractedText,
+				docType: uploadDocumentDto.docType,
+				docSubType: uploadDocumentDto.docSubType,
+			},
+			vcFields,
+		);
+	}
 
-			if (
-				error instanceof BadRequestException ||
-				error instanceof InternalServerErrorException
-			) {
-				return new ErrorResponse({
-					statusCode: error.getStatus(),
-					errorMessage: error.message,
-				});
-			}
+	private async handleDocumentStorage(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		documentConfig: any,
+		issueVC: string,
+		vcMapping: any,
+		userDetails: any,
+	) {
+		const issuer =
+			uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
+		let uploadResult;
+		let downloadUrl = null;
+		let vcCreationResult = null;
 
-			// Handle nested service errors
-			if (error?.response?.statusCode && error?.response?.message) {
-				return new ErrorResponse({
-					statusCode: error.response.statusCode,
-					errorMessage: error.response.message,
-				});
-			}
+		if (issueVC === 'yes') {
+			vcCreationResult = await this.createVcRecord(
+				file,
+				uploadDocumentDto,
+				documentConfig,
+				issuer,
+				vcMapping,
+				userDetails,
+			);
+			uploadResult = this.createPlaceholderUploadResult(
+				userDetails.user_id,
+				file,
+			);
+		} else {
+			uploadResult = await this.uploadFileToStorage(
+				file,
+				uploadDocumentDto,
+				userDetails.user_id,
+			);
+			downloadUrl = await this.documentUploadService.generateDownloadUrl(
+				uploadResult.filePath,
+			);
+		}
 
+		return { uploadResult, downloadUrl, vcCreationResult, issuer };
+	}
+
+	private async createVcRecord(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		documentConfig: any,
+		issuer: string,
+		vcMapping: any,
+		userDetails: any,
+	) {
+		Logger.log(
+			`Creating VC for document: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
+		);
+
+		const spaceId = documentConfig?.spaceId;
+		if (!spaceId) {
+			throw new BadRequestException(
+				'Space ID is required for VC creation. Please configure spaceId in vcConfiguration.',
+			);
+		}
+
+		const vcFields = await this.vcFieldsService.getVcFields(
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
+		await this.validateRequiredFieldsFromOcrMapping(
+			vcFields,
+			vcMapping,
+			uploadDocumentDto,
+		);
+
+		const vcCreationResult = await this.vcAdapterFactory.createRecord(
+			issuer,
+			spaceId,
+			vcMapping.mapped_data,
+			file,
+			userDetails.user_id,
+		);
+
+		if (!vcCreationResult.success) {
+			throw new InternalServerErrorException(
+				vcCreationResult.message || 'Failed to create VC record',
+			);
+		}
+
+		Logger.log(
+			`VC created successfully - Record ID: ${vcCreationResult.recordId}`,
+		);
+		return vcCreationResult;
+	}
+
+	private createPlaceholderUploadResult(
+		userId: string,
+		file: Express.Multer.File,
+	) {
+		return {
+			filePath: `local://${userId}/${Date.now()}-${file.originalname}`,
+			docDatatype: file.mimetype,
+			uploadedAt: new Date(),
+		};
+	}
+
+	private async uploadFileToStorage(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		userId: string,
+	) {
+		return await this.documentUploadService.uploadFile(
+			file,
+			{
+				docType: uploadDocumentDto.docType,
+				docSubType: uploadDocumentDto.docSubType,
+				docName: uploadDocumentDto.docName,
+				importedFrom: uploadDocumentDto.importedFrom,
+			},
+			userId,
+		);
+	}
+
+	private async saveDocumentRecord(
+		existingDoc: UserDoc | null,
+		userId: string,
+		uploadResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+		vcMapping: any,
+		options: { docDataLink?: string; issueVC: string; issuer: string },
+	) {
+		return existingDoc
+			? await this.updateExistingDoc(
+					existingDoc,
+					uploadResult,
+					uploadDocumentDto,
+					vcMapping,
+					options.docDataLink,
+					options.issueVC,
+					options.issuer,
+				)
+			: await this.createNewDoc(
+					userId,
+					uploadResult,
+					uploadDocumentDto,
+					vcMapping,
+					options.docDataLink,
+					options.issueVC,
+					options.issuer,
+				);
+	}
+
+	private buildResponseData(
+		savedDoc: UserDoc,
+		isUpdate: boolean,
+		issueVC: string,
+		downloadUrl: string | null,
+		vcCreationResult: any,
+		vcMapping: any,
+	) {
+		const responseData: any = {
+			doc_id: savedDoc.doc_id,
+			user_id: savedDoc.user_id,
+			doc_type: savedDoc.doc_type,
+			doc_subtype: savedDoc.doc_subtype,
+			doc_name: savedDoc.doc_name,
+			imported_from: savedDoc.imported_from,
+			doc_datatype: savedDoc.doc_datatype,
+			uploaded_at: savedDoc.uploaded_at,
+			is_update: isUpdate,
+			issue_vc: issueVC,
+		};
+
+		if (downloadUrl) {
+			responseData.download_url = downloadUrl;
+		}
+
+		if (vcCreationResult?.success) {
+			responseData.vc_creation = {
+				success: true,
+				record_id: vcCreationResult.recordId,
+				verification_url: vcCreationResult.verificationUrl,
+			};
+			responseData.doc_data_link = vcCreationResult.verificationUrl;
+		}
+
+		if (vcMapping?.mapped_data) {
+			responseData.mapped_data = vcMapping.mapped_data;
+		}
+
+		return responseData;
+	}
+
+	private handleUploadError(error: any) {
+		Logger.error(
+			'users.service:uploadDocument',
+			error?.message ?? error,
+			error?.stack,
+		);
+
+		if (error?.code === '23505') {
 			return new ErrorResponse({
-				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error?.message || 'Failed to upload document',
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage: 'Duplicate document entry',
 			});
 		}
+
+		if (
+			error instanceof BadRequestException ||
+			error instanceof InternalServerErrorException
+		) {
+			return new ErrorResponse({
+				statusCode: error.getStatus(),
+				errorMessage: error.message,
+			});
+		}
+
+		if (error?.response?.statusCode && error?.response?.message) {
+			return new ErrorResponse({
+				statusCode: error.response.statusCode,
+				errorMessage: error.response.message,
+			});
+		}
+
+		return new ErrorResponse({
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			errorMessage: error?.message || 'Failed to upload document',
+		});
 	}
 
 	// Wrapper method to get vcFields for a document type
@@ -2372,73 +2472,138 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 	) {
 		try {
-			Logger.log(`Validating required fields - vcFields: ${Object.keys(vcFields || {}).length} fields, vcMapping present: ${!!vcMapping}`);
+			Logger.log(
+				`Validating required fields - vcFields: ${Object.keys(vcFields || {}).length} fields, vcMapping present: ${!!vcMapping}`,
+			);
 			Logger.debug(`vcFields structure: ${JSON.stringify(vcFields, null, 2)}`);
-			
+
 			if (!vcFields || !vcMapping) {
 				throw new BadRequestException(
 					'Cannot validate required fields: missing vcFields configuration or mapping data',
 				);
 			}
 
-			// Get missing fields from OCR mapping results
-			const missingFields = vcMapping.missing_fields || [];
-			Logger.log(`OCR Mapping - Total missing fields: [${missingFields.join(', ')}]`);
-			
-			// Filter to only required missing fields
-			const missingRequiredFields: string[] = [];
-			
-			for (const fieldName of missingFields) {
-				if (vcFields[fieldName]?.required === true) {
-					missingRequiredFields.push(fieldName);
-				}
-			}
-
-			// Also check mapped data for required fields that might be empty/null
-			const additionalMissingRequired: string[] = [];
-			for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
-				if (fieldConfig?.required === true) {
-					const fieldValue = vcMapping.mapped_data?.[fieldName];
-					if (
-						fieldValue === null || 
-						fieldValue === undefined || 
-						(typeof fieldValue === 'string' && fieldValue.trim() === '')
-					) {
-						// Only add if not already in missingFields array
-						if (!missingRequiredFields.includes(fieldName)) {
-							additionalMissingRequired.push(fieldName);
-						}
-					}
-				}
-			}
-
-			const allMissingRequired = [...missingRequiredFields, ...additionalMissingRequired];
-
-			Logger.log(`Required field validation - Missing required fields: [${allMissingRequired.join(', ')}]`);
-			Logger.debug(`Mapped data keys: [${Object.keys(vcMapping.mapped_data || {}).join(', ')}]`);
-			
-			// Additional safety check: if studentuniqueid specifically is missing, warn about it
-			if (!vcMapping.mapped_data?.studentuniqueid && vcFields.studentuniqueid) {
-				Logger.warn(`CRITICAL: studentuniqueid is missing from mapped data but present in vcFields config. Required: ${vcFields.studentuniqueid?.required}`);
-			}
+			const allMissingRequired = this.collectMissingRequiredFields(
+				vcFields,
+				vcMapping,
+			);
+			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
 			if (allMissingRequired.length > 0) {
-				const fieldList = allMissingRequired.join(', ');
-				const errorMessage = `Missing required field(s) for VC creation: ${fieldList}. ` +
-					`Document Type: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}. ` +
-					`OCR could not extract these required fields from the uploaded document. ` +
-					`Please ensure these fields are clearly visible and readable in the document.`;
-				
-				Logger.error(`VC validation failed: ${errorMessage}`);
-				throw new BadRequestException(errorMessage);
+				this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto);
 			}
 
-			const requiredFieldsCount = Object.values(vcFields).filter(config => config?.required === true).length;
-			Logger.log(`All ${requiredFieldsCount} required fields are present for VC creation`);
+			const requiredFieldsCount = Object.values(vcFields).filter(
+				(config) => config?.required === true,
+			).length;
+			Logger.log(
+				`All ${requiredFieldsCount} required fields are present for VC creation`,
+			);
 		} catch (error) {
-			Logger.error(`Error in validateRequiredFieldsFromOcrMapping: ${error.message}`, error.stack);
+			Logger.error(
+				`Error in validateRequiredFieldsFromOcrMapping: ${error.message}`,
+				error.stack,
+			);
 			throw error;
 		}
+	}
+
+	private collectMissingRequiredFields(
+		vcFields: VcFields,
+		vcMapping: any,
+	): string[] {
+		const missingFields = vcMapping.missing_fields || [];
+		Logger.log(
+			`OCR Mapping - Total missing fields: [${missingFields.join(', ')}]`,
+		);
+
+		const missingRequiredFields = this.filterRequiredFields(
+			vcFields,
+			missingFields,
+		);
+		const additionalMissingRequired =
+			this.checkMappedDataForEmptyRequiredFields(
+				vcFields,
+				vcMapping,
+				missingRequiredFields,
+			);
+
+		return [...missingRequiredFields, ...additionalMissingRequired];
+	}
+
+	private filterRequiredFields(
+		vcFields: VcFields,
+		missingFields: string[],
+	): string[] {
+		const missingRequiredFields: string[] = [];
+		for (const fieldName of missingFields) {
+			if (vcFields[fieldName]?.required === true) {
+				missingRequiredFields.push(fieldName);
+			}
+		}
+		return missingRequiredFields;
+	}
+
+	private checkMappedDataForEmptyRequiredFields(
+		vcFields: VcFields,
+		vcMapping: any,
+		missingRequiredFields: string[],
+	): string[] {
+		const additionalMissingRequired: string[] = [];
+		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
+			if (fieldConfig?.required === true) {
+				const fieldValue = vcMapping.mapped_data?.[fieldName];
+				if (
+					this.isFieldValueEmpty(fieldValue) &&
+					!missingRequiredFields.includes(fieldName)
+				) {
+					additionalMissingRequired.push(fieldName);
+				}
+			}
+		}
+		return additionalMissingRequired;
+	}
+
+	private isFieldValueEmpty(fieldValue: any): boolean {
+		return (
+			fieldValue === null ||
+			fieldValue === undefined ||
+			(typeof fieldValue === 'string' && fieldValue.trim() === '')
+		);
+	}
+
+	private logValidationResults(
+		vcFields: VcFields,
+		vcMapping: any,
+		allMissingRequired: string[],
+	): void {
+		Logger.log(
+			`Required field validation - Missing required fields: [${allMissingRequired.join(', ')}]`,
+		);
+		Logger.debug(
+			`Mapped data keys: [${Object.keys(vcMapping.mapped_data || {}).join(', ')}]`,
+		);
+
+		if (!vcMapping.mapped_data?.studentuniqueid && vcFields.studentuniqueid) {
+			Logger.warn(
+				`CRITICAL: studentuniqueid is missing from mapped data but present in vcFields config. Required: ${vcFields.studentuniqueid?.required}`,
+			);
+		}
+	}
+
+	private throwMissingFieldsError(
+		allMissingRequired: string[],
+		uploadDocumentDto: UploadDocumentDto,
+	): void {
+		const fieldList = allMissingRequired.join(', ');
+		const errorMessage =
+			`Missing required field(s) for VC creation: ${fieldList}. ` +
+			`Document Type: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}. ` +
+			`OCR could not extract these required fields from the uploaded document. ` +
+			`Please ensure these fields are clearly visible and readable in the document.`;
+
+		Logger.error(`VC validation failed: ${errorMessage}`);
+		throw new BadRequestException(errorMessage);
 	}
 
 	// Helper to validate file type when QR processing is required
