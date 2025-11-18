@@ -3,7 +3,7 @@ name: Deploy to Server
 on:
   push:
     branches:
-      - '*'  # Trigger on any branch push
+      - 'main'  # Trigger on any branch push
 
 jobs:
   Deploy:

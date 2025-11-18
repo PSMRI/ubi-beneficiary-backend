@@ -188,11 +188,11 @@ export class YourService {
 
 **S3 Configuration:**
 ```env
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
+AWS_S3_REGION=us-east-1
+AWS_S3_ACCESS_KEY_ID=your_key
+AWS_S3_SECRET_ACCESS_KEY=your_secret
 AWS_S3_BUCKET_NAME=your-bucket
-AWS_PREFIX=documents/        # Optional
+AWS_S3_PREFIX=documents/        # Optional
 FILE_PREFIX_ENV=dev          # or 'prod', 'staging', etc.
 ```
 

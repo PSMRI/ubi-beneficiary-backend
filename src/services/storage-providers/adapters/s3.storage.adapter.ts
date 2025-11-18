@@ -22,23 +22,23 @@ export class S3StorageAdapter implements IFileStorageService {
 
   constructor() {
     // Validate required environment variables
-    const requiredEnvVars = ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET_NAME'];
+    const requiredEnvVars = ['AWS_S3_REGION', 'AWS_S3_ACCESS_KEY_ID', 'AWS_S3_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET_NAME'];
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
     if (missingVars.length > 0) {
       throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
     }
     const client = new S3Client({
-      region: process.env.AWS_REGION!,
+      region: process.env.AWS_S3_REGION!,
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+        accessKeyId: process.env.AWS_S3_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_S3_SECRET_ACCESS_KEY!,
       },
     });
 
     const adapter = new AwsS3StorageAdapter(client, {
       bucket: process.env.AWS_S3_BUCKET_NAME!,
-      prefix: process.env.AWS_PREFIX ?? '',
+      prefix: process.env.AWS_S3_PREFIX ?? '',
     });
 
     this.storage = new FileStorage(adapter);
