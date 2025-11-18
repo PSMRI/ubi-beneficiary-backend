@@ -115,9 +115,19 @@ export class OcrMappingService {
         String(validationResult.data[key]).trim() !== ''
     );
     const missingFields = fieldNames.filter(key => !presentFields.includes(key));
+    
+    // Identify missing required fields for better error reporting
+    const missingRequiredFields = missingFields.filter(fieldName => 
+      vcFields[fieldName]?.required === true
+    );
+    
     const confidence = fieldNames.length > 0 ? Number((presentFields.length / fieldNames.length).toFixed(2)) : 0;
 
     this.logger.log(`Mapping complete: ${presentFields.length}/${fieldNames.length} fields (${Math.round(confidence * 100)}% confidence) - Method: ${processingMethod}`);
+    
+    if (missingRequiredFields.length > 0) {
+      this.logger.warn(`Missing ${missingRequiredFields.length} required field(s): [${missingRequiredFields.join(', ')}]`);
+    }
 
     return {
       mapped_data: validationResult.data,

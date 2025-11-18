@@ -379,6 +379,19 @@ export class UserController {
       if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
         throw error;
       }
+      
+      // If it's already an InternalServerErrorException from the service layer,
+      // preserve the original error message instead of overriding it
+      if (error instanceof InternalServerErrorException) {
+        Logger.error(
+          error?.message ?? 'Failed to upload document',
+          error?.stack,
+          'users.controller:uploadDocument',
+        );
+        throw error; // Re-throw the original exception with its meaningful message
+      }
+      
+      // For other unexpected errors, wrap with generic message
       Logger.error(
         error?.message ?? 'Failed to upload document',
         error?.stack,

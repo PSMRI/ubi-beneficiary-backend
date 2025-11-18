@@ -24,8 +24,7 @@ import { DocumentUploadModule } from '@modules/document-upload/document-upload.m
 import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
-import { DhiwayVcAdapter } from '@services/vc-adapters/dhiway-vc.adapter';
-import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
+import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
 
 @Module({
   imports: [
@@ -43,6 +42,7 @@ import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
     AdminModule,
     DocumentUploadModule,
     OcrMappingModule,
+    VcAdaptersModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -57,8 +57,6 @@ import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
     RoleGuard,
     ProxyService,
     VcFieldsService,
-    DhiwayVcAdapter,
-    VcAdapterFactory,
   ],
   exports: [AuthService, UserService, EncryptionService, WalletService, RoleGuard],
 })

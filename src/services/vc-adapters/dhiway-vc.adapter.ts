@@ -142,9 +142,23 @@ export class DhiwayVcAdapter {
 			this.logger.error(`Request URL: ${error?.config?.url}`);
 			this.logger.error(`Error response: ${JSON.stringify(error?.response?.data, null, 2)}`);
 			
+			// Extract error message from various possible response formats
+			let errorMessage = 'Failed to create VC record';
+			
+			if (error?.response?.data) {
+				const errorData = error.response.data;
+				// Check multiple possible error message fields
+				errorMessage = errorData.error || 
+							  errorData.message || 
+							  errorData.details || 
+							  (typeof errorData === 'string' ? errorData : errorMessage);
+			} else if (error.message) {
+				errorMessage = error.message;
+			}
+			
 			return {
 				success: false,
-				message: error?.response?.data?.message || error.message || 'Failed to create VC record',
+				message: errorMessage,
 				error: error?.response?.data || error.message,
 			};
 		}

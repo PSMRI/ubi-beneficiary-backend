@@ -35,7 +35,7 @@ import { IFileStorageService } from '@services/storage-providers/file-storage.se
 import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
 import { OcrService } from '@services/ocr/ocr.service';
 import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
-import { VcFieldsService } from '../../common/helper/vcFieldService';
+import { VcFieldsService, VcFields } from '../../common/helper/vcFieldService';
 import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
 
 type StatusUpdateInfo = {
@@ -2138,35 +2138,40 @@ export class UserService {
 			);
 
 			// Extract spaceId from document config
-			const spaceId = documentConfig?.spaceId;				Logger.debug(`VC Configuration - Issuer: ${issuer}, SpaceId: ${spaceId}`);
-				Logger.debug(`Mapped data to be sent for VC creation: ${JSON.stringify(vcMapping.mapped_data, null, 2)}`);
+			const spaceId = documentConfig?.spaceId;
+			
+			Logger.debug(`VC Configuration - Issuer: ${issuer}, SpaceId: ${spaceId}`);
+			Logger.debug(`Mapped data to be sent for VC creation: ${JSON.stringify(vcMapping.mapped_data, null, 2)}`);
 
-				if (!spaceId) {
-					throw new BadRequestException(
-						'Space ID is required for VC creation. Please configure spaceId in vcConfiguration.',
-					);
-				}
-
-				// Create VC record using the appropriate adapter
-				vcCreationResult = await this.vcAdapterFactory.createRecord(
-					issuer,
-					spaceId,
-					vcMapping.mapped_data,
-					file,
-					userDetails.user_id, // Pass userId from authenticated user
+			if (!spaceId) {
+				throw new BadRequestException(
+					'Space ID is required for VC creation. Please configure spaceId in vcConfiguration.',
 				);
+			}
 
-				if (!vcCreationResult.success) {
-					Logger.error(
-						`VC creation failed: ${vcCreationResult.message}`,
-						vcCreationResult.error,
-					);
-					throw new InternalServerErrorException(
-						vcCreationResult.message || 'Failed to create VC record',
-					);
-				}
+			// Validate required fields before VC creation using OCR mapping results
+			Logger.log(`Starting required field validation for VC creation...`);
+			await this.validateRequiredFieldsFromOcrMapping(vcFields, vcMapping, uploadDocumentDto);
+			Logger.log(`Required field validation passed - proceeding with VC creation`);
 
-				Logger.log(
+			// Create VC record using the appropriate adapter
+			vcCreationResult = await this.vcAdapterFactory.createRecord(
+				issuer,
+				spaceId,
+				vcMapping.mapped_data,
+				file,
+				userDetails.user_id, // Pass userId from authenticated user
+			);
+
+			if (!vcCreationResult.success) {
+				Logger.error(
+					`VC creation failed: ${vcCreationResult.message}`,
+					vcCreationResult.error,
+				);
+				throw new InternalServerErrorException(
+					vcCreationResult.message || 'Failed to create VC record',
+				);
+			}				Logger.log(
 					`VC created successfully - Record ID: ${vcCreationResult.recordId}, Verification URL: ${vcCreationResult.verificationUrl}`,
 				);
 
@@ -2357,6 +2362,82 @@ export class UserService {
 			throw new BadRequestException(
 				'Document subtype is required and cannot be empty.',
 			);
+		}
+	}
+
+	// Helper to validate required fields using OCR mapping results
+	private async validateRequiredFieldsFromOcrMapping(
+		vcFields: VcFields,
+		vcMapping: any,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		try {
+			Logger.log(`Validating required fields - vcFields: ${Object.keys(vcFields || {}).length} fields, vcMapping present: ${!!vcMapping}`);
+			Logger.debug(`vcFields structure: ${JSON.stringify(vcFields, null, 2)}`);
+			
+			if (!vcFields || !vcMapping) {
+				throw new BadRequestException(
+					'Cannot validate required fields: missing vcFields configuration or mapping data',
+				);
+			}
+
+			// Get missing fields from OCR mapping results
+			const missingFields = vcMapping.missing_fields || [];
+			Logger.log(`OCR Mapping - Total missing fields: [${missingFields.join(', ')}]`);
+			
+			// Filter to only required missing fields
+			const missingRequiredFields: string[] = [];
+			
+			for (const fieldName of missingFields) {
+				if (vcFields[fieldName]?.required === true) {
+					missingRequiredFields.push(fieldName);
+				}
+			}
+
+			// Also check mapped data for required fields that might be empty/null
+			const additionalMissingRequired: string[] = [];
+			for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
+				if (fieldConfig?.required === true) {
+					const fieldValue = vcMapping.mapped_data?.[fieldName];
+					if (
+						fieldValue === null || 
+						fieldValue === undefined || 
+						(typeof fieldValue === 'string' && fieldValue.trim() === '')
+					) {
+						// Only add if not already in missingFields array
+						if (!missingRequiredFields.includes(fieldName)) {
+							additionalMissingRequired.push(fieldName);
+						}
+					}
+				}
+			}
+
+			const allMissingRequired = [...missingRequiredFields, ...additionalMissingRequired];
+
+			Logger.log(`Required field validation - Missing required fields: [${allMissingRequired.join(', ')}]`);
+			Logger.debug(`Mapped data keys: [${Object.keys(vcMapping.mapped_data || {}).join(', ')}]`);
+			
+			// Additional safety check: if studentuniqueid specifically is missing, warn about it
+			if (!vcMapping.mapped_data?.studentuniqueid && vcFields.studentuniqueid) {
+				Logger.warn(`CRITICAL: studentuniqueid is missing from mapped data but present in vcFields config. Required: ${vcFields.studentuniqueid?.required}`);
+			}
+
+			if (allMissingRequired.length > 0) {
+				const fieldList = allMissingRequired.join(', ');
+				const errorMessage = `Missing required field(s) for VC creation: ${fieldList}. ` +
+					`Document Type: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}. ` +
+					`OCR could not extract these required fields from the uploaded document. ` +
+					`Please ensure these fields are clearly visible and readable in the document.`;
+				
+				Logger.error(`VC validation failed: ${errorMessage}`);
+				throw new BadRequestException(errorMessage);
+			}
+
+			const requiredFieldsCount = Object.values(vcFields).filter(config => config?.required === true).length;
+			Logger.log(`All ${requiredFieldsCount} required fields are present for VC creation`);
+		} catch (error) {
+			Logger.error(`Error in validateRequiredFieldsFromOcrMapping: ${error.message}`, error.stack);
+			throw error;
 		}
 	}
 

@@ -23,8 +23,7 @@ import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ConfigModule } from '@nestjs/config';
 import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
-import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
-import { DhiwayVcAdapter } from '@services/vc-adapters/dhiway-vc.adapter';
+import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
 
 @Module({
   imports: [
@@ -64,6 +63,7 @@ import { DhiwayVcAdapter } from '@services/vc-adapters/dhiway-vc.adapter';
     AdminModule,
     DocumentUploadModule,
     OcrMappingModule,
+    VcAdaptersModule,
   ],
   controllers: [UserController],
   providers: [
@@ -76,9 +76,7 @@ import { DhiwayVcAdapter } from '@services/vc-adapters/dhiway-vc.adapter';
     ProxyService,
     ConfigModule,
     VcFieldsService,
-    DhiwayVcAdapter,
-    VcAdapterFactory,
   ],
-   exports: [UserService, VcAdapterFactory],
+   exports: [UserService],
 })
 export class UserModule {}
