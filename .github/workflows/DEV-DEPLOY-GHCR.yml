@@ -1,0 +1,66 @@
+name: Deploy to UBA-DEV (Tag-Based)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker tag to deploy (e.g., v1.0.4)'
+        required: true
+        default: 'latest'
+
+jobs:
+  deploy_on_uba_dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: UBA-DEV  # uses environment secrets
+
+    steps:
+      - name: Set environment variables
+        run: |
+          IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          TAG="${{ github.event.inputs.tag }}"
+          echo "IMAGE_URI=$IMAGE_NAME:$TAG" >> $GITHUB_ENV
+          echo "📦 Deploying image: $IMAGE_NAME:$TAG"
+
+      - name: Deploy to UBA-DEV server
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.HOST_NAME }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.PORT }}
+          script: |
+            set -e
+            echo "🚀 Starting deployment to UBA-DEV environment"
+
+            IMAGE_URI="${{ env.IMAGE_URI }}"
+            CONTAINER_NAME="ubi-beneficiary-backend"
+            BASE_DIR="${{ secrets.TARGET_DIR }}"
+            ENV_FILE="${BASE_DIR}/.env"
+
+            echo "🔐 Logging in to GHCR..."
+            echo "${{ secrets.GHCR_PAT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            echo "📦 Pulling image from GHCR: $IMAGE_URI"
+            docker pull "$IMAGE_URI"
+
+            echo "🛑 Stopping existing container (if any)..."
+            docker rm -f "$CONTAINER_NAME" || true
+
+            echo "🚀 Starting new container..."
+            docker run -d \
+              --name "$CONTAINER_NAME" \
+              --env-file "$ENV_FILE" \
+              -p 80:80 \
+              "$IMAGE_URI"
+
+            echo "✅ Deployment complete!"
+            docker ps | grep "$CONTAINER_NAME"
+
+      - name: Notify on Slack
+        uses: iRoachie/slack-github-actions@v2.3.2
+        if: ${{ always() }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          status: ${{ job.status }}
