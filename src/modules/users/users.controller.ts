@@ -290,18 +290,24 @@ export class UserController {
           is_update: false,
           download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-123.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
           issue_vc: 'yes',
+          vc_creation: {
+            success: true,
+            record_id: 'vc_67890',
+            verification_url: 'https://verify.example.com/vc/67890'
+          },
+          doc_data_link: 'https://verify.example.com/vc/67890',
           mapped_data: {
-            firstname: 'MD ARSH',
-            schoolname: 'ANITA INTERMEDIATE COLLEGE KANKE RANCHI',
-            currentclass: 11,
-            markstotal: 166,
-            result: 'PROMOTED',
+            firstname: 'Jane Doe',
+            schoolname: 'XYZ Public School',
+            currentclass: 10,
+            markstotal: 180,
+            result: 'PASS',
             academicyear: '2024',
             issuedby: 'PRINCIPAL',
-            issuerauthority: 'Jharkhand Academic Council, Ranchi',
-            issueddate: '17-05-2024',
-            issuingauthorityaddress: 'Kanke, Ranchi',
-            issuingauthoritystate: 'Jharkhand',
+            issuerauthority: 'Central Education Board',
+            issueddate: '20-05-2024',
+            issuingauthorityaddress: 'Education Block, Central District',
+            issuingauthoritystate: 'Example State',
             issuingauthoritycountry: 'India'
           }
         }
@@ -328,9 +334,25 @@ export class UserController {
           is_update: true,
           download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-456.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
           issue_vc: 'yes',
+          vc_creation: {
+            success: true,
+            record_id: 'vc_12345',
+            verification_url: 'https://verify.example.com/vc/12345'
+          },
+          doc_data_link: 'https://verify.example.com/vc/12345',
           mapped_data: {
-            firstname: 'MD ARSH',
-            schoolname: 'ANITA INTERMEDIATE COLLEGE KANKE RANCHI'
+            firstname: 'John Smith',
+            schoolname: 'ABC International School',
+            currentclass: 12,
+            markstotal: 175,
+            result: 'PASS',
+            academicyear: '2024',
+            issuedby: 'PRINCIPAL',
+            issuerauthority: 'State Education Board',
+            issueddate: '15-06-2024',
+            issuingauthorityaddress: 'Education Complex, Main City',
+            issuingauthoritystate: 'State Name',
+            issuingauthoritycountry: 'India'
           }
         }
       }

@@ -23,8 +23,8 @@ import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ConfigModule } from '@nestjs/config';
 import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
-import { DhiwayVcAdapter } from '@services/vc-adapters/dhiway-vc.adapter';
 import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
+import { DhiwayVcAdapter } from '@services/vc-adapters/dhiway-vc.adapter';
 
 @Module({
   imports: [
@@ -79,6 +79,6 @@ import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
     DhiwayVcAdapter,
     VcAdapterFactory,
   ],
-   exports: [UserService, DhiwayVcAdapter, VcAdapterFactory],
+   exports: [UserService, VcAdapterFactory],
 })
 export class UserModule {}
