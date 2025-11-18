@@ -36,6 +36,7 @@ import { DocumentUploadService } from '@modules/document-upload/document-upload.
 import { OcrService } from '@services/ocr/ocr.service';
 import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
+import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
 
 type StatusUpdateInfo = {
 	attempted: boolean;
@@ -68,6 +69,7 @@ export class UserService {
 		private readonly ocrService: OcrService,
 		private readonly ocrMappingService: OcrMappingService,
 		private readonly vcFieldsService: VcFieldsService,
+		private readonly vcAdapterFactory: VcAdapterFactory,
 	) {}
 
 	/*  async create(createUserDto: CreateUserDto) {
@@ -2126,15 +2128,53 @@ export class UserService {
 				};
 			}
 
-			// Conditionally upload to S3 based on issue_vc flag
-			let uploadResult;
-			let downloadUrl = null;
+		// Conditionally upload to S3 and/or create VC based on issue_vc flag
+		let uploadResult;
+		let downloadUrl = null;
+		let vcCreationResult = null;
+		// Use issuer from DTO if provided, otherwise use from config, fallback to 'dhiway'
+		let issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
 
-			if (issueVC === 'yes') {
-				// Skip S3 upload when issue_vc is "yes"
-				Logger.log(
-					`Skipping S3 upload for document (issue_vc: yes): ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
+		if (issueVC === 'yes') {
+			// Create VC using adapter when issue_vc is "yes"
+			Logger.log(
+				`Creating VC for document: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
+			);
+
+			// Extract spaceId from document config
+			const spaceId = documentConfig?.spaceId;				Logger.debug(`VC Configuration - Issuer: ${issuer}, SpaceId: ${spaceId}`);
+				Logger.debug(`Mapped data to be sent for VC creation: ${JSON.stringify(vcMapping.mapped_data, null, 2)}`);
+
+				if (!spaceId) {
+					throw new BadRequestException(
+						'Space ID is required for VC creation. Please configure spaceId in vcConfiguration.',
+					);
+				}
+
+				// Create VC record using the appropriate adapter
+				vcCreationResult = await this.vcAdapterFactory.createRecord(
+					issuer,
+					spaceId,
+					vcMapping.mapped_data,
+					file,
+					userDetails.user_id, // Pass userId from authenticated user
 				);
+
+				if (!vcCreationResult.success) {
+					Logger.error(
+						`VC creation failed: ${vcCreationResult.message}`,
+						vcCreationResult.error,
+					);
+					throw new InternalServerErrorException(
+						vcCreationResult.message || 'Failed to create VC record',
+					);
+				}
+
+				Logger.log(
+					`VC created successfully - Record ID: ${vcCreationResult.recordId}, Verification URL: ${vcCreationResult.verificationUrl}`,
+				);
+
+				// Skip S3 upload, use placeholder for DB record
 				uploadResult = {
 					filePath: `local://${userDetails.user_id}/${Date.now()}-${file.originalname}`,
 					docDatatype: file.mimetype,
@@ -2166,12 +2206,18 @@ export class UserService {
 						uploadResult,
 						uploadDocumentDto,
 						vcMapping,
+						vcCreationResult?.verificationUrl, // Pass verificationUrl as doc_data_link
+						issueVC, // Pass issueVC flag
+						issuer, // Pass issuer
 					)
 				: await this.createNewDoc(
 						userDetails.user_id,
 						uploadResult,
 						uploadDocumentDto,
 						vcMapping,
+						vcCreationResult?.verificationUrl, // Pass verificationUrl as doc_data_link
+						issueVC, // Pass issueVC flag
+						issuer, // Pass issuer
 					);
 
 			// Build response data - clean format without OCR details, only mapped_data
@@ -2191,6 +2237,16 @@ export class UserService {
 			// Add download_url only if file was uploaded to S3
 			if (downloadUrl) {
 				responseData.download_url = downloadUrl;
+			}
+
+			// Add VC creation details if VC was created
+			if (vcCreationResult?.success) {
+				responseData.vc_creation = {
+					success: true,
+					record_id: vcCreationResult.recordId,
+					verification_url: vcCreationResult.verificationUrl,
+				};
+				responseData.doc_data_link = vcCreationResult.verificationUrl;
 			}
 
 			// Add mapped_data from vc_mapping if available
@@ -2401,6 +2457,9 @@ export class UserService {
 		uploadResult: any,
 		uploadDocumentDto: UploadDocumentDto,
 		vcMapping: any,
+		docDataLink?: string,
+		issueVC?: string,
+		issuer?: string,
 	): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
 		const previousPath = existingDoc.doc_path;
 		existingDoc.doc_path = uploadResult.filePath;
@@ -2408,9 +2467,26 @@ export class UserService {
 		existingDoc.doc_datatype = uploadResult.docDatatype;
 		existingDoc.uploaded_at = uploadResult.uploadedAt;
 
-		// Store only mapped_data in doc_data column (will be automatically encrypted)
-		if (vcMapping?.mapped_data) {
+		// Set doc_data based on issueVC flag
+		// If issueVC is "yes", set doc_data as empty object (data will be updated through different action)
+		// Otherwise, store mapped_data (will be automatically encrypted)
+		if (issueVC === 'yes') {
+			existingDoc.doc_data = JSON.stringify({}) as any;
+		} else if (vcMapping?.mapped_data) {
 			existingDoc.doc_data = JSON.stringify(vcMapping.mapped_data) as any;
+		}
+
+		// Set issuer if provided
+		if (issuer) {
+			existingDoc.issuer = issuer;
+		}
+
+		// Set doc_verified as false (document needs verification)
+		existingDoc.doc_verified = false;
+
+		// Set doc_data_link if provided (from VC creation)
+		if (docDataLink) {
+			existingDoc.doc_data_link = docDataLink;
 		}
 
 		const savedDoc = await this.userDocsRepository.save(existingDoc);
@@ -2426,7 +2502,20 @@ export class UserService {
 		uploadResult: any,
 		uploadDocumentDto: UploadDocumentDto,
 		vcMapping: any,
+		docDataLink?: string,
+		issueVC?: string,
+		issuer?: string,
 	): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+		// Set doc_data based on issueVC flag
+		// If issueVC is "yes", set doc_data as empty object (data will be updated through different action)
+		// Otherwise, store mapped_data (will be automatically encrypted)
+		let docData = null;
+		if (issueVC === 'yes') {
+			docData = JSON.stringify({}) as any;
+		} else if (vcMapping?.mapped_data) {
+			docData = JSON.stringify(vcMapping.mapped_data) as any;
+		}
+
 		const newUserDoc = this.userDocsRepository.create({
 			user_id: userId,
 			doc_type: uploadDocumentDto.docType,
@@ -2434,15 +2523,14 @@ export class UserService {
 			doc_name: uploadDocumentDto.docName,
 			imported_from: uploadDocumentDto.importedFrom,
 			doc_path: uploadResult.filePath,
-			doc_data: vcMapping?.mapped_data
-				? (JSON.stringify(vcMapping.mapped_data) as any)
-				: null,
+			doc_data: docData,
 			doc_datatype: uploadResult.docDatatype,
-			doc_verified: null,
+			doc_verified: false, // Set as false instead of null - document needs verification
 			watcher_registered: false,
 			watcher_email: null,
 			watcher_callback_url: null,
-			doc_data_link: null,
+			doc_data_link: docDataLink || null,
+			issuer: issuer || null,
 		});
 
 		const savedDoc = await this.userDocsRepository.save(newUserDoc);

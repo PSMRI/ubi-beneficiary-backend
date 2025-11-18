@@ -43,6 +43,9 @@ export class UserDoc {
 	@Column({ type: 'varchar', length: 1500, nullable: true })
 	doc_data_link: string;
 
+	@Column({ type: 'varchar', length: 50, nullable: true })
+	issuer: string | null;
+
 	@Column({
 		type: 'text',
 		nullable: true,
