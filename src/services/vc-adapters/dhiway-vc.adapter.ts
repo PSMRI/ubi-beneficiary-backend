@@ -34,6 +34,7 @@ export class DhiwayVcAdapter {
 	 * @param mappedData - OCR extracted and mapped data
 	 * @param originalFile - Original document file (optional, for attachment)
 	 * @param userId - User ID from authentication token (optional)
+	 * @param vcFields - VcFields configuration to determine field roles (optional)
 	 * @returns VcCreationResponse with verificationUrl
 	 */
 	async createRecord(
@@ -41,6 +42,7 @@ export class DhiwayVcAdapter {
 		mappedData: Record<string, any>,
 		originalFile?: Express.Multer.File,
 		userId?: string,
+		vcFields?: Record<string, any>,
 	): Promise<VcCreationResponse> {
 		try {
 			const validationError = this.validateConfiguration(spaceId);
@@ -49,7 +51,7 @@ export class DhiwayVcAdapter {
 			}
 
 			const url = `${this.baseUrl}/${this.organizationId}/${spaceId}/records`;
-			const formData = this.prepareFormData(mappedData, originalFile, userId);
+			const formData = this.prepareFormData(mappedData, originalFile, userId, vcFields);
 
 			this.logger.log(`Creating VC record in Dhiway - URL: ${url}`);
 			const response = await axios.post(url, formData, {
@@ -102,6 +104,7 @@ export class DhiwayVcAdapter {
 		mappedData: Record<string, any>,
 		originalFile?: Express.Multer.File,
 		userId?: string,
+		vcFields?: Record<string, any>,
 	): FormData {
 		this.logger.debug(
 			`Mapped data received (${Object.keys(mappedData).length} fields): ${JSON.stringify(mappedData, null, 2)}`,
@@ -110,6 +113,28 @@ export class DhiwayVcAdapter {
 		const formData = new FormData();
 		const addedFields = [];
 
+		// Find field names for special roles from vcFields config
+		let originalDocFieldName: string | null = null;
+		let beneficiaryUserIdFieldName: string | null = null;
+
+		this.logger.debug(`vcFields provided: ${!!vcFields}, vcFields keys: ${vcFields ? Object.keys(vcFields).join(', ') : 'N/A'}`);
+
+		if (vcFields) {
+			for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
+				this.logger.debug(`Checking field '${fieldName}' with role: ${fieldConfig.role || 'N/A'}`);
+				if (fieldConfig.role === 'original_document') {
+					originalDocFieldName = fieldName;
+					this.logger.log(`Found original document field name: '${originalDocFieldName}'`);
+				} else if (fieldConfig.role === 'beneficiary_user_id') {
+					beneficiaryUserIdFieldName = fieldName;
+					this.logger.log(`Found beneficiary user ID field name: '${beneficiaryUserIdFieldName}'`);
+				}
+			}
+		}
+
+		this.logger.debug(`Resolved field names - originalDoc: '${originalDocFieldName}', userId: '${beneficiaryUserIdFieldName}'`);
+
+		// Add regular mapped data fields (excluding role-based fields)
 		for (const [key, value] of Object.entries(mappedData)) {
 			if (value !== null && value !== undefined) {
 				formData.append(key, String(value));
@@ -121,22 +146,36 @@ export class DhiwayVcAdapter {
 			`Form data fields added (${addedFields.length}): ${addedFields.join(', ')}`,
 		);
 
-		if (originalFile) {
-			formData.append('originalvc', originalFile.buffer, {
+		// Add original document file using the configured field name
+		this.logger.debug(`Checking file attachment - originalFile present: ${!!originalFile}, fieldName: '${originalDocFieldName}'`);
+		
+		if (originalFile && originalDocFieldName) {
+		formData.append(originalDocFieldName, originalFile.buffer, {
 				filename: originalFile.originalname,
 				contentType: originalFile.mimetype,
 			});
-			this.logger.debug(
-				`Original file attached to 'originalvc' field: ${originalFile.originalname} (${originalFile.mimetype}, ${originalFile.size} bytes)`,
+			this.logger.log(
+				`✓ Original file attached to '${originalDocFieldName}' field: ${originalFile.originalname} (${originalFile.mimetype}, ${originalFile.size} bytes)`,
+			);
+		} else if (originalFile && !originalDocFieldName) {
+			this.logger.error(
+				`✗ Original file provided but no field with role 'original_document' found in vcFields config - FILE WILL NOT BE ATTACHED!`,
+			);
+		} else if (!originalFile && originalDocFieldName) {
+			this.logger.warn(
+				`Field '${originalDocFieldName}' configured for original document but no file provided`,
 			);
 		}
 
-		if (userId) {
-			formData.append('beneficiary_userid', userId);
-			this.logger.debug(`Beneficiary user ID attached: ${userId}`);
-		} else {
-			this.logger.warn(
-				'No userId provided, beneficiary_userid field will not be set',
+		// Add beneficiary user ID using the configured field name
+		this.logger.debug(`Checking user ID - userId present: ${!!userId}, fieldName: '${beneficiaryUserIdFieldName}'`);
+		
+		if (userId && beneficiaryUserIdFieldName) {
+			formData.append(beneficiaryUserIdFieldName, userId);
+			this.logger.log(`✓ Beneficiary user ID attached to '${beneficiaryUserIdFieldName}' field: ${userId}`);
+		} else if (userId && !beneficiaryUserIdFieldName) {
+			this.logger.error(
+				`✗ User ID provided but no field with role 'beneficiary_user_id' found in vcFields config - USER ID WILL NOT BE ATTACHED!`,
 			);
 		}
 
