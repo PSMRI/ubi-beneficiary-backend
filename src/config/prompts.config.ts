@@ -18,10 +18,16 @@ STRICT EXTRACTION RULES:
 2. If a field's value is NOT found in the document, set it to null
 3. Never guess, infer, or create values
 4. Never use a value from one field to fill a different field (e.g., issue date is NOT exam date)
-5. For name fields: Keep full names together - don't split unless clearly separated in document
+5. For name fields: 
+   - Extract only the individual's name, excluding relationship descriptors (S/O, D/O, W/O, etc.)
+   - Stop at relationship indicators or descriptive phrases
+   - Include titles (Mr., Miss, Mrs., Dr.) only if part of the actual name
+   - For compound names, extract the complete name but exclude any following relational information
 6. For date fields: Only extract if the document explicitly labels that specific date type (e.g., "Exam Date:", "DOB:")
 7. If a date exists but its purpose is unclear, set the field to null rather than guessing
 8. Match field names to document labels - "Date:" near signature is likely issue date, not exam date
+9. For address fields: Extract complete addresses but separate individual components when the schema requires specific parts
+10. For numerical fields: Extract only the numbers relevant to the field, excluding any accompanying text or currency symbols unless specifically required
 
 Return pure JSON starting with { and ending with }. No text before or after.`,
 
