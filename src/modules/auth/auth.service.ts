@@ -189,51 +189,57 @@ export class AuthService {
       };
       const user = await this.userService.createKeycloakData(userData);
 
-      // Step 5: Wallet onboarding integration
+      // Step 5: Conditional Wallet onboarding integration
       let walletToken = null;
-      try {
-        if (user?.user_id) {
-          const walletData = {
-            firstName: body.firstName.trim(),
-            lastName: body.lastName.trim(),
-            phone: body.phoneNumber.trim(),
-            password: password,
-            username: body.username.trim(),
-          };
+      const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
+      
+      if (isWalletRegistrationEnabled) {
+        try {
+          if (user?.user_id) {
+            const walletData = {
+              firstName: body.firstName.trim(),
+              lastName: body.lastName.trim(),
+              phone: body.phoneNumber.trim(),
+              password: password,
+              username: body.username.trim(),
+            };
 
-          this.loggerService.log('Starting wallet onboarding for user', 'AuthService');
-          const walletResponse = await this.walletService.onboardUser(walletData);
-          walletToken = walletResponse?.data?.token;
+            this.loggerService.log('Starting wallet onboarding for user', 'AuthService');
+            const walletResponse = await this.walletService.onboardUser(walletData);
+            walletToken = walletResponse?.data?.token;
 
-          // Step 6: Update user with wallet token
-          if (walletToken) {
-            await this.userService.update(user.user_id, {
-              walletToken: walletToken,
-            });
-            this.loggerService.log('User updated with wallet token successfully', 'AuthService');
+            // Step 6: Update user with wallet token
+            if (walletToken) {
+              await this.userService.update(user.user_id, {
+                walletToken: walletToken,
+              });
+              this.loggerService.log('User updated with wallet token successfully', 'AuthService');
+            }
           }
+        } catch (walletError) {
+          // Rollback user creation in DB and Keycloak if wallet onboarding fails
+          this.loggerService.error(
+            'Wallet onboarding failed during user registration',
+            walletError.stack,
+            'AuthService'
+          );
+          // Delete user from DB if it exists
+          if (user?.user_id) {
+            await this.userService.deleteUser(user.user_id);
+            this.loggerService.error(`Rolled back user in DB: ${user.user_id}`, 'AuthService');
+          }
+          // Delete user from Keycloak if it exists
+          if (keycloakId) {
+            await this.keycloakService.deleteUser(keycloakId);
+            this.loggerService.error(`Rolled back user in Keycloak: ${keycloakId}`, 'AuthService');
+          }
+          throw new ErrorResponse({
+            statusCode: HttpStatus.BAD_GATEWAY,
+            errorMessage: 'Registration could not be completed. Please try again later.',
+          });
         }
-      } catch (walletError) {
-        // Rollback user creation in DB and Keycloak if wallet onboarding fails
-        this.loggerService.error(
-          'Wallet onboarding failed during user registration',
-          walletError.stack,
-          'AuthService'
-        );
-        // Delete user from DB if it exists
-        if (user?.user_id) {
-          await this.userService.deleteUser(user.user_id);
-          this.loggerService.error(`Rolled back user in DB: ${user.user_id}`, 'AuthService');
-        }
-        // Delete user from Keycloak if it exists
-        if (keycloakId) {
-          await this.keycloakService.deleteUser(keycloakId);
-          this.loggerService.error(`Rolled back user in Keycloak: ${keycloakId}`, 'AuthService');
-        }
-        throw new ErrorResponse({
-          statusCode: HttpStatus.BAD_GATEWAY,
-          errorMessage: 'Registration could not be completed. Please try again later.',
-        });
+      } else {
+        this.loggerService.log('Wallet registration is disabled, skipping wallet onboarding', 'AuthService');
       }
 
       // Step 7: Return success response

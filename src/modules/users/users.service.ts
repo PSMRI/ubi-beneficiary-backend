@@ -1409,11 +1409,17 @@ export class UserService {
 		try {
 			const walletUrl = process.env.WALLET_BASE_URL + '/api/wallet/vcs/watch';
 			const authToken = userDetails.walletToken || '';
+			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
 
 			if (!authToken) {
+				const message = isWalletRegistrationEnabled 
+					? 'Wallet token not found - user may not be registered with wallet'
+					: 'Wallet registration is disabled - skipping watcher registration';
+				
+				Logger.warn(`E-Wallet watcher registration skipped: ${message}`);
 				return {
 					success: false,
-					message: 'Wallet token not found',
+					message: message,
 					data: null,
 				};
 			}
@@ -1977,6 +1983,12 @@ export class UserService {
 		recordPublicId: string;
 	}) {
 		try {
+			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
+			
+			if (!isWalletRegistrationEnabled) {
+				Logger.warn('Wallet registration is disabled but received wallet callback - processing anyway for existing documents');
+			}
+			
 			Logger.log(
 				`Processing wallet callback for recordPublicId: ${callbackData.recordPublicId}`,
 			);
