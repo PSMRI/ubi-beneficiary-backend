@@ -539,6 +539,7 @@ export class AuthService {
     let vcMapping = null;
     let isUserRegistered = false;
     let generatedUsername = null;
+    const defaultPassword = process.env.SIGNUP_DEFAULT_PASSWORD;
 
     try {
       // 🟩 Step 1: Pre-process OTR Certificate
@@ -560,7 +561,7 @@ export class AuthService {
         lastName: vcMapping?.mapped_data?.lastname || '',
         username: `${vcMapping?.mapped_data?.otr_number.toString()}` || '',
         phoneNumber: vcMapping?.mapped_data?.phoneNumber.toString() || '',
-        password: process.env.SIGNUP_DEFAULT_PASSWORD,
+        password: defaultPassword,
       };
 
       // 🟩 Step 3.1: Validate required fields
@@ -611,6 +612,7 @@ export class AuthService {
             imported_from: savedDoc.savedDoc.imported_from,
           },
           username: body.username,
+          password: defaultPassword,
         },
       });
     } catch (error) {
@@ -628,6 +630,7 @@ export class AuthService {
             user,
             document: null,
             username: body.username,
+            password: defaultPassword,
           },
         });
       }
