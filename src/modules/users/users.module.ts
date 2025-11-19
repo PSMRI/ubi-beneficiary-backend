@@ -23,6 +23,7 @@ import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ConfigModule } from '@nestjs/config';
 import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
+import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { VcFieldsService } from '../../common/helper/vcFieldService';
     AdminModule,
     DocumentUploadModule,
     OcrMappingModule,
+    VcAdaptersModule,
   ],
   controllers: [UserController],
   providers: [

@@ -5,29 +5,25 @@
 const DEFAULT_PROMPTS = {
   ocrExtraction: `Extract all text from this document. Return only the extracted text, preserving layout as much as possible. No explanations or formatting.`,
 
-  ocrMapping: `You are an expert in document data extraction. Using the provided text and target schema, extract and map relevant information.
+  ocrMapping: `Extract data from the document text below. Return ONLY a JSON object.
 
 DOCUMENT TEXT:
 {extractedText}
 
-TARGET SCHEMA:
+SCHEMA TO FILL:
 {schema}
 
-INSTRUCTIONS:
-- For each schema field, find the most relevant value using field names, synonyms, and nearby context.
-- Parse entities like names, IDs, dates, addresses, amounts, and categories intelligently.
-- Clean and normalize data (trim spaces, consistent case, correct types).
-- If a field cannot be determined, set it to null.
-- Ensure all schema fields exist and match names exactly.
+STRICT EXTRACTION RULES:
+1. Use ONLY text that exists verbatim in the DOCUMENT TEXT above
+2. If a field's value is NOT found in the document, set it to null
+3. Never guess, infer, or create values
+4. Never use a value from one field to fill a different field (e.g., issue date is NOT exam date)
+5. For name fields: Keep full names together - don't split unless clearly separated in document
+6. For date fields: Only extract if the document explicitly labels that specific date type (e.g., "Exam Date:", "DOB:")
+7. If a date exists but its purpose is unclear, set the field to null rather than guessing
+8. Match field names to document labels - "Date:" near signature is likely issue date, not exam date
 
-OUTPUT RULES:
-- Return ONLY the final JSON object.
-- Do NOT include markdown, explanations, or extra text.
-- Start with { and end with }.
-- Output must be valid, parseable JSON.
-
-Example:
-{"field1": "value1", "field2": "value2", "field3": null}`,
+Return pure JSON starting with { and ending with }. No text before or after.`,
 
   validation: 'Test'
 } as const;

@@ -279,17 +279,37 @@ export class UserController {
         statusCode: 201,
         message: 'Document uploaded successfully',
         data: {
-          doc_id: 'a3d8fa45-bdfa-49d1-8b3f-54bafcf3aabb',
-          doc_path: 'uploads/file-1635789456123-123456789.pdf',
-          user_id: 'b4e9gb56-cefb-5ae2-9c4g-65cbgdg4bbcc',
-          doc_type: 'associationProof',
-          doc_subtype: 'enrollmentCertificate',
-          doc_name: 'Enrollment Certificate',
+          doc_id: '0bf1e149-1dd0-4899-b42a-f77255a86fde',
+          user_id: '82192ec3-6897-4288-ab8e-f8a191b0445c',
+          doc_type: 'marksProof',
+          doc_subtype: 'marksheet',
+          doc_name: 'Marksheet',
           imported_from: 'Manual Upload',
-          doc_datatype: 'PDF',
-          uploaded_at: '2025-10-29T10:30:00.000Z',
+          doc_datatype: 'Application/JSON',
+          uploaded_at: '2025-11-12T05:42:43.345Z',
           is_update: false,
           download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-123.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
+          issue_vc: 'yes',
+          vc_creation: {
+            success: true,
+            record_id: 'vc_67890',
+            verification_url: 'https://verify.example.com/vc/67890'
+          },
+          doc_data_link: 'https://verify.example.com/vc/67890',
+          mapped_data: {
+            firstname: 'Jane Doe',
+            schoolname: 'XYZ Public School',
+            currentclass: 10,
+            markstotal: 180,
+            result: 'PASS',
+            academicyear: '2024',
+            issuedby: 'PRINCIPAL',
+            issuerauthority: 'Central Education Board',
+            issueddate: '20-05-2024',
+            issuingauthorityaddress: 'Education Block, Central District',
+            issuingauthoritystate: 'Example State',
+            issuingauthoritycountry: 'India'
+          }
         }
       }
     }
@@ -304,16 +324,36 @@ export class UserController {
         message: 'Document updated successfully',
         data: {
           doc_id: 'a3d8fa45-bdfa-49d1-8b3f-54bafcf3aabb',
-          doc_path: 'uploads/file-1635789456123-987654321.pdf',
           user_id: 'b4e9gb56-cefb-5ae2-9c4g-65cbgdg4bbcc',
-          doc_type: 'associationProof',
-          doc_subtype: 'enrollmentCertificate',
-          doc_name: 'Enrollment Certificate',
+          doc_type: 'marksProof',
+          doc_subtype: 'marksheet',
+          doc_name: 'Marksheet',
           imported_from: 'Manual Upload',
-          doc_datatype: 'PDF',
+          doc_datatype: 'Application/JSON',
           uploaded_at: '2025-10-29T11:45:00.000Z',
           is_update: true,
           download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-456.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
+          issue_vc: 'yes',
+          vc_creation: {
+            success: true,
+            record_id: 'vc_12345',
+            verification_url: 'https://verify.example.com/vc/12345'
+          },
+          doc_data_link: 'https://verify.example.com/vc/12345',
+          mapped_data: {
+            firstname: 'John Smith',
+            schoolname: 'ABC International School',
+            currentclass: 12,
+            markstotal: 175,
+            result: 'PASS',
+            academicyear: '2024',
+            issuedby: 'PRINCIPAL',
+            issuerauthority: 'State Education Board',
+            issueddate: '15-06-2024',
+            issuingauthorityaddress: 'Education Complex, Main City',
+            issuingauthoritystate: 'State Name',
+            issuingauthoritycountry: 'India'
+          }
         }
       }
     }
@@ -339,6 +379,19 @@ export class UserController {
       if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
         throw error;
       }
+      
+      // If it's already an InternalServerErrorException from the service layer,
+      // preserve the original error message instead of overriding it
+      if (error instanceof InternalServerErrorException) {
+        Logger.error(
+          error?.message ?? 'Failed to upload document',
+          error?.stack,
+          'users.controller:uploadDocument',
+        );
+        throw error; // Re-throw the original exception with its meaningful message
+      }
+      
+      // For other unexpected errors, wrap with generic message
       Logger.error(
         error?.message ?? 'Failed to upload document',
         error?.stack,

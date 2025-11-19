@@ -24,6 +24,7 @@ import { DocumentUploadModule } from '@modules/document-upload/document-upload.m
 import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
+import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { VcFieldsService } from '../../common/helper/vcFieldService';
     AdminModule,
     DocumentUploadModule,
     OcrMappingModule,
+    VcAdaptersModule,
   ],
   controllers: [AuthController],
   providers: [

@@ -29,10 +29,7 @@ export class OcrMappingService {
    */
   async mapAfterOcr(input: OcrMappingInput, vcFields: VcFields): Promise<OcrMappingResult> {
     try {
-      this.logger.log(`Starting OCR mapping for docType: ${input.docType}, docSubType: ${input.docSubType}`);
-      this.logger.debug(`OCR text preview (first 500 chars): ${input.text.substring(0, 500)}...`);
-      this.logger.debug(`Received vcFields with ${Object.keys(vcFields).length} fields: [${Object.keys(vcFields).join(', ')}]`);
-
+      this.logger.log(`OCR mapping started: ${input.docType}/${input.docSubType}`);
       if (!vcFields || Object.keys(vcFields).length === 0) {
         this.logger.warn(`No vcFields provided for mapping`);
         return {
@@ -46,7 +43,6 @@ export class OcrMappingService {
 
       const schema = this.vcFieldsToSchema(vcFields);
       const adapterType = (process.env.OCR_MAPPING_PROVIDER || 'bedrock').toLowerCase();
-      this.logger.debug(`OCR mapping provider: ${adapterType}, AI configured: ${this.aiAdapter.isConfigured()}`);
 
       // Use AI mapping
       const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema);
@@ -71,32 +67,28 @@ export class OcrMappingService {
    */
   private async tryAiMapping(adapterType: string, text: string, schema: Record<string, any>): Promise<Record<string, any> | null> {
     if (!((adapterType === 'bedrock' || adapterType === 'google-gemini') && this.aiAdapter.isConfigured())) {
-      this.logger.log(`Skipping AI mapping - adapter: ${adapterType}, configured: ${this.aiAdapter.isConfigured()}`);
       return null;
     }
 
     try {
-      this.logger.log(`Attempting AI-based mapping using ${adapterType}`);
-      this.logger.debug(`Schema being sent to AI: ${JSON.stringify(schema, null, 2)}`);
       const mappedData = await this.aiAdapter.mapTextToSchema(text, schema);
-      this.logger.debug(`AI raw response: ${JSON.stringify(mappedData)}`);
 
       // Check if the response is the full AI response object instead of parsed JSON
       if (mappedData && typeof mappedData === 'object' && ('generation' in mappedData || 'content' in mappedData)) {
-        this.logger.warn('AI returned full response object instead of parsed JSON, attempting to extract');
+        this.logger.warn('AI returned unparsed response object');
         return null;
       }
 
       if (mappedData && Object.keys(mappedData).length > 0) {
-        this.logger.log(`AI mapping successful - extracted ${Object.keys(mappedData).length} fields`);
+        const fieldCount = Object.keys(schema.properties || {}).length;
+        this.logger.log(`AI mapping successful: ${Object.keys(mappedData).length}/${fieldCount} fields extracted`);
         return mappedData;
       }
 
-      this.logger.warn('AI mapping returned empty or null result');
+      this.logger.warn('AI mapping returned empty result');
       return null;
     } catch (error: any) {
-      this.logger.error(`AI mapping failed: ${error?.message || error}`, error?.stack);
-      this.logger.warn(`Falling back to keyword mapping`);
+      this.logger.error(`AI mapping failed: ${error?.message || error}`);
       return null;
     }
   }
@@ -123,11 +115,19 @@ export class OcrMappingService {
         String(validationResult.data[key]).trim() !== ''
     );
     const missingFields = fieldNames.filter(key => !presentFields.includes(key));
+    
+    // Identify missing required fields for better error reporting
+    const missingRequiredFields = missingFields.filter(fieldName => 
+      vcFields[fieldName]?.required === true
+    );
+    
     const confidence = fieldNames.length > 0 ? Number((presentFields.length / fieldNames.length).toFixed(2)) : 0;
 
-    this.logger.log(`Mapping completed: ${presentFields.length}/${fieldNames.length} fields mapped, confidence: ${confidence}, method: ${processingMethod}`);
-    this.logger.debug(`Mapped fields: ${JSON.stringify(validationResult.data)}`);
-    this.logger.debug(`Missing fields: ${JSON.stringify(missingFields)}`);
+    this.logger.log(`Mapping complete: ${presentFields.length}/${fieldNames.length} fields (${Math.round(confidence * 100)}% confidence) - Method: ${processingMethod}`);
+    
+    if (missingRequiredFields.length > 0) {
+      this.logger.warn(`Missing ${missingRequiredFields.length} required field(s): [${missingRequiredFields.join(', ')}]`);
+    }
 
     return {
       mapped_data: validationResult.data,

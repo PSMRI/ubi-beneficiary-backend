@@ -42,6 +42,8 @@ export class GeminiAdapter implements IAiMappingAdapter {
 
     try {
       const prompt = buildOcrMappingPrompt(extractedText, schema);
+      this.logger.debug(`Sending request to Gemini (${Object.keys(schema.properties || {}).length} fields)`);
+      
       const response = await this.invokeModel(prompt);
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'gemini');
       
@@ -50,9 +52,10 @@ export class GeminiAdapter implements IAiMappingAdapter {
         return null;
       }
       
+      this.logger.debug(`Gemini extracted ${Object.keys(parsedResult).length} fields`);
       return parsedResult;
     } catch (error: any) {
-      this.logger.error(`Gemini mapping failed: ${error?.message || error}`, error?.stack);
+      this.logger.error(`Gemini mapping failed: ${error?.message || error}`);
       handleMappingError(error, 'gemini');
     }
   }
