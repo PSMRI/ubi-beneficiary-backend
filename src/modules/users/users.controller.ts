@@ -88,8 +88,8 @@ export class UserController {
     return await this.userService.findOne(req, decryptData);
   }
 
-  @UseGuards(AuthGuard)
   @Patch('/update')
+  @UseGuards(AuthGuard)
   @ApiBasicAuth('access-token')
   @UseInterceptors(FileInterceptor('picture'))
   @ApiConsumes('multipart/form-data')

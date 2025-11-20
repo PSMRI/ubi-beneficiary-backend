@@ -106,24 +106,28 @@ export class OcrMappingService {
     // Validate and normalize the mapped data
     const validationResult = this.validateAndNormalize(mappedData, vcFields);
 
-    // Calculate confidence and missing fields
-    const fieldNames = Object.keys(vcFields);
+    // Filter to only document fields for metrics calculation
+    const documentFieldNames = Object.keys(vcFields).filter(
+      fieldName => vcFields[fieldName].document_field !== false
+    );
+
     const presentFields = Object.keys(validationResult.data).filter(
       key =>
         validationResult.data[key] !== null &&
         validationResult.data[key] !== undefined &&
         String(validationResult.data[key]).trim() !== ''
     );
-    const missingFields = fieldNames.filter(key => !presentFields.includes(key));
     
-    // Identify missing required fields for better error reporting
+    const missingFields = documentFieldNames.filter(key => !presentFields.includes(key));
+    
+    // Identify missing required document fields (excluding non-document fields)
     const missingRequiredFields = missingFields.filter(fieldName => 
-      vcFields[fieldName]?.required === true
+      vcFields[fieldName]?.required === true && vcFields[fieldName]?.document_field !== false
     );
     
-    const confidence = fieldNames.length > 0 ? Number((presentFields.length / fieldNames.length).toFixed(2)) : 0;
+    const confidence = documentFieldNames.length > 0 ? Number((presentFields.length / documentFieldNames.length).toFixed(2)) : 0;
 
-    this.logger.log(`Mapping complete: ${presentFields.length}/${fieldNames.length} fields (${Math.round(confidence * 100)}% confidence) - Method: ${processingMethod}`);
+    this.logger.log(`Mapping complete: ${presentFields.length}/${documentFieldNames.length} fields (${Math.round(confidence * 100)}% confidence) - Method: ${processingMethod}`);
     
     if (missingRequiredFields.length > 0) {
       this.logger.warn(`Missing ${missingRequiredFields.length} required field(s): [${missingRequiredFields.join(', ')}]`);
@@ -146,6 +150,15 @@ export class OcrMappingService {
     const properties: Record<string, any> = {};
     
     for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
+      // Skip fields that are not document fields (document_field: false)
+      // Default to true if document_field is not specified
+      const isDocumentField = fieldConfig.document_field !== false;
+      
+      if (!isDocumentField) {
+        this.logger.debug(`Skipping non-document field: ${fieldName} (role: ${fieldConfig.role || 'N/A'})`);
+        continue;
+      }
+
       properties[fieldName] = {
         type: fieldConfig.type || 'string',
         description: fieldConfig.description || fieldName.replaceAll('_', ' '),
