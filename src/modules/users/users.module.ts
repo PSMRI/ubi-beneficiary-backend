@@ -21,7 +21,7 @@ import { AdminModule } from '@modules/admin/admin.module';
 import { DocumentUploadModule } from '@modules/document-upload/document-upload.module';
 import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ConfigModule } from '@nestjs/config';
-import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
+import { UPLOAD_CONFIG } from '../../config/upload.config';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
 import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
 
@@ -50,13 +50,13 @@ import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
         callback(null, true);
       },
       limits: {
-        fileSize: FILE_UPLOAD_LIMITS.MAX_FILE_SIZE,
-        files: FILE_UPLOAD_LIMITS.MAX_FILES,
-        fieldSize: FILE_UPLOAD_LIMITS.MAX_FIELD_SIZE,
-        fieldNameSize: FILE_UPLOAD_LIMITS.MAX_FIELD_NAME_SIZE,
-        fields: FILE_UPLOAD_LIMITS.MAX_FIELDS,
-        headerPairs: FILE_UPLOAD_LIMITS.MAX_HEADER_PAIRS,
-        parts: FILE_UPLOAD_LIMITS.MAX_PARTS,
+        fileSize: UPLOAD_CONFIG.maxFileSize,
+        files: UPLOAD_CONFIG.maxFiles,
+        fieldSize: UPLOAD_CONFIG.maxFileSize,
+        fieldNameSize: UPLOAD_CONFIG.maxFieldNameSize,
+        fields: UPLOAD_CONFIG.maxFields,
+        headerPairs: UPLOAD_CONFIG.maxHeaderPairs,
+        parts: UPLOAD_CONFIG.maxParts,
       },
     }),
     CustomFieldsModule,

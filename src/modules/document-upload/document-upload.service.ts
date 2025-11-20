@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 import { validateFileContent } from '../../common/helper/fileValidation';
-import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
+import { UPLOAD_CONFIG } from '../../config/upload.config';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'node:path';
 import { DocumentMetadata, UploadResult } from './interfaces';
@@ -222,7 +222,7 @@ export class DocumentUploadService {
       throw new BadRequestException('Unsupported file type');
     }
 
-    if (file.size && file.size > FILE_UPLOAD_LIMITS.MAX_FILE_SIZE) {
+    if (file.size && file.size > UPLOAD_CONFIG.maxFileSize) {
       throw new BadRequestException('File too large');
     }
 
