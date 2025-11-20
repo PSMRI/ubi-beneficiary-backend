@@ -1409,11 +1409,17 @@ export class UserService {
 		try {
 			const walletUrl = process.env.WALLET_BASE_URL + '/api/wallet/vcs/watch';
 			const authToken = userDetails.walletToken || '';
+			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
 
 			if (!authToken) {
+				const message = isWalletRegistrationEnabled 
+					? 'Wallet token not found - user may not be registered with wallet'
+					: 'Wallet registration is disabled - skipping watcher registration';
+				
+				Logger.warn(`E-Wallet watcher registration skipped: ${message}`);
 				return {
 					success: false,
-					message: 'Wallet token not found',
+					message: message,
 					data: null,
 				};
 			}
@@ -1977,6 +1983,12 @@ export class UserService {
 		recordPublicId: string;
 	}) {
 		try {
+			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
+			
+			if (!isWalletRegistrationEnabled) {
+				Logger.warn('Wallet registration is disabled but received wallet callback - processing anyway for existing documents');
+			}
+			
 			Logger.log(
 				`Processing wallet callback for recordPublicId: ${callbackData.recordPublicId}`,
 			);
@@ -2252,6 +2264,7 @@ export class UserService {
 			vcMapping.mapped_data,
 			file,
 			userDetails.user_id,
+			vcFields,
 		);
 
 		if (!vcCreationResult.success) {
@@ -2537,7 +2550,8 @@ export class UserService {
 	): string[] {
 		const missingRequiredFields: string[] = [];
 		for (const fieldName of missingFields) {
-			if (vcFields[fieldName]?.required === true) {
+			// Only check required document fields (exclude fields with document_field: false)
+			if (vcFields[fieldName]?.required === true && vcFields[fieldName]?.document_field !== false) {
 				missingRequiredFields.push(fieldName);
 			}
 		}
@@ -2551,7 +2565,8 @@ export class UserService {
 	): string[] {
 		const additionalMissingRequired: string[] = [];
 		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
-			if (fieldConfig?.required === true) {
+			// Only check required document fields (exclude fields with document_field: false)
+			if (fieldConfig?.required === true && fieldConfig?.document_field !== false) {
 				const fieldValue = vcMapping.mapped_data?.[fieldName];
 				if (
 					this.isFieldValueEmpty(fieldValue) &&

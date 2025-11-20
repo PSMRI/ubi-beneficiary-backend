@@ -42,6 +42,7 @@ export class VcAdapterFactory {
 	 * @param mappedData - OCR extracted and mapped data
 	 * @param originalFile - Original document file (optional)
 	 * @param userId - User ID from authentication token (optional)
+	 * @param vcFields - VcFields configuration to determine field roles (optional)
 	 */
 	async createRecord(
 		issuer: string,
@@ -49,6 +50,7 @@ export class VcAdapterFactory {
 		mappedData: Record<string, any>,
 		originalFile?: Express.Multer.File,
 		userId?: string,
+		vcFields?: Record<string, any>,
 	): Promise<VcCreationResponse> {
 		const adapter = this.getAdapter(issuer);
 
@@ -59,6 +61,6 @@ export class VcAdapterFactory {
 			};
 		}
 
-		return adapter.createRecord(spaceId, mappedData, originalFile, userId);
+		return adapter.createRecord(spaceId, mappedData, originalFile, userId, vcFields);
 	}
 }

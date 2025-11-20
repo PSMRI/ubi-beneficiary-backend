@@ -181,13 +181,21 @@ export class HousekeepingService {
 				};
 			}
 
+			// Check if wallet registration is enabled
+			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
+			
 			// Get wallet token from user
 			const walletToken = user.walletToken;
 			if (!walletToken) {
+				const errorMessage = isWalletRegistrationEnabled 
+					? 'No wallet token found for user'
+					: 'Wallet registration is disabled - skipping watcher registration';
+				
+				this.logger.warn(`Skipping watcher registration for document ${doc.doc_id}: ${errorMessage}`);
 				return {
 					success: false,
 					docId: doc.doc_id,
-					error: 'No wallet token found for user',
+					error: errorMessage,
 				};
 			}
 
