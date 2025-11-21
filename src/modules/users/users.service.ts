@@ -283,7 +283,7 @@ export class UserService {
 		}
 
 		const value = String(whosePhoneNumberField.value).trim();
-		const result = value !== '' ? value : null;
+		const result = value || null;
 		Logger.debug(`Processed whosePhoneNumber value: ${result}`);
 		
 		return result;
@@ -735,11 +735,7 @@ export class UserService {
 	 * @private
 	 */
 	private shouldSaveWhosePhoneNumber(whosePhoneNumber?: string): boolean {
-		return (
-			whosePhoneNumber !== undefined &&
-			whosePhoneNumber !== null &&
-			whosePhoneNumber !== ''
-		);
+		return Boolean(whosePhoneNumber?.trim());
 	}
 
 	/**
@@ -834,7 +830,7 @@ export class UserService {
 
 		if (whosePhoneNumberField?.value != null) {
 			const value = String(whosePhoneNumberField.value).trim();
-			const result = value !== '' ? value : null;
+			const result = value || null;
 			Logger.log(`Retrieved existing whosePhoneNumber value: ${result}`);
 			return result;
 		}
