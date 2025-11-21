@@ -6,7 +6,6 @@ import { QRCodeDetectorService } from './services/qr-code-detector.service';
 import { QRProcessingService } from './services/qr-processing.service';
 import { QRContentProcessorService } from './services/qr-content-processor.service';
 import { QRContentProcessorFactory } from './factories/qr-content-processor.factory';
-import { BaseQRContentProcessor } from './processors/base-qr-content.processor';
 import { JharsevaQRContentProcessor } from './processors/jharseva-qr-content.processor';
 import { EOdishaQRContentProcessor } from './processors/eodisha-qr-content.processor';
 import { DhiwayQRContentProcessor } from './processors/dhiway-qr-content.processor';

@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as sharp from 'sharp';
 import axios from 'axios';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { 
   BarcodeFormat, 
   DecodeHintType, 
@@ -351,6 +350,7 @@ export class QRCodeDetectorService implements IQRCodeDetector {
             return result;
           }
         } catch (regionError) {
+          this.logger.debug(`Failed to process region ${region.left},${region.top},${region.width}x${region.height}: ${regionError.message}`);
           // Continue to next region
         }
       }
@@ -419,8 +419,8 @@ export class QRCodeDetectorService implements IQRCodeDetector {
         (img: any) => img
           .greyscale()
           .normalize()
-          .modulate({ brightness: 1.0, saturation: 0 })
-          .linear(2.0, 0) // High contrast
+          .modulate({ brightness: 1, saturation: 0 })
+          .linear(2, 0) // High contrast
           .convolve({
             width: 3,
             height: 3,
@@ -434,14 +434,14 @@ export class QRCodeDetectorService implements IQRCodeDetector {
           .gamma(0.5)
           .modulate({ brightness: 1.2 })
           .linear(1.8, 0) // Increase contrast
-          .sharpen({ sigma: 1.0 }),
+          .sharpen({ sigma: 1 }),
           
         // Noise reduction with sharpening
         (img: any) => img
           .greyscale()
           .blur(0.5)
           .normalize()
-          .sharpen({ sigma: 2.0 })
+          .sharpen({ sigma: 2 })
           .linear(1.5, 0) // Increase contrast
       ];
 
@@ -464,6 +464,7 @@ export class QRCodeDetectorService implements IQRCodeDetector {
             return result;
           }
         } catch (methodError) {
+          this.logger.debug(`Failed preprocessing method ${index + 1}: ${methodError.message}`);
           // Continue to next preprocessing method
         }
       }
