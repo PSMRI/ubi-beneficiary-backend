@@ -21,57 +21,14 @@ export class DhiwayQRContentProcessor extends BaseQRContentProcessor {
     ];
   }
 
-  async processQRContent(
+  // Override VC_URL processing for Dhiway-specific logic
+  protected async processVcUrlContent(
     qrContent: string, 
-    contentType: string, 
+    contentType: QRContentType, 
     documentConfig?: any
   ): Promise<QRProcessingResult> {
-    try {
-      const qrType = contentType as QRContentType;
-      
-      switch (qrType) {
-        case QRContentType.VC_URL:
-          this.logger.log(`Dhiway: Processing VC_URL (specialized implementation)`);
-          return await this.processDhiwayVcUrl(qrContent, qrType, documentConfig);
-
-        case QRContentType.PLAIN_TEXT:
-          return this.processPlainText(qrContent, qrType);
-
-        case QRContentType.JSON:
-          return this.processJson(qrContent, qrType);
-
-        case QRContentType.JSON_URL:
-          return await this.processJsonUrl(qrContent, qrType);
-
-        case QRContentType.XML:
-          return this.processXml(qrContent, qrType);
-
-        case QRContentType.XML_URL:
-          return await this.processXmlUrl(qrContent, qrType);
-
-        // Unimplemented methods - return error message
-        case QRContentType.DOC_URL:
-          this.logger.warn(`Dhiway: ${contentType} not implemented for this issuer`);
-          return this.createUnsupportedMethodError(qrContent, qrType, 'DOC_URL');
-
-        case QRContentType.TEXT_AND_URL:
-          this.logger.warn(`Dhiway: ${contentType} not implemented for this issuer`);
-          return this.createUnsupportedMethodError(qrContent, qrType, 'TEXT_AND_URL');
-
-        default:
-          throw new Error(`Unsupported QR content type for Dhiway: ${contentType}`);
-      }
-    } catch (error) {
-      this.logger.error(`Dhiway processing failed: ${error.message}`, error.stack);
-      return {
-        qrCodeDetected: true,
-        qrCodeContent: qrContent,
-        contentType: contentType as QRContentType,
-        error: `Dhiway processing failed: ${error.message}`,
-        errorType: 'PROCESSING_ERROR',
-        technicalError: error.message,
-      };
-    }
+    this.logger.log(`Dhiway: Processing VC_URL (specialized implementation)`);
+    return await this.processDhiwayVcUrl(qrContent, contentType, documentConfig);
   }
 
   // Dhiway-specific implementation for VC_URL

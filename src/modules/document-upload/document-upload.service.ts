@@ -39,6 +39,7 @@ export class DocumentUploadService {
     file: Express.Multer.File,
     metadata: DocumentMetadata,
     ownerId: string,
+    maxFileSize?: number,
   ): Promise<UploadResult> {
     let uploadedPath: string | null = null;
 
@@ -51,7 +52,7 @@ export class DocumentUploadService {
 
       // Extract and validate file metadata
       const { fileExtension, docDatatype } =
-        this.extractAndValidateFileMetadata(file);
+        this.extractAndValidateFileMetadata(file, maxFileSize);
 
       // Build file key and upload
       const fileKey = this.buildFileKey(ownerId, fileExtension);
@@ -203,7 +204,10 @@ export class DocumentUploadService {
   /**
    * Extract and validate file metadata (extension, type, size)
    */
-  private extractAndValidateFileMetadata(file: Express.Multer.File): {
+  private extractAndValidateFileMetadata(
+    file: Express.Multer.File,
+    maxFileSize?: number,
+  ): {
     fileExtension: string;
     docDatatype: string;
   } {
@@ -222,7 +226,8 @@ export class DocumentUploadService {
       throw new BadRequestException('Unsupported file type');
     }
 
-    if (file.size && file.size > UPLOAD_CONFIG.maxFileSize) {
+    const fileSizeLimit = maxFileSize || UPLOAD_CONFIG.maxFileSize;
+    if (file.size && file.size > fileSizeLimit) {
       throw new BadRequestException('File too large');
     }
 

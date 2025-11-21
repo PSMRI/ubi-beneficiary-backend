@@ -11,15 +11,82 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
     @Inject('QR_CODE_DETECTOR') protected readonly qrCodeDetector: IQRCodeDetector,
   ) {}
 
-  abstract processQRContent(
-    qrContent: string, 
-    contentType: string, 
-    documentConfig?: any
-  ): Promise<QRProcessingResult>;
-
   abstract getSupportedContentTypes(): QRContentType[];
   
   abstract getIssuerName(): string;
+
+  // Template method pattern - common processing logic
+  async processQRContent(
+    qrContent: string, 
+    contentType: string, 
+    documentConfig?: any
+  ): Promise<QRProcessingResult> {
+    try {
+      const qrType = contentType as QRContentType;
+      
+      // Check if content type is supported
+      if (!this.canProcess(contentType)) {
+        this.logger.warn(`${this.getIssuerName()}: ${contentType} not supported for this issuer`);
+        return this.createUnsupportedMethodError(qrContent, qrType, contentType);
+      }
+      
+      switch (qrType) {
+        case QRContentType.TEXT_AND_URL:
+          return await this.processTextAndUrlContent(qrContent, qrType, documentConfig);
+
+        case QRContentType.PLAIN_TEXT:
+          return this.processPlainText(qrContent, qrType);
+
+        case QRContentType.JSON:
+          return this.processJson(qrContent, qrType);
+
+        case QRContentType.JSON_URL:
+          return await this.processJsonUrl(qrContent, qrType);
+
+        case QRContentType.XML:
+          return this.processXml(qrContent, qrType);
+
+        case QRContentType.XML_URL:
+          return await this.processXmlUrl(qrContent, qrType);
+
+        case QRContentType.DOC_URL:
+          return await this.processDocUrlContent(qrContent, qrType, documentConfig);
+
+        case QRContentType.VC_URL:
+          return await this.processVcUrlContent(qrContent, qrType, documentConfig);
+
+        default:
+          throw new Error(`Unsupported QR content type for ${this.getIssuerName()}: ${contentType}`);
+      }
+    } catch (error) {
+      return this.createProcessingErrorResult(error, qrContent, contentType);
+    }
+  }
+
+  // Hook methods for specialized implementations - can be overridden by subclasses
+  protected async processTextAndUrlContent(
+    qrContent: string, 
+    contentType: QRContentType, 
+    documentConfig?: any
+  ): Promise<QRProcessingResult> {
+    return await this.processTextAndUrl(qrContent, contentType);
+  }
+
+  protected async processDocUrlContent(
+    qrContent: string, 
+    contentType: QRContentType, 
+    documentConfig?: any
+  ): Promise<QRProcessingResult> {
+    return await this.processDocUrl(qrContent, contentType);
+  }
+
+  protected async processVcUrlContent(
+    qrContent: string, 
+    contentType: QRContentType, 
+    documentConfig?: any
+  ): Promise<QRProcessingResult> {
+    return await this.processVcUrl(qrContent, contentType);
+  }
 
   canProcess(contentType: string): boolean {
     return this.getSupportedContentTypes().includes(contentType as QRContentType);
@@ -223,5 +290,111 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
       error: errorMessage,
       errorType: 'UNSUPPORTED_METHOD',
     };
+  }
+
+  protected createProcessingErrorResult(error: any, qrContent: string, contentType: string): QRProcessingResult {
+    this.logger.error(`${this.getIssuerName()} processing failed: ${error.message}`, error.stack);
+    return {
+      qrCodeDetected: true,
+      qrCodeContent: qrContent,
+      contentType: contentType as QRContentType,
+      error: `${this.getIssuerName()} processing failed: ${error.message}`,
+      errorType: 'PROCESSING_ERROR',
+      technicalError: error.message,
+    };
+  }
+
+  // Default implementations for common content types
+  protected async processTextAndUrl(qrContent: string, contentType: QRContentType): Promise<QRProcessingResult> {
+    try {
+      // Extract URL from content using regex
+      const urlRegex = /https?:\/\/[^\s]+/i;
+      const urlMatch = urlRegex.exec(qrContent);
+
+      if (!urlMatch) {
+        throw new Error('No URL found in QR content');
+      }
+
+      const url = urlMatch[0];
+      const textPart = qrContent.replace(urlRegex, '').trim();
+
+      const validatedUrl = new URL(url);
+      
+      // Download document from URL
+      const downloadResult = await this.qrCodeDetector.downloadFromUrl(validatedUrl.href);
+
+      return {
+        qrCodeDetected: true,
+        qrCodeContent: qrContent,
+        contentType,
+        processedData: {
+          text: textPart,
+          url: validatedUrl.href,
+          issuerType: this.getIssuerName(),
+        },
+        downloadedDocument: {
+          buffer: downloadResult.buffer,
+          mimeType: downloadResult.mimeType,
+          url: validatedUrl.href,
+        },
+      };
+    } catch (error) {
+      return this.handleUrlProcessingError(error, qrContent, contentType);
+    }
+  }
+
+  protected async processDocUrl(qrContent: string, contentType: QRContentType): Promise<QRProcessingResult> {
+    try {
+      // Validate that QR content is a URL
+      const url = new URL(qrContent.trim());
+      
+      this.logger.log(`Processing document URL: ${url.href}`);
+
+      // Download document from URL
+      const downloadResult = await this.qrCodeDetector.downloadFromUrl(url.href);
+
+      return {
+        qrCodeDetected: true,
+        qrCodeContent: qrContent,
+        contentType,
+        processedData: { 
+          url: url.href,
+          issuerType: this.getIssuerName(),
+        },
+        downloadedDocument: {
+          buffer: downloadResult.buffer,
+          mimeType: downloadResult.mimeType,
+          url: url.href,
+        },
+      };
+    } catch (error) {
+      return this.handleUrlProcessingError(error, qrContent, contentType);
+    }
+  }
+
+  protected async processVcUrl(qrContent: string, contentType: QRContentType): Promise<QRProcessingResult> {
+    try {
+      const url = new URL(qrContent.trim());
+      this.logger.log(`Processing VC URL: ${url.href}`);
+
+      const downloadResult = await this.qrCodeDetector.downloadFromUrl(url.href);
+
+      return {
+        qrCodeDetected: true,
+        qrCodeContent: qrContent,
+        contentType,
+        processedData: { 
+          vcUrl: url.href,
+          issuerType: this.getIssuerName(),
+        },
+        downloadedDocument: {
+          buffer: downloadResult.buffer,
+          mimeType: downloadResult.mimeType,
+          url: url.href,
+        },
+      };
+    } catch (error) {
+      return this.handleUrlProcessingError(error, qrContent, contentType);
+    }
   }
 }

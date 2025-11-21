@@ -20,57 +20,14 @@ export class EOdishaQRContentProcessor extends BaseQRContentProcessor {
     ];
   }
 
-  async processQRContent(
+  // Override TEXT_AND_URL processing for eOdisha-specific logic
+  protected async processTextAndUrlContent(
     qrContent: string, 
-    contentType: string, 
+    contentType: QRContentType, 
     documentConfig?: any
   ): Promise<QRProcessingResult> {
-    try {
-      const qrType = contentType as QRContentType;
-      
-      switch (qrType) {
-        case QRContentType.TEXT_AND_URL:
-          this.logger.log(`eOdisha: Processing TEXT_AND_URL (specialized implementation)`);
-          return await this.processEOdishaTextAndUrl(qrContent, qrType, documentConfig);
-
-        case QRContentType.PLAIN_TEXT:
-          return this.processPlainText(qrContent, qrType);
-
-        case QRContentType.JSON:
-          return this.processJson(qrContent, qrType);
-
-        case QRContentType.JSON_URL:
-          return await this.processJsonUrl(qrContent, qrType);
-
-        case QRContentType.XML:
-          return this.processXml(qrContent, qrType);
-
-        case QRContentType.XML_URL:
-          return await this.processXmlUrl(qrContent, qrType);
-
-        // Unimplemented methods - return error message
-        case QRContentType.DOC_URL:
-          this.logger.warn(`eOdisha: ${contentType} not implemented for this issuer`);
-          return this.createUnsupportedMethodError(qrContent, qrType, 'DOC_URL');
-
-        case QRContentType.VC_URL:
-          this.logger.warn(`eOdisha: ${contentType} not implemented for this issuer`);
-          return this.createUnsupportedMethodError(qrContent, qrType, 'VC_URL');
-
-        default:
-          throw new Error(`Unsupported QR content type for eOdisha: ${contentType}`);
-      }
-    } catch (error) {
-      this.logger.error(`eOdisha processing failed: ${error.message}`, error.stack);
-      return {
-        qrCodeDetected: true,
-        qrCodeContent: qrContent,
-        contentType: contentType as QRContentType,
-        error: `eOdisha processing failed: ${error.message}`,
-        errorType: 'PROCESSING_ERROR',
-        technicalError: error.message,
-      };
-    }
+    this.logger.log(`eOdisha: Processing TEXT_AND_URL (specialized implementation)`);
+    return await this.processEOdishaTextAndUrl(qrContent, contentType, documentConfig);
   }
 
   // eOdisha-specific implementation for TEXT_AND_URL

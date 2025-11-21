@@ -2,6 +2,7 @@ import {
 	Controller,
 	Get,
 	Post,
+	Patch,
 	Body,
 	Param,
 	Query,
@@ -39,6 +40,7 @@ import { FetchVcUrlDto } from './dto/fetch-vc-url.dto';
 import { WalletCallbackDto } from './dto/wallet-callback.dto';
 import { UploadDocDTO } from './dto/upload-doc.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
+import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -83,7 +85,51 @@ export class UserController {
     @Req() req: Request,
     @Query('decryptData') decryptData?: boolean,
   ) {
-    return await this.userService.findOne(req, decryptData);
+    return await this.userService.findOne(req as any, decryptData);
+  }
+
+  @Patch('/update')
+  @UseGuards(AuthGuard)
+  @ApiBasicAuth('access-token')
+  @UseInterceptors(FileInterceptor('picture'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Update user profile with phone number, whose phone number, and picture' })
+  @ApiBody({
+    description: 'User profile update data',
+    type: UpdateUserProfileDto,
+  })
+  @ApiResponse({ status: 200, description: 'User profile updated successfully' })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateProfile(
+    @Req() req: Request,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: UPLOAD_CONFIG.maxProfilePictureSize }),
+        ],
+        fileIsRequired: false,
+        errorHttpStatusCode: 400,
+      })
+    ) picture: Express.Multer.File | undefined,
+    @Body() updateUserProfileDto: UpdateUserProfileDto,
+  ) {
+    try {
+      return await this.userService.updateUserProfile(req, updateUserProfileDto, picture);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
+        throw error;
+      }
+      Logger.error(
+        error?.message ?? 'Failed to update user profile',
+        error?.stack,
+        'users.controller:updateProfile',
+      );
+      throw new InternalServerErrorException(
+        'An error occurred while updating user profile',
+      );
+    }
   }
 
   @UseGuards(AuthGuard)

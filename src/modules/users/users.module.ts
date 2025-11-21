@@ -38,7 +38,7 @@ import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
     MulterModule.register({
       // Memory storage is secure here because:
       // 1. Files are immediately processed and uploaded to S3
-      // 2. 5MB limit per file (below 8MB security threshold)
+      // 2. 10MB limit per file (below 16MB security threshold)
       // 3. Single file uploads only (files: 1)
       // 4. Additional limits prevent DoS attacks
       // 5. Content-based validation prevents file type spoofing
@@ -50,9 +50,9 @@ import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
         callback(null, true);
       },
       limits: {
-        fileSize: UPLOAD_CONFIG.maxFileSize,
+        fileSize: UPLOAD_CONFIG.maxProfilePictureSize,
         files: UPLOAD_CONFIG.maxFiles,
-        fieldSize: UPLOAD_CONFIG.maxFileSize,
+        fieldSize: UPLOAD_CONFIG.maxProfilePictureSize,
         fieldNameSize: UPLOAD_CONFIG.maxFieldNameSize,
         fields: UPLOAD_CONFIG.maxFields,
         headerPairs: UPLOAD_CONFIG.maxHeaderPairs,
