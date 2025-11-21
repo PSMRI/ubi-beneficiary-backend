@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as sharp from 'sharp';
 import axios from 'axios';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { 
   BarcodeFormat, 
   DecodeHintType, 
@@ -66,6 +65,10 @@ export class QRCodeDetectorService implements IQRCodeDetector {
         () => this.detectQRWithScaling(imageBuffer, 0.5), // Scale down 0.5x
         () => this.detectQRWithGrayscale(imageBuffer),
         () => this.detectQRWithContrast(imageBuffer),
+        // New strategies for better QR detection in documents
+        () => this.detectQRWithRegionCropping(imageBuffer),
+        () => this.detectQRWithDocumentOptimization(imageBuffer),
+        () => this.detectQRWithEnhancedPreprocessing(imageBuffer),
       ];
 
       for (const [index, strategy] of strategies.entries()) {
@@ -281,6 +284,194 @@ export class QRCodeDetectorService implements IQRCodeDetector {
     } catch (error) {
       this.logger.debug(`Image enhancement failed: ${error.message}`);
       return imageBuffer;
+    }
+  }
+
+  /**
+   * Detect QR code by cropping different regions of the image
+   * Focuses on corners and edges where QR codes are commonly placed
+   */
+  private async detectQRWithRegionCropping(imageBuffer: Buffer): Promise<string | null> {
+    try {
+      const image = sharp(imageBuffer);
+      const metadata = await image.metadata();
+      
+      if (!metadata.width || !metadata.height) {
+        return null;
+      }
+
+      // Define regions to crop (top-right, top-left, bottom-right, bottom-left, center-top)
+      const regions = [
+        // Top-right corner (where your QR code is)
+        { 
+          left: Math.floor(metadata.width * 0.6), 
+          top: 0, 
+          width: Math.floor(metadata.width * 0.4), 
+          height: Math.floor(metadata.height * 0.3) 
+        },
+        // Top-left corner
+        { 
+          left: 0, 
+          top: 0, 
+          width: Math.floor(metadata.width * 0.4), 
+          height: Math.floor(metadata.height * 0.3) 
+        },
+        // Bottom-right corner
+        { 
+          left: Math.floor(metadata.width * 0.6), 
+          top: Math.floor(metadata.height * 0.7), 
+          width: Math.floor(metadata.width * 0.4), 
+          height: Math.floor(metadata.height * 0.3) 
+        },
+        // Top center strip
+        { 
+          left: Math.floor(metadata.width * 0.3), 
+          top: 0, 
+          width: Math.floor(metadata.width * 0.4), 
+          height: Math.floor(metadata.height * 0.25) 
+        }
+      ];
+
+      for (const region of regions) {
+        try {
+          const croppedBuffer = await image
+            .extract(region)
+            .resize(800, 600, { fit: 'inside', withoutEnlargement: true })
+            .greyscale()
+            .normalize()
+            .sharpen()
+            .png()
+            .toBuffer();
+
+          // Try with ZXing on cropped region
+          const result = await this.detectQRWithOriginalSize(croppedBuffer);
+          if (result) {
+            this.logger.log(`QR detected in cropped region: ${region.left},${region.top},${region.width}x${region.height}`);
+            return result;
+          }
+        } catch (regionError) {
+          this.logger.debug(`Failed to process region ${region.left},${region.top},${region.width}x${region.height}: ${regionError.message}`);
+          // Continue to next region
+        }
+      }
+
+      return null;
+    } catch (error) {
+      throw new Error(`Region cropping detection failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Detect QR code with document-specific optimizations
+   * Handles long documents and small QR codes
+   */
+  private async detectQRWithDocumentOptimization(imageBuffer: Buffer): Promise<string | null> {
+    try {
+      const image = sharp(imageBuffer);
+      const metadata = await image.metadata();
+      
+      if (!metadata.width || !metadata.height) {
+        return null;
+      }
+
+      // For very tall documents (like yours), focus on top portion
+      const aspectRatio = metadata.height / metadata.width;
+      
+      if (aspectRatio > 2) { // Very tall document
+        // Process top 30% of the document at higher resolution
+        const topHeight = Math.floor(metadata.height * 0.3);
+        
+        const optimizedBuffer = await image
+          .extract({ left: 0, top: 0, width: metadata.width, height: topHeight })
+          .resize(1200, null, { withoutEnlargement: false }) // Upscale to improve QR detection
+          .greyscale()
+          .normalize()
+          .modulate({ brightness: 1.1 })
+          .linear(1.2, 0) // Increase contrast
+          .sharpen({ sigma: 0.5 })
+          .png()
+          .toBuffer();
+
+        // Try detection on optimized top portion
+        const result = await this.detectQRWithOriginalSize(optimizedBuffer);
+        if (result) {
+          return result;
+        }
+
+        // Also try with jsQR on the optimized portion
+        return await this.detectQRWithJsQR(optimizedBuffer);
+      }
+
+      return null;
+    } catch (error) {
+      throw new Error(`Document optimization detection failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Detect QR code with enhanced preprocessing for challenging images
+   */
+  private async detectQRWithEnhancedPreprocessing(imageBuffer: Buffer): Promise<string | null> {
+    try {
+      // Multiple preprocessing approaches
+      const preprocessingMethods = [
+        // High contrast with edge enhancement
+        (img: any) => img
+          .greyscale()
+          .normalize()
+          .modulate({ brightness: 1, saturation: 0 })
+          .linear(2, 0) // High contrast
+          .convolve({
+            width: 3,
+            height: 3,
+            kernel: [-1, -1, -1, -1, 9, -1, -1, -1, -1] // Edge detection
+          }),
+        
+        // Adaptive thresholding simulation
+        (img: any) => img
+          .greyscale()
+          .normalize()
+          .gamma(0.5)
+          .modulate({ brightness: 1.2 })
+          .linear(1.8, 0) // Increase contrast
+          .sharpen({ sigma: 1 }),
+          
+        // Noise reduction with sharpening
+        (img: any) => img
+          .greyscale()
+          .blur(0.5)
+          .normalize()
+          .sharpen({ sigma: 2 })
+          .linear(1.5, 0) // Increase contrast
+      ];
+
+      for (const [index, preprocessing] of preprocessingMethods.entries()) {
+        try {
+          const processedBuffer = await preprocessing(sharp(imageBuffer))
+            .png()
+            .toBuffer();
+
+          // Try with both detection methods
+          let result = await this.detectQRWithOriginalSize(processedBuffer);
+          if (result) {
+            this.logger.log(`QR detected with enhanced preprocessing method ${index + 1}`);
+            return result;
+          }
+
+          result = await this.detectQRWithJsQR(processedBuffer);
+          if (result) {
+            this.logger.log(`QR detected with enhanced preprocessing method ${index + 1} (jsQR)`);
+            return result;
+          }
+        } catch (methodError) {
+          this.logger.debug(`Failed preprocessing method ${index + 1}: ${methodError.message}`);
+          // Continue to next preprocessing method
+        }
+      }
+
+      return null;
+    } catch (error) {
+      throw new Error(`Enhanced preprocessing detection failed: ${error.message}`);
     }
   }
 
