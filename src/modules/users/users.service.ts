@@ -244,14 +244,28 @@ export class UserService {
 		// Generate pre-signed URLs for documents if using S3
 		const docsWithUrls = await Promise.all(
 			userDocs.map(async (doc) => {
-				const downloadUrl =
-					await this.documentUploadService.generateDownloadUrl(doc.doc_path);
+				// Check if this document has QR processing (doc_path is null for QR processing documents)
+				const isQRProcessingDoc = doc.doc_path === null;
+
+				let downloadUrl;
+				let docPath;
+
+				// For QR processing documents, exclude download_url and doc_path from response
+				if (isQRProcessingDoc) {
+					downloadUrl = null;
+					docPath = null;
+				} else {
+					downloadUrl = await this.documentUploadService.generateDownloadUrl(doc.doc_path);
+					docPath = doc.doc_path;
+				}
+
 				return {
 					...doc,
+					doc_path: docPath, // null for Dhiway VC_URL documents
 					is_uploaded: docTypes.some(
 						(obj) => obj.documentSubType === doc.doc_subtype,
 					),
-					download_url: downloadUrl,
+					download_url: downloadUrl, // null for Dhiway VC_URL documents
 				};
 			}),
 		);
@@ -805,7 +819,7 @@ export class UserService {
 
 		// Handle search for `application_name`
 		if (search && search.trim().length > 0) {
-			const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
+			const sanitizedSearch = search.replaceAll(/[%_]/g, String.raw`\\$&`);
 			whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
 		}
 
@@ -824,8 +838,8 @@ export class UserService {
 		// Replace spaces with underscores in first name and last name
 		const firstPartOfFirstName = body?.firstName
 			?.split(' ')[0]
-			?.replace(/\s+/g, '_');
-		const lastNameWithUnderscore = body?.lastName?.replace(/\s+/g, '_');
+			?.replaceAll(/\s+/g, '_');
+		const lastNameWithUnderscore = body?.lastName?.replaceAll(/\s+/g, '_');
 
 		// Extract the last 2 digits of Aadhar
 		const lastTwoDigits = body?.aadhaar?.slice(-2);
@@ -2074,11 +2088,12 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 	) {
 		try {
-			const userDetails = await this.getUserDetails(req);
-			const existingDoc = await this.findExistingDocument(
-				userDetails.user_id,
-				uploadDocumentDto,
-			);
+		const userDetails = await this.getUserDetails(req);
+		
+		const existingDoc = await this.findExistingDocument(
+			userDetails.user_id,
+			uploadDocumentDto,
+		);
 
 			// Validate and prepare document
 			await this.validateDocumentType(uploadDocumentDto);
@@ -2087,17 +2102,20 @@ export class UserService {
 			const issueVC =
 				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
 
-			// Process document
-			this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
-			const ocrResult = await this.performOcr(
-				file,
-				uploadDocumentDto,
-				requiresQRProcessing,
-			);
-			const vcMapping = await this.prepareVcMapping(
-				ocrResult,
-				uploadDocumentDto,
-			);
+		// Process document
+		this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+		const ocrResult = await this.performOcr(
+			file,
+			uploadDocumentDto,
+			requiresQRProcessing,
+		);
+
+		// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
+		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+		
+		const vcMapping = isDhiwayVcUrl 
+			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
 
 			// Handle VC creation or file upload
 			const { uploadResult, downloadUrl, vcCreationResult, issuer } =
@@ -2110,15 +2128,16 @@ export class UserService {
 					userDetails,
 				);
 
-			// Save document record
-			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
-				existingDoc,
-				userDetails.user_id,
-				uploadResult,
-				uploadDocumentDto,
-				vcMapping,
-				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
-			);
+		// Save document record
+		Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!uploadResult?.downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
+		const { savedDoc, isUpdate } = await this.saveDocumentRecord(
+			existingDoc,
+			userDetails.user_id,
+			uploadResult,
+			uploadDocumentDto,
+			vcMapping,
+			{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
+		);
 
 			// Build and return response
 			const responseData = this.buildResponseData(
@@ -2154,6 +2173,65 @@ export class UserService {
 				doc_name: uploadDocumentDto.docName,
 			},
 		});
+	}
+
+	/**
+	 * Check if this is a Dhiway VC_URL document that should skip OCR mapping
+	 */
+	private isDhiwayVcUrlDocument(
+		ocrResult: any, 
+		uploadDocumentDto: UploadDocumentDto, 
+		documentConfig: any
+	): boolean {
+		// Check if QR processing detected VC data
+		const qrProcessing = ocrResult?.qrProcessing;
+		
+		if (!qrProcessing?.qrCodeDetected) {
+			return false;
+		}
+
+		// Check if this is a Dhiway issuer with VC_URL content type
+		const issuer = uploadDocumentDto.issuer || documentConfig?.issuer;
+		const contentType = documentConfig?.docQRContains;
+
+		const isDhiway = issuer?.toLowerCase() === 'dhiway';
+		const isVcUrl = contentType?.toLowerCase() === 'vc_url';
+		
+		// Check if QR processing result has VC data (from Dhiway processor)
+		const hasVcData = qrProcessing?.processedData?.vcData;
+
+		Logger.log(`Dhiway VC_URL check: issuer=${issuer}, contentType=${contentType}, hasVcData=${!!hasVcData}, isDhiway=${isDhiway}, isVcUrl=${isVcUrl}`);
+
+		return isDhiway && isVcUrl && hasVcData;
+	}
+
+	/**
+	 * Prepare VC mapping directly from Dhiway VC data (skip OCR mapping)
+	 */
+	private async prepareDhiwayVcMapping(
+		ocrResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		Logger.log(`Preparing Dhiway VC mapping - skipping OCR text mapping, using VC data directly`);
+
+		const qrProcessing = ocrResult?.qrProcessing;
+		const vcData = qrProcessing?.processedData?.vcData;
+
+		if (!vcData) {
+			throw new Error('No VC data found in Dhiway QR processing result');
+		}
+
+		// Use the VC data directly as the mapped data
+		return {
+			mapped_data: vcData,
+			missing_fields: [],
+			confidence: 100, // High confidence since we got direct VC data
+			processing_method: 'dhiway_vc_direct' as const,
+			warnings: [],
+			source: 'dhiway_vc_url',
+			vcUrl: qrProcessing?.processedData?.vcDataUrl || qrProcessing?.processedData?.originalUrl,
+			dhiwayMetadata: qrProcessing?.processedData?.dhiwayMetadata,
+		};
 	}
 
 	private async prepareVcMapping(
@@ -2202,7 +2280,10 @@ export class UserService {
 		let downloadUrl = null;
 		let vcCreationResult = null;
 
+
 		if (issueVC === 'yes') {
+			// Create VC record, no file upload to S3
+			Logger.log(`Document configured for VC creation (issueVC: yes) - creating VC record, skipping S3 upload`);
 			vcCreationResult = await this.createVcRecord(
 				file,
 				uploadDocumentDto,
@@ -2216,18 +2297,19 @@ export class UserService {
 				file,
 			);
 		} else {
-			uploadResult = await this.uploadFileToStorage(
-				file,
-				uploadDocumentDto,
+			// Document configured for data extraction only (issueVC: no) - skip S3 upload and file path
+			Logger.log(`Document configured for data extraction only (issueVC: no) - skipping S3 upload and file storage, storing processed data only`);
+			uploadResult = this.createPlaceholderUploadResult(
 				userDetails.user_id,
+				file,
 			);
-			downloadUrl = await this.documentUploadService.generateDownloadUrl(
-				uploadResult.filePath,
-			);
+			// No S3 upload for issueVC: no documents
+			// downloadUrl remains null - no file to download
 		}
 
 		return { uploadResult, downloadUrl, vcCreationResult, issuer };
 	}
+
 
 	private async createVcRecord(
 		file: Express.Multer.File,
@@ -2284,7 +2366,7 @@ export class UserService {
 		file: Express.Multer.File,
 	) {
 		return {
-			filePath: `local://${userId}/${Date.now()}-${file.originalname}`,
+			filePath: null, // Always null - no local placeholder paths
 			docDatatype: file.mimetype,
 			uploadedAt: new Date(),
 		};
@@ -2665,15 +2747,23 @@ export class UserService {
 						: undefined,
 			};
 
-			Logger.log(
-				`OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
-					(requiresQRProcessing &&
-					'qrProcessing' in extractedData &&
-					extractedData.qrProcessing &&
-					(extractedData.qrProcessing as any)?.qrCodeDetected
-						? ` (QR code processed)`
-						: ''),
-			);
+		Logger.log(
+			`OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
+				(requiresQRProcessing &&
+				'qrProcessing' in extractedData &&
+				extractedData.qrProcessing &&
+				(extractedData.qrProcessing as any)?.qrCodeDetected
+					? ` (QR code processed)`
+					: ''),
+		);
+
+		// Log if we detected Dhiway VC data
+		if (requiresQRProcessing && 
+			'qrProcessing' in extractedData && 
+			extractedData.qrProcessing && 
+			(extractedData.qrProcessing as any)?.processedData?.vcData) {
+			Logger.log(`Dhiway VC data detected in QR code - will skip OCR mapping and use VC data directly`);
+		}
 
 			if (extractedData.fullText.length === 0) {
 				Logger.error(`OCR validation failed: No text extracted from document`);
@@ -2718,10 +2808,19 @@ export class UserService {
 		issueVC?: string,
 		issuer?: string,
 	): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+		// Check if this is a Dhiway VC_URL document or any QR processing document
+		const isDhiwayVcUrl = 
+			issuer?.toLowerCase() === 'dhiway' && 
+			vcMapping?.source === 'dhiway_vc_url' && 
+			issueVC === 'no';
+
+		// For all QR processing documents (issueVC: no), doc_path should be null
+		const isQRProcessingDoc = issueVC === 'no';
+
 		const previousPath = existingDoc.doc_path;
-		existingDoc.doc_path = uploadResult.filePath;
+		existingDoc.doc_path = isQRProcessingDoc ? null : uploadResult.filePath; // null for all QR processing documents
 		existingDoc.imported_from = uploadDocumentDto.importedFrom;
-		existingDoc.doc_datatype = uploadResult.docDatatype;
+		existingDoc.doc_datatype = isDhiwayVcUrl ? 'Application/JSON' : uploadResult.docDatatype; // Application/JSON for Dhiway VC_URL
 		existingDoc.uploaded_at = uploadResult.uploadedAt;
 
 		// Set doc_data based on issueVC flag
@@ -2741,16 +2840,19 @@ export class UserService {
 		// Set doc_verified as false (document needs verification)
 		existingDoc.doc_verified = false;
 
-		// Set doc_data_link if provided (from VC creation)
-		if (docDataLink) {
+		// Set doc_data_link - for Dhiway VC_URL use the .vc URL, otherwise use provided docDataLink
+		if (isDhiwayVcUrl) {
+			existingDoc.doc_data_link = vcMapping?.vcUrl;
+		} else if (docDataLink) {
 			existingDoc.doc_data_link = docDataLink;
 		}
 
 		const savedDoc = await this.userDocsRepository.save(existingDoc);
-		if (previousPath) {
+		if (previousPath && !isQRProcessingDoc) {
+			// Only delete previous file if this is not a QR processing document
 			await this.documentUploadService.deleteFile(previousPath);
 		}
-		Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
+		Logger.log(`Document updated successfully: ${savedDoc.doc_id}${isQRProcessingDoc ? ' (QR processing - no file storage)' : ''}`);
 		return { savedDoc, isUpdate: true };
 	}
 
@@ -2773,25 +2875,34 @@ export class UserService {
 			docData = JSON.stringify(vcMapping.mapped_data) as any;
 		}
 
+		// Check if this is a Dhiway VC_URL document or any QR processing document
+		const isDhiwayVcUrl = 
+			issuer?.toLowerCase() === 'dhiway' && 
+			vcMapping?.source === 'dhiway_vc_url' && 
+			issueVC === 'no';
+
+		// For all QR processing documents (issueVC: no), doc_path should be null
+		const isQRProcessingDoc = issueVC === 'no';
+
 		const newUserDoc = this.userDocsRepository.create({
 			user_id: userId,
 			doc_type: uploadDocumentDto.docType,
 			doc_subtype: uploadDocumentDto.docSubType,
 			doc_name: uploadDocumentDto.docName,
 			imported_from: uploadDocumentDto.importedFrom,
-			doc_path: uploadResult.filePath,
+			doc_path: isQRProcessingDoc ? null : uploadResult.filePath, // null for all QR processing documents
 			doc_data: docData,
-			doc_datatype: uploadResult.docDatatype,
+			doc_datatype: isDhiwayVcUrl ? 'Application/JSON' : uploadResult.docDatatype, // Application/JSON for Dhiway VC_URL
 			doc_verified: false, // Set as false instead of null - document needs verification
 			watcher_registered: false,
 			watcher_email: null,
 			watcher_callback_url: null,
-			doc_data_link: docDataLink || null,
+			doc_data_link: isDhiwayVcUrl ? vcMapping?.vcUrl : (docDataLink || null), // .vc URL for Dhiway VC_URL documents
 			issuer: issuer || null,
 		});
 
 		const savedDoc = await this.userDocsRepository.save(newUserDoc);
-		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}`);
+		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}${isQRProcessingDoc ? ' (QR processing - no file storage)' : ''}`);
 		return { savedDoc, isUpdate: false };
 	}
 }

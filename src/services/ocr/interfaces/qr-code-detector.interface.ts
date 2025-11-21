@@ -50,4 +50,5 @@ export interface DocumentConfig {
   vcFields?: Record<string, any>;
   documentSubType: string;
   docQRContains?: string;
+  issuer?: string; // Issuer type for QR processing (jharseva, eodisha, dhiway, etc.)
 }

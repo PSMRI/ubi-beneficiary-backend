@@ -1,5 +1,6 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { IQRCodeDetector } from '../interfaces/qr-code-detector.interface';
+import { QRContentProcessorFactory } from '../factories/qr-content-processor.factory';
 
 /**
  * Supported QR content types
@@ -8,8 +9,11 @@ export enum QRContentType {
   DOC_URL = 'DOC_URL',
   TEXT_AND_URL = 'TEXT_AND_URL',
   PLAIN_TEXT = 'PLAIN_TEXT',
+  VC_URL = 'VC_URL',
   JSON = 'JSON',
   JSON_URL = 'JSON_URL',
+  XML = 'XML',
+  XML_URL = 'XML_URL',
 }
 
 /**
@@ -41,19 +45,40 @@ export class QRContentProcessorService {
 
   constructor(
     @Inject('QR_CODE_DETECTOR') private readonly qrCodeDetector: IQRCodeDetector,
+    private readonly qrContentProcessorFactory?: QRContentProcessorFactory, // Optional for backward compatibility
   ) {}
 
   /**
    * Process QR code content based on its type
    * @param qrContent - Raw QR code content
    * @param contentType - Expected content type from configuration
+   * @param issuer - Issuer type (optional, for adapter-specific processing)
+   * @param documentConfig - Document configuration from vcConfiguration (optional)
    * @returns Processing result with extracted data
    */
-  async processQRContent(qrContent: string, contentType: string): Promise<QRProcessingResult> {
+  async processQRContent(
+    qrContent: string, 
+    contentType: string, 
+    issuer?: string, 
+    documentConfig?: any
+  ): Promise<QRProcessingResult> {
     try {
-      this.logger.log(`Processing QR content of type: ${contentType}`);
-      this.logger.debug(`QR content preview: ${qrContent.substring(0, 200)}...`);
+      this.logger.log(`Processing QR content: type='${contentType}', issuer='${issuer || 'default'}'`);
 
+      // If issuer is specified and factory is available, use issuer-specific processor
+      if (issuer && this.qrContentProcessorFactory) {
+        this.logger.log(`Using adapter mode for issuer: ${issuer}`);
+        return await this.qrContentProcessorFactory.processQRContent(
+          issuer, 
+          qrContent, 
+          contentType, 
+          documentConfig
+        );
+      }
+
+      // Fallback to original processing logic for backward compatibility
+      this.logger.log(`Using fallback mode (no issuer or factory not available)`);
+      
       const qrType = contentType as QRContentType;
       
       switch (qrType) {
@@ -71,6 +96,15 @@ export class QRContentProcessorService {
 
         case QRContentType.JSON_URL:
           return await this.processJsonUrl(qrContent, qrType);
+
+        case QRContentType.VC_URL:
+          return await this.processVcUrl(qrContent, qrType);
+
+        case QRContentType.XML:
+          return this.processXml(qrContent, qrType);
+
+        case QRContentType.XML_URL:
+          return await this.processXmlUrl(qrContent, qrType);
 
         default:
           this.logger.warn(`Unsupported QR content type: ${contentType}`);
@@ -252,6 +286,112 @@ export class QRContentProcessorService {
           technicalError: error.message,
         };
       }
+      return this.handleUrlProcessingError(error, qrContent, contentType);
+    }
+  }
+
+  /**
+   * Process QR content that contains a VC URL (fallback implementation)
+   */
+  private async processVcUrl(qrContent: string, contentType: QRContentType): Promise<QRProcessingResult> {
+    try {
+      const url = new URL(qrContent.trim());
+      this.logger.log(`Processing VC URL: ${url.href}`);
+
+      const downloadResult = await this.qrCodeDetector.downloadFromUrl(url.href);
+
+      return {
+        qrCodeDetected: true,
+        qrCodeContent: qrContent,
+        contentType,
+        processedData: { 
+          vcUrl: url.href,
+          issuerType: 'default',
+        },
+        downloadedDocument: {
+          buffer: downloadResult.buffer,
+          mimeType: downloadResult.mimeType,
+          url: url.href,
+        },
+      };
+    } catch (error) {
+      return this.handleUrlProcessingError(error, qrContent, contentType);
+    }
+  }
+
+  /**
+   * Process QR content that contains XML data (fallback implementation)
+   */
+  private processXml(qrContent: string, contentType: QRContentType): QRProcessingResult {
+    try {
+      const trimmedContent = qrContent.trim();
+      if (!trimmedContent.startsWith('<') || !trimmedContent.endsWith('>')) {
+        throw new Error('Invalid XML format');
+      }
+
+      this.logger.log('Processing XML content');
+
+      return {
+        qrCodeDetected: true,
+        qrCodeContent: qrContent,
+        contentType,
+        processedData: {
+          xml: trimmedContent,
+          issuerType: 'default',
+        },
+      };
+    } catch (error) {
+      return {
+        qrCodeDetected: true,
+        qrCodeContent: qrContent,
+        contentType,
+        error: `Invalid XML format: ${error.message}`,
+        errorType: 'INVALID_XML',
+        technicalError: error.message,
+      };
+    }
+  }
+
+  /**
+   * Process QR content that contains XML URL (fallback implementation)
+   */
+  private async processXmlUrl(qrContent: string, contentType: QRContentType): Promise<QRProcessingResult> {
+    try {
+      let url: string;
+      
+      if (qrContent.trim().startsWith('<')) {
+        // Parse XML to find URL
+        const urlRegex1 = /<url>(.*?)<\/url>/i;
+        const urlRegex2 = /url=['"]([^'"]*)['"]/i;
+        const urlMatch = urlRegex1.exec(qrContent) || urlRegex2.exec(qrContent);
+        if (!urlMatch?.[1]) {
+          throw new Error('No URL found in XML content');
+        }
+        url = urlMatch[1];
+      } else {
+        url = qrContent.trim();
+      }
+
+      const validatedUrl = new URL(url);
+      this.logger.log(`Processing XML URL: ${validatedUrl.href}`);
+
+      const downloadResult = await this.qrCodeDetector.downloadFromUrl(validatedUrl.href);
+
+      return {
+        qrCodeDetected: true,
+        qrCodeContent: qrContent,
+        contentType,
+        processedData: { 
+          url: validatedUrl.href,
+          issuerType: 'default',
+        },
+        downloadedDocument: {
+          buffer: downloadResult.buffer,
+          mimeType: downloadResult.mimeType,
+          url: validatedUrl.href,
+        },
+      };
+    } catch (error) {
       return this.handleUrlProcessingError(error, qrContent, contentType);
     }
   }
