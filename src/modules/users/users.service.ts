@@ -47,6 +47,48 @@ type StatusUpdateInfo = {
 	skipped?: boolean;
 	skipReason?: string | null;
 };
+
+interface UserRequest {
+	user?: {
+		keycloak_id?: string;
+	};
+}
+
+interface CustomField {
+	name: string;
+	value: any;
+}
+
+interface UserDocument {
+	doc_path: string;
+	doc_subtype: string;
+	is_uploaded?: boolean;
+	download_url?: string;
+}
+
+interface UserResponseData {
+	user_id: string;
+	firstName: string;
+	middleName?: string;
+	lastName: string;
+	email: string;
+	phoneNumber?: string;
+	dob?: Date;
+	sso_provider: string;
+	sso_id: string;
+	image?: string;
+	fieldsVerified: boolean;
+	fieldsVerifiedAt?: Date;
+	fieldsVerificationData: any;
+	walletToken?: string;
+	created_at: Date;
+	updated_at?: Date;
+	whosePhoneNumber?: string | null;
+	pictureUrl?: string | null;
+	docs: UserDocument[];
+	customFields: CustomField[];
+}
+
 @Injectable()
 export class UserService {
 	constructor(
@@ -135,93 +177,132 @@ export class UserService {
 		}
 	}
 
-	async findOne(req: any, decryptData?: boolean) {
+	async findOne(req: UserRequest, decryptData?: boolean): Promise<SuccessResponse | ErrorResponse> {
 		try {
-			const sso_id = req?.user?.keycloak_id;
-			if (!sso_id) {
-				return new ErrorResponse({
-					statusCode: HttpStatus.UNAUTHORIZED,
-					errorMessage: 'Invalid or missing Keycloak ID',
-				});
-			}
-
-			const userDetails = await this.userRepository.findOne({
-				where: { sso_id },
-			});
-
-			if (!userDetails) {
-				return new ErrorResponse({
-					statusCode: HttpStatus.NOT_FOUND,
-					errorMessage: `User with ID '${sso_id}' not found`,
-				});
-			}
-
-			const user = await this.findOneUser(userDetails.user_id);
-			const customFields = await this.customFieldsService.getCustomFields(
-				userDetails.user_id,
-				FieldContext.USERS,
-			);
-			const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
-
-			// Extract whosePhoneNumber from custom fields
-			let whosePhoneNumber: string | null = null;
-			Logger.debug(`Custom fields count: ${customFields?.length || 0}`);
+			const ssoId = this.extractSsoIdFromRequest(req);
+			const userDetails = await this.getUserBySsoId(ssoId);
+			const userData = await this.buildUserResponse(userDetails.user_id, decryptData);
 			
-			if (customFields && customFields.length > 0) {
-				// Log all custom field names for debugging
-				const fieldNames = customFields.map(f => f.name);
-				Logger.debug(`Available custom fields: ${fieldNames.join(', ')}`);
-				
-				const whosePhoneNumberField = customFields.find(
-					(field) => field.name === 'whosePhoneNumber',
-				);
-				
-				if (whosePhoneNumberField) {
-					Logger.debug(`Found whosePhoneNumber field with value: ${whosePhoneNumberField.value}`);
-					if (whosePhoneNumberField.value !== null && whosePhoneNumberField.value !== undefined) {
-						const value = String(whosePhoneNumberField.value).trim();
-						whosePhoneNumber = value !== '' ? value : null;
-						Logger.debug(`Processed whosePhoneNumber value: ${whosePhoneNumber}`);
-					}
-				} else {
-					Logger.warn('whosePhoneNumber field not found in custom fields');
-				}
-			} else {
-				Logger.warn('No custom fields found for user');
-			}
-
-			// Generate download URL for picture if it exists
-			let pictureUrl = null;
-			if (user.image) {
-				try {
-					pictureUrl = await this.documentUploadService.generateDownloadUrl(
-						user.image,
-					);
-				} catch (error) {
-					Logger.warn(
-						`Failed to generate download URL for user image: ${error.message}`,
-					);
-					// Continue without the URL if generation fails
-				}
-			}
-
-			const final = {
-				...user,
-				whosePhoneNumber: whosePhoneNumber,
-				pictureUrl: pictureUrl,
-				docs: userDoc || [],
-				customFields: customFields || [],
-			};
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
 				message: 'User retrieved successfully.',
-				data: final,
+				data: userData,
 			});
 		} catch (error) {
+			Logger.error(`Error in findOne: ${error.message}`, error.stack);
 			return new ErrorResponse({
-				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				statusCode: error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR,
 				errorMessage: error.message,
 			});
+		}
+	}
+
+	/**
+	 * Extracts and validates SSO ID from request
+	 * @private
+	 */
+	private extractSsoIdFromRequest(req: UserRequest): string {
+		const ssoId = req?.user?.keycloak_id;
+		if (!ssoId) {
+			const error = new UnauthorizedException('Invalid or missing Keycloak ID') as any;
+			error.statusCode = HttpStatus.UNAUTHORIZED;
+			throw error;
+		}
+		return ssoId;
+	}
+
+	/**
+	 * Retrieves user details by SSO ID
+	 * @private
+	 */
+	private async getUserBySsoId(ssoId: string): Promise<User> {
+		const userDetails = await this.userRepository.findOne({
+			where: { sso_id: ssoId },
+		});
+
+		if (!userDetails) {
+			const error = new NotFoundException(`User with ID '${ssoId}' not found`) as any;
+			error.statusCode = HttpStatus.NOT_FOUND;
+			throw error;
+		}
+
+		return userDetails;
+	}
+
+	/**
+	 * Builds complete user response with all related data
+	 * @private
+	 */
+	private async buildUserResponse(userId: string, decryptData?: boolean): Promise<UserResponseData> {
+		const [user, customFields, userDoc] = await Promise.all([
+			this.findOneUser(userId),
+			this.customFieldsService.getCustomFields(userId, FieldContext.USERS),
+			this.findUserDocs(userId, decryptData),
+		]);
+
+		const whosePhoneNumber = this.extractWhosePhoneNumber(customFields);
+		const pictureUrl = await this.generatePictureUrl(user?.image);
+
+		return {
+			...user,
+			whosePhoneNumber,
+			pictureUrl,
+			docs: userDoc || [],
+			customFields: customFields || [],
+		};
+	}
+
+	/**
+	 * Extracts whosePhoneNumber from custom fields
+	 * @private
+	 */
+	private extractWhosePhoneNumber(customFields: CustomField[]): string | null {
+		Logger.debug(`Custom fields count: ${customFields?.length || 0}`);
+		
+		if (!customFields || customFields.length === 0) {
+			Logger.warn('No custom fields found for user');
+			return null;
+		}
+
+		const fieldNames = customFields.map(f => f.name);
+		Logger.debug(`Available custom fields: ${fieldNames.join(', ')}`);
+		
+		const whosePhoneNumberField = customFields.find(
+			(field) => field.name === 'whosePhoneNumber',
+		);
+		
+		if (!whosePhoneNumberField) {
+			Logger.warn('whosePhoneNumber field not found in custom fields');
+			return null;
+		}
+
+		Logger.debug(`Found whosePhoneNumber field with value: ${whosePhoneNumberField.value}`);
+		
+		if (whosePhoneNumberField.value == null) {
+			return null;
+		}
+
+		const value = String(whosePhoneNumberField.value).trim();
+		const result = value !== '' ? value : null;
+		Logger.debug(`Processed whosePhoneNumber value: ${result}`);
+		
+		return result;
+	}
+
+	/**
+	 * Generates download URL for user picture
+	 * @private
+	 */
+	private async generatePictureUrl(imagePath?: string): Promise<string | null> {
+		if (!imagePath) {
+			return null;
+		}
+
+		try {
+			return await this.documentUploadService.generateDownloadUrl(imagePath);
+		} catch (error) {
+			Logger.warn(`Failed to generate download URL for user image: ${error.message}`);
+			return null;
 		}
 	}
 
@@ -524,161 +605,29 @@ export class UserService {
 		req: any,
 		updateUserProfileDto: UpdateUserProfileDto,
 		picture?: Express.Multer.File,
-	) {
+	): Promise<SuccessResponse | ErrorResponse> {
 		try {
 			const userDetails = await this.getUserDetails(req);
-
-			// Update phone number if provided
-			if (updateUserProfileDto.phoneNumber !== undefined) {
-				userDetails.phoneNumber = updateUserProfileDto.phoneNumber;
-			}
-
+			
+			// Update basic user fields
+			this.updateBasicUserFields(userDetails, updateUserProfileDto);
+			
 			// Handle picture upload if provided
 			if (picture) {
-				try {
-					// Delete old picture if exists
-					if (userDetails.image) {
-						try {
-							await this.documentUploadService.deleteFile(userDetails.image);
-						} catch (deleteError) {
-							Logger.warn(
-								`Failed to delete old picture: ${deleteError.message}`,
-							);
-							// Continue even if deletion fails
-						}
-					}
-
-					// Upload new picture to S3
-					const uploadResult = await this.documentUploadService.uploadFile(
-						picture,
-						{
-							docType: 'profile',
-							docSubType: 'picture',
-							docName: 'Profile Picture',
-							importedFrom: 'Manual Upload',
-						},
-						userDetails.user_id,
-					);
-
-					// Update user image path
-					userDetails.image = uploadResult.filePath;
-				} catch (uploadError) {
-					Logger.error(
-						`Failed to upload picture: ${uploadError.message}`,
-						uploadError.stack,
-					);
-					throw new BadRequestException(
-						`Failed to upload picture: ${uploadError.message}`,
-					);
-				}
+				await this.handlePictureUpload(userDetails, picture);
 			}
 
 			// Save updated user
 			const updatedUser = await this.userRepository.save(userDetails);
 
-			// Handle whosePhoneNumber as custom field if provided
-			let whosePhoneNumberValue: string | null = null;
-			
-			if (updateUserProfileDto.whosePhoneNumber !== undefined && updateUserProfileDto.whosePhoneNumber !== null && updateUserProfileDto.whosePhoneNumber !== '') {
-				try {
-					// Get the field definition for whosePhoneNumber
-					const whosePhoneNumberField = await this.customFieldsService.getFieldByName(
-						'whosePhoneNumber',
-						FieldContext.USERS,
-					);
+			// Handle whosePhoneNumber custom field
+			const whosePhoneNumberValue = await this.handleWhosePhoneNumberField(
+				updatedUser,
+				updateUserProfileDto.whosePhoneNumber,
+			);
 
-					if (!whosePhoneNumberField) {
-						Logger.error(
-							'whosePhoneNumber field not found in custom fields. Please create the field first in the fields table.',
-						);
-						throw new BadRequestException(
-							'whosePhoneNumber custom field does not exist. Please create it first.',
-						);
-					}
-
-					// Save as custom field
-					const valueToSave = String(updateUserProfileDto.whosePhoneNumber).trim();
-					Logger.log(
-						`Saving whosePhoneNumber: "${valueToSave}" for user: ${updatedUser.user_id} with fieldId: ${whosePhoneNumberField.fieldId}`,
-					);
-					
-					// Log the exact payload being sent
-					const customFieldPayload = {
-						fieldId: whosePhoneNumberField.fieldId,
-						value: valueToSave,
-					};
-					Logger.log(`Custom field payload: ${JSON.stringify(customFieldPayload)}`);
-					
-					const savedValues = await this.customFieldsService.saveCustomFields(
-						updatedUser.user_id,
-						FieldContext.USERS,
-						[customFieldPayload],
-					);
-
-					Logger.log(
-						`Successfully saved whosePhoneNumber custom field. Saved values count: ${savedValues.length}`,
-					);
-					
-					// Log the saved values for debugging
-					if (savedValues.length > 0) {
-						savedValues.forEach((savedValue, index) => {
-							Logger.log(`Saved value ${index + 1}: id=${savedValue.id}, value="${savedValue.value}", itemId=${savedValue.itemId}`);
-						});
-					}
-
-					// Set the value from what we just saved
-					whosePhoneNumberValue = String(updateUserProfileDto.whosePhoneNumber).trim();
-				} catch (fieldError) {
-					Logger.error(
-						`Failed to save whosePhoneNumber custom field: ${fieldError.message}`,
-						fieldError.stack,
-					);
-					
-					// If it's a BadRequestException (field doesn't exist), throw it
-					if (fieldError instanceof BadRequestException) {
-						throw fieldError;
-					}
-					
-					// For other errors, log but continue - we'll try to retrieve existing value
-				}
-			}
-
-			// If we didn't save a new value, retrieve existing value from custom fields
-			if (whosePhoneNumberValue === null) {
-				try {
-					const customFields = await this.customFieldsService.getCustomFields(
-						updatedUser.user_id,
-						FieldContext.USERS,
-					);
-					const whosePhoneNumberField = customFields.find(
-						(field) => field.name === 'whosePhoneNumber',
-					);
-					if (whosePhoneNumberField && whosePhoneNumberField.value !== null && whosePhoneNumberField.value !== undefined) {
-						// Convert to string if it's not already, and ensure it's not empty
-						const value = String(whosePhoneNumberField.value).trim();
-						whosePhoneNumberValue = value !== '' ? value : null;
-						Logger.log(
-							`Retrieved existing whosePhoneNumber value: ${whosePhoneNumberValue}`,
-						);
-					} else {
-						Logger.debug(
-							'No whosePhoneNumber value found in custom fields',
-						);
-					}
-				} catch (fieldError) {
-					Logger.warn(
-						`Failed to retrieve whosePhoneNumber custom field: ${fieldError.message}`,
-					);
-				}
-			}
-
-			// Generate download URL for picture if it exists
-			let pictureUrl = null;
-			if (updatedUser.image) {
-				pictureUrl = await this.documentUploadService.generateDownloadUrl(
-					updatedUser.image,
-				);
-			}
+			// Generate picture URL
+			const pictureUrl = await this.generatePictureUrl(updatedUser.image);
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
@@ -693,23 +642,234 @@ export class UserService {
 				},
 			});
 		} catch (error) {
-			if (
-				error instanceof UnauthorizedException ||
-				error instanceof NotFoundException ||
-				error instanceof BadRequestException
-			) {
-				throw error;
+			return this.handleUpdateProfileError(error);
+		}
+	}
+
+	/**
+	 * Updates basic user fields from DTO
+	 * @private
+	 */
+	private updateBasicUserFields(
+		userDetails: User,
+		updateUserProfileDto: UpdateUserProfileDto,
+	): void {
+		if (updateUserProfileDto.phoneNumber !== undefined) {
+			userDetails.phoneNumber = updateUserProfileDto.phoneNumber;
+		}
+	}
+
+	/**
+	 * Handles picture upload and deletion of old picture
+	 * @private
+	 */
+	private async handlePictureUpload(
+		userDetails: User,
+		picture: Express.Multer.File,
+	): Promise<void> {
+		try {
+			// Delete old picture if exists
+			if (userDetails.image) {
+				await this.deleteOldPicture(userDetails.image);
 			}
 
-			Logger.error(
-				`Error updating user profile: ${error.message}`,
-				error.stack,
+			// Upload new picture
+			const uploadResult = await this.documentUploadService.uploadFile(
+				picture,
+				{
+					docType: 'profile',
+					docSubType: 'picture',
+					docName: 'Profile Picture',
+					importedFrom: 'Manual Upload',
+				},
+				userDetails.user_id,
 			);
-			return new ErrorResponse({
-				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message || 'Failed to update user profile',
+
+			userDetails.image = uploadResult.filePath;
+		} catch (uploadError) {
+			Logger.error(
+				`Failed to upload picture: ${uploadError.message}`,
+				uploadError.stack,
+			);
+			throw new BadRequestException(
+				`Failed to upload picture: ${uploadError.message}`,
+			);
+		}
+	}
+
+	/**
+	 * Deletes old picture file
+	 * @private
+	 */
+	private async deleteOldPicture(imagePath: string): Promise<void> {
+		try {
+			await this.documentUploadService.deleteFile(imagePath);
+		} catch (deleteError) {
+			Logger.warn(`Failed to delete old picture: ${deleteError.message}`);
+			// Continue even if deletion fails
+		}
+	}
+
+	/**
+	 * Handles whosePhoneNumber custom field save and retrieval
+	 * @private
+	 */
+	private async handleWhosePhoneNumberField(
+		user: User,
+		whosePhoneNumber?: string,
+	): Promise<string | null> {
+		// Try to save new value if provided
+		if (this.shouldSaveWhosePhoneNumber(whosePhoneNumber)) {
+			const savedValue = await this.saveWhosePhoneNumberField(user.user_id, whosePhoneNumber);
+			if (savedValue !== null) {
+				return savedValue;
+			}
+		}
+
+		// Retrieve existing value if no new value was saved
+		return await this.retrieveExistingWhosePhoneNumber(user.user_id);
+	}
+
+	/**
+	 * Checks if whosePhoneNumber should be saved
+	 * @private
+	 */
+	private shouldSaveWhosePhoneNumber(whosePhoneNumber?: string): boolean {
+		return (
+			whosePhoneNumber !== undefined &&
+			whosePhoneNumber !== null &&
+			whosePhoneNumber !== ''
+		);
+	}
+
+	/**
+	 * Saves whosePhoneNumber as custom field
+	 * @private
+	 */
+	private async saveWhosePhoneNumberField(
+		userId: string,
+		whosePhoneNumber: string,
+	): Promise<string | null> {
+		try {
+			const whosePhoneNumberField = await this.customFieldsService.getFieldByName(
+				'whosePhoneNumber',
+				FieldContext.USERS,
+			);
+
+			if (!whosePhoneNumberField) {
+				Logger.error(
+					'whosePhoneNumber field not found in custom fields. Please create the field first in the fields table.',
+				);
+				throw new BadRequestException(
+					'whosePhoneNumber custom field does not exist. Please create it first.',
+				);
+			}
+
+			const valueToSave = String(whosePhoneNumber).trim();
+			Logger.log(
+				`Saving whosePhoneNumber: "${valueToSave}" for user: ${userId} with fieldId: ${whosePhoneNumberField.fieldId}`,
+			);
+
+			const customFieldPayload = {
+				fieldId: whosePhoneNumberField.fieldId,
+				value: valueToSave,
+			};
+			Logger.log(`Custom field payload: ${JSON.stringify(customFieldPayload)}`);
+
+			const savedValues = await this.customFieldsService.saveCustomFields(
+				userId,
+				FieldContext.USERS,
+				[customFieldPayload],
+			);
+
+			this.logSavedCustomFieldValues(savedValues);
+			return valueToSave;
+		} catch (fieldError) {
+			Logger.error(
+				`Failed to save whosePhoneNumber custom field: ${fieldError.message}`,
+				fieldError.stack,
+			);
+
+			if (fieldError instanceof BadRequestException) {
+				throw fieldError;
+			}
+
+			// For other errors, return null to try retrieving existing value
+			return null;
+		}
+	}
+
+	/**
+	 * Logs saved custom field values for debugging
+	 * @private
+	 */
+	private logSavedCustomFieldValues(savedValues: any[]): void {
+		Logger.log(
+			`Successfully saved whosePhoneNumber custom field. Saved values count: ${savedValues.length}`,
+		);
+
+		if (savedValues.length > 0) {
+			savedValues.forEach((savedValue, index) => {
+				Logger.log(
+					`Saved value ${index + 1}: id=${savedValue.id}, value="${savedValue.value}", itemId=${savedValue.itemId}`,
+				);
 			});
 		}
+	}
+
+	/**
+	 * Retrieves existing whosePhoneNumber value from custom fields
+	 * @private
+	 */
+	private async retrieveExistingWhosePhoneNumber(userId: string): Promise<string | null> {
+		try {
+			const customFields = await this.customFieldsService.getCustomFields(
+				userId,
+				FieldContext.USERS,
+			);
+
+			const whosePhoneNumberField = customFields.find(
+				(field) => field.name === 'whosePhoneNumber',
+			);
+
+		if (whosePhoneNumberField?.value != null) {
+			const value = String(whosePhoneNumberField.value).trim();
+			const result = value !== '' ? value : null;
+			Logger.log(`Retrieved existing whosePhoneNumber value: ${result}`);
+			return result;
+		}
+
+			Logger.debug('No whosePhoneNumber value found in custom fields');
+			return null;
+		} catch (fieldError) {
+			Logger.warn(
+				`Failed to retrieve whosePhoneNumber custom field: ${fieldError.message}`,
+			);
+			return null;
+		}
+	}
+
+	/**
+	 * Handles errors in updateUserProfile
+	 * @private
+	 */
+	private handleUpdateProfileError(error: any): ErrorResponse | never {
+		if (
+			error instanceof UnauthorizedException ||
+			error instanceof NotFoundException ||
+			error instanceof BadRequestException
+		) {
+			throw error;
+		}
+
+		Logger.error(
+			`Error updating user profile: ${error.message}`,
+			error.stack,
+		);
+		return new ErrorResponse({
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			errorMessage: error.message || 'Failed to update user profile',
+		});
 	}
 
 	async updateProfile(userDetails: User) {

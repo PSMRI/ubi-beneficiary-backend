@@ -85,7 +85,7 @@ export class UserController {
     @Req() req: Request,
     @Query('decryptData') decryptData?: boolean,
   ) {
-    return await this.userService.findOne(req, decryptData);
+    return await this.userService.findOne(req as any, decryptData);
   }
 
   @Patch('/update')
