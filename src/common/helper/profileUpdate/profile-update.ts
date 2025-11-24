@@ -77,17 +77,30 @@ export default class ProfilePopulator {
     return total;
   }
 
-  // Build Vcs in required format based on user documents
-  async buildVCs(userDocs: UserDoc[]) {
-    const vcs = [];
+  // Normalize document data structure for profile processing based on issuer
+  async normalizeDocumentDataForProfile(userDocs: UserDoc[]) {
+    const normalizedDocuments = [];
 
-    // Build VC array
+    // Normalize document data array
     for (const doc of userDocs) {
       const docType = doc.doc_subtype;
       let docData: any;
       try {
         docData = typeof doc.doc_data === 'string' ? JSON.parse(doc.doc_data) : doc.doc_data;
-        vcs.push({ docType, content: docData });
+
+        // Only wrap in credentialSubject for dhiway issuer documents
+        let vcContent;
+        if (doc.issuer?.toLowerCase() === 'dhiway') {
+          // For dhiway documents, wrap in credentialSubject if not already wrapped
+          vcContent = docData?.credentialSubject
+            ? docData
+            : { credentialSubject: docData };
+        } else {
+          // For non-dhiway documents, use data directly
+          vcContent = docData;
+        }
+
+        normalizedDocuments.push({ docType, content: vcContent, issuer: doc.issuer });
       } catch (error) {
         const errorMessage = `Invalid JSON format in doc ${doc.doc_id}`;
         Logger.error(`${errorMessage}:`, error);
@@ -95,7 +108,7 @@ export default class ProfilePopulator {
       }
     }
 
-    return vcs;
+    return normalizedDocuments;
   }
 
   // Get user documents from database
@@ -216,8 +229,16 @@ export default class ProfilePopulator {
 
     if (!documentMapping) return null;
 
-    // Prepend 'credentialSubject.' to the document field path
-    const pathValue = `credentialSubject.${documentMapping.documentField}`;
+    // Use different path based on issuer
+    let pathValue;
+    if (vc.issuer?.toLowerCase() === 'dhiway') {
+      // For dhiway documents, use credentialSubject path
+      pathValue = `credentialSubject.${documentMapping.documentField}`;
+    } else {
+      // For non-dhiway documents, use direct path
+      pathValue = documentMapping.documentField;
+    }
+
     let value = this.getValue(vc, pathValue);
 
     // Apply field value normalization if present
@@ -386,11 +407,11 @@ export default class ProfilePopulator {
         try {
           // Get documents from database
           const userDocs: UserDoc[] = await this.getUserDocs(user);
-          // Build VCs in required format
-          const vcs = await this.buildVCs(userDocs);
+          // Normalize document data for profile processing
+          const normalizedDocuments = await this.normalizeDocumentDataForProfile(userDocs);
 
           // Build user-profile data
-          const { userProfile, validationData } = await this.buildProfile(vcs);
+          const { userProfile, validationData } = await this.buildProfile(normalizedDocuments);
 
           // update entries in database
           await this.updateDatabase(userProfile, validationData, user, adminResultData);
