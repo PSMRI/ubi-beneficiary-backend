@@ -903,12 +903,12 @@ export class UserService {
 				where: { user_id: userDetails.user_id },
 			});
 
-			// Build VCs
-			const VCs: any[] = await this.profilePopulator.buildVCs(allDocs);
+			// Normalize document data for profile processing
+			const normalizedDocuments: any[] = await this.profilePopulator.normalizeDocumentDataForProfile(allDocs);
 
 			// // build profile data
 			const { userProfile, validationData } =
-				await this.profilePopulator.buildProfile(VCs);
+				await this.profilePopulator.buildProfile(normalizedDocuments);
 
 			const adminResultData =
 				await this.keycloakService.getAdminKeycloakToken();
@@ -2545,6 +2545,15 @@ export class UserService {
 			vcMapping,
 			{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
 		);
+
+		// Update profile based on documents
+		try {
+			await this.updateProfile(userDetails);
+			Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
+		} catch (error) {
+			Logger.error('Profile update failed after document upload:', error);
+			// Don't fail the entire operation if profile update fails
+		}
 
 			// Build and return response
 			const responseData = this.buildResponseData(
