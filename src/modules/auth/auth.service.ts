@@ -210,7 +210,7 @@ export class AuthService {
 
   private async handleWalletOnboarding(body: any, password: string, user: any, keycloakId: string): Promise<string | null> {
     const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
-    
+
     if (!isWalletRegistrationEnabled) {
       this.loggerService.log('Wallet registration is disabled, skipping wallet onboarding', 'AuthService');
       return null;
@@ -575,8 +575,14 @@ export class AuthService {
       const payload = {
         firstName: vcMapping?.mapped_data?.firstname || '',
         lastName: vcMapping?.mapped_data?.lastname || '',
-        username: `${vcMapping?.mapped_data?.otr_number.toString()}` || '',
-        phoneNumber: vcMapping?.mapped_data?.phoneNumber.toString() || '',
+        username: vcMapping?.mapped_data?.otr_number
+          ? vcMapping.mapped_data.otr_number.toString()
+          : '',
+
+        phoneNumber: vcMapping?.mapped_data?.phoneNumber
+          ? vcMapping.mapped_data.phoneNumber.toString()
+          : '',
+
         password: defaultPassword,
       };
 
@@ -688,7 +694,7 @@ export class AuthService {
     if (missingFields.length > 0) {
       throw new ErrorResponse({
         statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: `Missing required fields: ${missingFields.join(', ')}. Please reupload document again.`,
+        errorMessage: `Missing required fields: ${missingFields.join(', ')}. Please re-upload document again.`,
       });
     }
 
