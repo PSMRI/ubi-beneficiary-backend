@@ -371,28 +371,19 @@ export class UserService {
 		// Generate pre-signed URLs for documents if using S3
 		const docsWithUrls = await Promise.all(
 			userDocs.map(async (doc) => {
-				// Check if this document has QR processing (doc_path is null for QR processing documents)
-				const isQRProcessingDoc = doc.doc_path === null;
+				let downloadUrl = null;
 
-				let downloadUrl;
-				let docPath;
-
-				// For QR processing documents, exclude download_url and doc_path from response
-				if (isQRProcessingDoc) {
-					downloadUrl = null;
-					docPath = null;
-				} else {
+				// Generate download URL if doc_path exists
+				if (doc.doc_path) {
 					downloadUrl = await this.documentUploadService.generateDownloadUrl(doc.doc_path);
-					docPath = doc.doc_path;
 				}
 
 				return {
 					...doc,
-					doc_path: docPath, // null for Dhiway VC_URL documents
 					is_uploaded: docTypes.some(
 						(obj) => obj.documentSubType === doc.doc_subtype,
 					),
-					download_url: downloadUrl, // null for Dhiway VC_URL documents
+					download_url: downloadUrl,
 				};
 			}),
 		);
@@ -2684,10 +2675,24 @@ export class UserService {
 		let downloadUrl = null;
 		let vcCreationResult = null;
 
+		// Always upload file to S3 regardless of issueVC configuration
+		Logger.log(`Uploading file to S3 storage (issueVC: ${issueVC})`);
+		uploadResult = await this.uploadFileToStorage(
+			file,
+			uploadDocumentDto,
+			userDetails.user_id,
+		);
 
+		// Generate download URL for the uploaded file
+		if (uploadResult?.filePath) {
+			downloadUrl = await this.documentUploadService.generateDownloadUrl(
+				uploadResult.filePath,
+			);
+		}
+
+		// Create VC record if issueVC is 'yes'
 		if (issueVC === 'yes') {
-			// Create VC record, no file upload to S3
-			Logger.log(`Document configured for VC creation (issueVC: yes) - creating VC record, skipping S3 upload`);
+			Logger.log(`Document configured for VC creation (issueVC: yes) - creating VC record`);
 			vcCreationResult = await this.createVcRecord(
 				file,
 				uploadDocumentDto,
@@ -2696,19 +2701,8 @@ export class UserService {
 				vcMapping,
 				userDetails,
 			);
-			uploadResult = this.createPlaceholderUploadResult(
-				userDetails.user_id,
-				file,
-			);
 		} else {
-			// Document configured for data extraction only (issueVC: no) - skip S3 upload and file path
-			Logger.log(`Document configured for data extraction only (issueVC: no) - skipping S3 upload and file storage, storing processed data only`);
-			uploadResult = this.createPlaceholderUploadResult(
-				userDetails.user_id,
-				file,
-			);
-			// No S3 upload for issueVC: no documents
-			// downloadUrl remains null - no file to download
+			Logger.log(`Document configured for data extraction only (issueVC: no) - file uploaded to S3, no VC creation`);
 		}
 
 		return { uploadResult, downloadUrl, vcCreationResult, issuer };
@@ -2765,16 +2759,6 @@ export class UserService {
 		return vcCreationResult;
 	}
 
-	private createPlaceholderUploadResult(
-		userId: string,
-		file: Express.Multer.File,
-	) {
-		return {
-			filePath: null, // Always null - no local placeholder paths
-			docDatatype: file.mimetype,
-			uploadedAt: new Date(),
-		};
-	}
 
 	private async uploadFileToStorage(
 		file: Express.Multer.File,
@@ -3222,7 +3206,8 @@ export class UserService {
 		const isQRProcessingDoc = issueVC === 'no';
 
 		const previousPath = existingDoc.doc_path;
-		existingDoc.doc_path = isQRProcessingDoc ? null : uploadResult.filePath; // null for all QR processing documents
+		// Always store the file path since we're now uploading all files to S3
+		existingDoc.doc_path = uploadResult.filePath;
 		existingDoc.imported_from = uploadDocumentDto.importedFrom;
 		existingDoc.doc_datatype = isDhiwayVcUrl ? 'Application/JSON' : uploadResult.docDatatype; // Application/JSON for Dhiway VC_URL
 		existingDoc.uploaded_at = uploadResult.uploadedAt;
@@ -3252,11 +3237,11 @@ export class UserService {
 		}
 
 		const savedDoc = await this.userDocsRepository.save(existingDoc);
-		if (previousPath && !isQRProcessingDoc) {
-			// Only delete previous file if this is not a QR processing document
+		if (previousPath && previousPath !== uploadResult.filePath) {
+			// Delete previous file if it's different from the new one
 			await this.documentUploadService.deleteFile(previousPath);
 		}
-		Logger.log(`Document updated successfully: ${savedDoc.doc_id}${isQRProcessingDoc ? ' (QR processing - no file storage)' : ''}`);
+		Logger.log(`Document updated successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
 		return { savedDoc, isUpdate: true };
 	}
 
@@ -3285,16 +3270,14 @@ export class UserService {
 			vcMapping?.source === 'dhiway_vc_url' && 
 			issueVC === 'no';
 
-		// For all QR processing documents (issueVC: no), doc_path should be null
-		const isQRProcessingDoc = issueVC === 'no';
-
 		const newUserDoc = this.userDocsRepository.create({
 			user_id: userId,
 			doc_type: uploadDocumentDto.docType,
 			doc_subtype: uploadDocumentDto.docSubType,
 			doc_name: uploadDocumentDto.docName,
 			imported_from: uploadDocumentDto.importedFrom,
-			doc_path: isQRProcessingDoc ? null : uploadResult.filePath, // null for all QR processing documents
+			// Always store the file path since we're now uploading all files to S3
+			doc_path: uploadResult.filePath,
 			doc_data: docData,
 			doc_datatype: isDhiwayVcUrl ? 'Application/JSON' : uploadResult.docDatatype, // Application/JSON for Dhiway VC_URL
 			doc_verified: false, // Set as false instead of null - document needs verification
@@ -3306,7 +3289,7 @@ export class UserService {
 		});
 
 		const savedDoc = await this.userDocsRepository.save(newUserDoc);
-		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}${isQRProcessingDoc ? ' (QR processing - no file storage)' : ''}`);
+		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
 		return { savedDoc, isUpdate: false };
 	}
 }
