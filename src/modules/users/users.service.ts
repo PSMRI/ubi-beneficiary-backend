@@ -2503,6 +2503,42 @@ export class UserService {
 			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
 			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
 
+		// Call verification API for documents with issueVC: "no" (skip for issueVC: "yes")
+		if (issueVC === 'no' && vcMapping?.mapped_data) {
+			Logger.log(`Calling verification API for document with issueVC: no`);
+			try {
+				// Extract issuer from uploadDocumentDto or documentConfig, otherwise use undefined (will fallback to default)
+				const issuerForVerification = uploadDocumentDto.issuer || documentConfig?.issuer || undefined;
+				const verificationResult = await this.verifyVcWithApi(
+					vcMapping.mapped_data,
+					issuerForVerification,
+				);
+
+				if (!verificationResult.success) {
+					throw new BadRequestException({
+						message: verificationResult.message ?? 'VC Verification failed',
+						errors: verificationResult.errors ?? [],
+						statusCode: 400,
+						error: 'Bad Request',
+					});
+				}
+				Logger.log(`Document verification successful`);
+			} catch (error) {
+				// Extract a user-friendly message
+				let message =
+					error?.response?.data?.message ??
+					error?.message ??
+					'VC Verification failed';
+				throw new BadRequestException({
+					message: message,
+					error: 'Bad Request',
+					statusCode: 400,
+				});
+			}
+		} else if (issueVC === 'yes') {
+			Logger.log(`Skipping verification for document with issueVC: yes`);
+		}
+
 			// Handle VC creation or file upload
 			const { uploadResult, downloadUrl, vcCreationResult, issuer } =
 				await this.handleDocumentStorage(
