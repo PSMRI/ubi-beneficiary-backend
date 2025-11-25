@@ -824,11 +824,11 @@ export class UserService {
 		);
 
 		if (savedValues.length > 0) {
-			savedValues.forEach((savedValue, index) => {
+			for (const [index, savedValue] of savedValues.entries()) {
 				Logger.log(
 					`Saved value ${index + 1}: id=${savedValue.id}, value="${savedValue.value}", itemId=${savedValue.itemId}`,
 				);
-			});
+			}
 		}
 	}
 
@@ -3194,94 +3194,156 @@ export class UserService {
 		documentConfig?: any,
 	) {
 		try {
-			// Check if this is a VC_URL case where we only need QR processing, no OCR
-			const isVcUrlCase = 
-				requiresQRProcessing && 
-				documentConfig?.docQRContains?.toLowerCase() === 'vc_url';
+			const isVcUrlCase = this.isVcUrlCase(requiresQRProcessing, documentConfig);
+			this.performOcrLogging(isVcUrlCase, requiresQRProcessing);
 
-			if (isVcUrlCase) {
-				Logger.log(`VC_URL detected - performing QR processing only, skipping OCR text extraction`);
-			} else {
-				Logger.log(
-					`Starting OCR extraction ${requiresQRProcessing ? 'with QR processing' : 'without QR processing'} for document validation`,
-				);
-			}
+			const extractedData = await this.extractOcrData(file, uploadDocumentDto, requiresQRProcessing);
+			const ocrResult = this.buildOcrResult(extractedData, requiresQRProcessing);
 
-			const extractedData = requiresQRProcessing
-				? await this.ocrService.extractTextFromBufferWithQR(
-						file.buffer,
-						file.mimetype,
-						uploadDocumentDto.docSubType,
-					)
-				: await this.ocrService.extractTextFromBuffer(
-						file.buffer,
-						file.mimetype,
-					);
+			this.logOcrSuccess(extractedData, requiresQRProcessing);
 
-			const ocrResult = {
-				extractedText: extractedData.fullText,
-				confidence: extractedData.confidence,
-				metadata: extractedData.metadata,
-				qrProcessing:
-					requiresQRProcessing && 'qrProcessing' in extractedData
-						? extractedData.qrProcessing
-						: undefined,
-			};
+			const hasVcDataFromQR = this.hasVcDataFromQR(extractedData, requiresQRProcessing);
+			this.logVcDataDetection(hasVcDataFromQR, isVcUrlCase);
 
-		Logger.log(
-			`OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
-				(requiresQRProcessing &&
-				'qrProcessing' in extractedData &&
-				extractedData.qrProcessing &&
-				(extractedData.qrProcessing as any)?.qrCodeDetected
-					? ` (QR code processed)`
-					: ''),
-		);
-
-		// Check if we have VC data from QR code (VC_URL case)
-		const hasVcDataFromQR = requiresQRProcessing && 
-			'qrProcessing' in extractedData && 
-			extractedData.qrProcessing && 
-			(extractedData.qrProcessing as any)?.processedData?.vcData;
-
-		// Log if we detected VC data from VC_URL
-		if (hasVcDataFromQR && isVcUrlCase) {
-			Logger.log(`VC_URL case: VC data fetched from QR code - OCR text extraction not required`);
-		}
-
-		// Skip text validation for VC_URL cases where we have VC data from QR code
-		if (!(hasVcDataFromQR && isVcUrlCase)) {
-			if (extractedData.fullText.length === 0) {
-				Logger.error(`OCR validation failed: No text extracted from document`);
-				throw new BadRequestException(
-					'Document validation failed: No readable text found in the uploaded document. Please ensure the document contains clear, readable text and try again.',
-				);
-			}
-
-			if (extractedData.confidence < 10) {
-				Logger.error(
-					`OCR validation failed: Very low confidence (${extractedData.confidence}%)`,
-				);
-				throw new BadRequestException(
-					'Document validation failed: The document quality is too poor for reliable text extraction. Please upload a clearer, higher-quality image or document.',
-				);
-			}
-		}
+			this.validateOcrText(extractedData, hasVcDataFromQR, isVcUrlCase);
 
 			return ocrResult;
 		} catch (ocrError) {
-			Logger.error(`OCR processing failed: ${ocrError.message}`);
+			return this.handleOcrError(ocrError);
+		}
+	}
 
-			// If it's already a BadRequestException (like QR processing errors), preserve the user-friendly message
-			if (ocrError instanceof BadRequestException) {
-				throw ocrError;
-			}
+	private isVcUrlCase(requiresQRProcessing: boolean, documentConfig?: any): boolean {
+		return requiresQRProcessing && documentConfig?.docQRContains?.toLowerCase() === 'vc_url';
+	}
 
-			// For other errors, wrap in InternalServerErrorException
-			throw new InternalServerErrorException(
-				`Document processing failed: ${ocrError.message}`,
+	private performOcrLogging(isVcUrlCase: boolean, requiresQRProcessing: boolean): void {
+		const loggers = {
+			vcUrl: () => this.logVcUrlDetected(),
+			withQr: () => this.logOcrWithQrStart(),
+			onlyOcr: () => this.logOcrOnlyStart()
+		};
+
+		if (isVcUrlCase) {
+			loggers.vcUrl();
+		} else if (requiresQRProcessing) {
+			loggers.withQr();
+		} else {
+			loggers.onlyOcr();
+		}
+	}
+
+	private logVcUrlDetected(): void {
+		Logger.log(`VC_URL detected - performing QR processing only, skipping OCR text extraction`);
+	}
+
+	private logOcrWithQrStart(): void {
+		Logger.log('Starting OCR extraction with QR processing for document validation');
+	}
+
+	private logOcrOnlyStart(): void {
+		Logger.log('Starting OCR extraction without QR processing for document validation');
+	}
+
+	private async extractOcrData(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		requiresQRProcessing: boolean,
+	) {
+		const extractors = {
+			withQr: () => this.extractOcrDataWithQR(file, uploadDocumentDto),
+			onlyOcr: () => this.extractOcrDataOnly(file)
+		};
+
+		return requiresQRProcessing
+			? await extractors.withQr()
+			: await extractors.onlyOcr();
+	}
+
+	private async extractOcrDataWithQR(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		return await this.ocrService.extractTextFromBufferWithQR(
+			file.buffer,
+			file.mimetype,
+			uploadDocumentDto.docSubType,
+		);
+	}
+
+	private async extractOcrDataOnly(file: Express.Multer.File) {
+		return await this.ocrService.extractTextFromBuffer(file.buffer, file.mimetype);
+	}
+
+	private buildOcrResult(extractedData: any, requiresQRProcessing: boolean) {
+		return {
+			extractedText: extractedData.fullText,
+			confidence: extractedData.confidence,
+			metadata: extractedData.metadata,
+			qrProcessing:
+				requiresQRProcessing && 'qrProcessing' in extractedData
+					? extractedData.qrProcessing
+					: undefined,
+		};
+	}
+
+	private logOcrSuccess(extractedData: any, requiresQRProcessing: boolean): void {
+		const qrProcessed = this.isQrProcessed(extractedData, requiresQRProcessing);
+		Logger.log(
+			`OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
+				(qrProcessed ? ` (QR code processed)` : ''),
+		);
+	}
+
+	private isQrProcessed(extractedData: any, requiresQRProcessing: boolean): boolean {
+		return requiresQRProcessing &&
+			extractedData.qrProcessing?.qrCodeDetected;
+	}
+
+	private hasVcDataFromQR(extractedData: any, requiresQRProcessing: boolean): boolean {
+		return requiresQRProcessing &&
+			extractedData.qrProcessing?.processedData?.vcData;
+	}
+
+	private logVcDataDetection(hasVcDataFromQR: boolean, isVcUrlCase: boolean): void {
+		if (hasVcDataFromQR && isVcUrlCase) {
+			Logger.log(`VC_URL case: VC data fetched from QR code - OCR text extraction not required`);
+		}
+	}
+
+	private validateOcrText(extractedData: any, hasVcDataFromQR: boolean, isVcUrlCase: boolean): void {
+		const shouldSkipValidation = hasVcDataFromQR && isVcUrlCase;
+		if (shouldSkipValidation) {
+			return;
+		}
+
+		if (extractedData.fullText.length === 0) {
+			Logger.error(`OCR validation failed: No text extracted from document`);
+			throw new BadRequestException(
+				'Document validation failed: No readable text found in the uploaded document. Please ensure the document contains clear, readable text and try again.',
 			);
 		}
+
+		if (extractedData.confidence < 10) {
+			Logger.error(
+				`OCR validation failed: Very low confidence (${extractedData.confidence}%)`,
+			);
+			throw new BadRequestException(
+				'Document validation failed: The document quality is too poor for reliable text extraction. Please upload a clearer, higher-quality image or document.',
+			);
+		}
+	}
+
+	private handleOcrError(ocrError: any): never {
+		Logger.error(`OCR processing failed: ${ocrError.message}`);
+
+		if (ocrError instanceof BadRequestException) {
+			throw ocrError;
+		}
+
+		throw new InternalServerErrorException(
+			`Document processing failed: ${ocrError.message}`,
+		);
 	}
 
 	// Helper methods for document management
