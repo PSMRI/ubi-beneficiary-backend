@@ -300,7 +300,13 @@ export class UserService {
 		}
 
 		try {
-			return await this.documentUploadService.generateDownloadUrl(imagePath);
+			// For profile pictures, prepend the profile picture prefix
+			const profilePicturePrefix = this.configService.get<string>(
+				'AWS_S3_PROFILE_PICTURE_PREFIX',
+				'user-profile-pictures',
+			);
+			const fullPath = `${profilePicturePrefix}/${imagePath}`;
+			return await this.documentUploadService.generateDownloadUrl(fullPath);
 		} catch (error) {
 			Logger.warn(`Failed to generate download URL for user image: ${error.message}`);
 			return null;
@@ -710,7 +716,13 @@ export class UserService {
 	 */
 	private async deleteOldPicture(imagePath: string): Promise<void> {
 		try {
-			await this.documentUploadService.deleteFile(imagePath);
+			// For profile pictures, add the profile picture prefix when deleting
+			const profilePicturePrefix = this.configService.get<string>(
+				'AWS_S3_PROFILE_PICTURE_PREFIX',
+				'user-profile-pictures',
+			);
+			const fullPath = `${profilePicturePrefix}/${imagePath}`;
+			await this.documentUploadService.deleteFile(fullPath);
 		} catch (deleteError) {
 			Logger.warn(`Failed to delete old picture: ${deleteError.message}`);
 			// Continue even if deletion fails
