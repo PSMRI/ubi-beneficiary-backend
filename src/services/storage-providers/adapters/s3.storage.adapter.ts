@@ -18,6 +18,7 @@ import {
 @Injectable()
 export class S3StorageAdapter implements IFileStorageService {
   private readonly storage: FileStorage;
+  private readonly storageWithoutPrefix: FileStorage;
   private readonly logger = new Logger(S3StorageAdapter.name);
 
   constructor() {
@@ -36,19 +37,39 @@ export class S3StorageAdapter implements IFileStorageService {
       },
     });
 
+    // Storage with global prefix (for regular documents)
     const adapter = new AwsS3StorageAdapter(client, {
       bucket: process.env.AWS_S3_BUCKET_NAME!,
       prefix: process.env.AWS_S3_PREFIX ?? '',
     });
 
+    // Storage without prefix (for profile pictures and other special cases)
+    const adapterWithoutPrefix = new AwsS3StorageAdapter(client, {
+      bucket: process.env.AWS_S3_BUCKET_NAME!,
+      prefix: '',
+    });
+
     this.storage = new FileStorage(adapter);
+    this.storageWithoutPrefix = new FileStorage(adapterWithoutPrefix);
   }
 
   async uploadFile(key: string, content: Buffer, isPublic = false): Promise<string | null> {
     try {
-      await this.storage.write(key, content, {
-        visibility: isPublic ? Visibility.PUBLIC : Visibility.PRIVATE,
-      });
+      // Check if this is a profile picture path that should bypass the global prefix
+      const profilePicturePrefix = process.env.AWS_S3_PROFILE_PICTURE_PREFIX || 'user-profile-pictures';
+      const isProfilePicture = key.startsWith(profilePicturePrefix + '/');
+      
+      if (isProfilePicture) {
+        // Use storage without prefix for profile pictures
+        await this.storageWithoutPrefix.write(key, content, {
+          visibility: isPublic ? Visibility.PUBLIC : Visibility.PRIVATE,
+        });
+      } else {
+        // Use regular storage with prefix for other documents
+        await this.storage.write(key, content, {
+          visibility: isPublic ? Visibility.PUBLIC : Visibility.PRIVATE,
+        });
+      }
       return key;
     } catch (err) {
       if (err instanceof UnableToWriteFile) {
@@ -64,7 +85,12 @@ export class S3StorageAdapter implements IFileStorageService {
 
   async getFile(key: string): Promise<Buffer | null> {
     try {
-      const stream = await this.storage.read(key);
+      // Check if this is a profile picture path that should bypass the global prefix
+      const profilePicturePrefix = process.env.AWS_S3_PROFILE_PICTURE_PREFIX || 'user-profile-pictures';
+      const isProfilePicture = key.startsWith(profilePicturePrefix + '/');
+      
+      const storage = isProfilePicture ? this.storageWithoutPrefix : this.storage;
+      const stream = await storage.read(key);
       const chunks: Buffer[] = [];
 
       for await (const chunk of stream) {
@@ -84,7 +110,12 @@ export class S3StorageAdapter implements IFileStorageService {
 
   async deleteFile(key: string): Promise<boolean> {
     try {
-      await this.storage.deleteFile(key);
+      // Check if this is a profile picture path that should bypass the global prefix
+      const profilePicturePrefix = process.env.AWS_S3_PROFILE_PICTURE_PREFIX || 'user-profile-pictures';
+      const isProfilePicture = key.startsWith(profilePicturePrefix + '/');
+      
+      const storage = isProfilePicture ? this.storageWithoutPrefix : this.storage;
+      await storage.deleteFile(key);
       return true;
     } catch (err) {
       if (err instanceof UnableToDeleteFile) {
@@ -133,7 +164,18 @@ export class S3StorageAdapter implements IFileStorageService {
       // Use provided expiry or default to 20 minutes
       const defaultExpiry = new Date(Date.now() + 20 * 60 * 1000);
       const options = { expiresAt: (expiresAt || defaultExpiry).getTime() };
-      return await this.storage.temporaryUrl(key, options);
+      
+      // Check if this is a profile picture path that should bypass the global prefix
+      const profilePicturePrefix = process.env.AWS_S3_PROFILE_PICTURE_PREFIX || 'user-profile-pictures';
+      const isProfilePicture = key.startsWith(profilePicturePrefix + '/');
+      
+      if (isProfilePicture) {
+        // Use storage without prefix for profile pictures
+        return await this.storageWithoutPrefix.temporaryUrl(key, options);
+      } else {
+        // Use regular storage with prefix for other documents
+        return await this.storage.temporaryUrl(key, options);
+      }
     } catch (err) {
       if (err instanceof UnableToGetTemporaryUrl) {
         this.logger.error(`Unable to generate temporary URL for ${key}`, err.stack);

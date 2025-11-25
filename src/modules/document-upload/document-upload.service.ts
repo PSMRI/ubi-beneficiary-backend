@@ -54,8 +54,8 @@ export class DocumentUploadService {
       const { fileExtension, docDatatype } =
         this.extractAndValidateFileMetadata(file, maxFileSize);
 
-      // Build file key and upload
-      const fileKey = this.buildFileKey(ownerId, fileExtension);
+      // Build file key and upload - pass metadata to determine if it's a profile picture
+      const fileKey = this.buildFileKey(ownerId, fileExtension, metadata);
       uploadedPath = await this.fileStorageService.uploadFile(
         fileKey,
         file.buffer,
@@ -68,8 +68,21 @@ export class DocumentUploadService {
 
       this.logger.log(`File uploaded successfully to: ${uploadedPath}`);
 
+      // For profile pictures, return only the relative path for database storage
+      const isProfilePicture = metadata?.docType === 'profile' && metadata?.docSubType === 'picture';
+      let dbFilePath = uploadedPath;
+      
+      if (isProfilePicture) {
+        const profilePicturePrefix = this.configService.get<string>(
+          'AWS_S3_PROFILE_PICTURE_PREFIX',
+          'user-profile-pictures',
+        );
+        // Remove the profile picture prefix from the path for database storage
+        dbFilePath = uploadedPath.replace(`${profilePicturePrefix}/`, '');
+      }
+
       return {
-        filePath: uploadedPath,
+        filePath: dbFilePath,
         fileExtension,
         docDatatype,
         uploadedAt: new Date(),
@@ -254,11 +267,25 @@ export class DocumentUploadService {
   /**
    * Build a unique file key for storage
    */
-  private buildFileKey(ownerId: string, fileExtension: string): string {
+  private buildFileKey(ownerId: string, fileExtension: string, metadata?: DocumentMetadata): string {
     const filePrefix = this.configService.get<string>(
       'FILE_PREFIX_ENV',
       'local',
     );
+    
+    // Check if this is a profile picture upload
+    const isProfilePicture = metadata?.docType === 'profile' && metadata?.docSubType === 'picture';
+    
+    if (isProfilePicture) {
+      const profilePicturePrefix = this.configService.get<string>(
+        'AWS_S3_PROFILE_PICTURE_PREFIX',
+        'user-profile-pictures',
+      );
+      // Upload with profile picture prefix but return relative path for database
+      return `${profilePicturePrefix}/${filePrefix}/${ownerId}/${uuidv4()}${fileExtension}`;
+    }
+    
+    // Default behavior for all other documents
     return `${filePrefix}/${ownerId}/${uuidv4()}${fileExtension}`;
   }
 
