@@ -2962,10 +2962,17 @@ export class UserService {
 				);
 
 				if (documentConfig) {
-					requiresQRProcessing = documentConfig.issueVC?.toLowerCase() === 'no';
+					// QR processing should happen only when:
+					// 1. issueVC is "no" 
+					// 2. docHasQRCode is "yes"
+					const issueVC = documentConfig.issueVC?.toLowerCase();
+					const docHasQRCode = documentConfig.docHasQRCode?.toLowerCase();
+					
+					requiresQRProcessing = issueVC === 'no' && docHasQRCode === 'yes';
+					
 					Logger.log(
 						`Document config for ${uploadDocumentDto.docSubType}: issueVC=${documentConfig.issueVC}, ` +
-							`requiresQRProcessing=${requiresQRProcessing}`,
+							`docHasQRCode=${documentConfig.docHasQRCode}, requiresQRProcessing=${requiresQRProcessing}`,
 					);
 				}
 			}
