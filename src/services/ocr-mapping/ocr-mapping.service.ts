@@ -45,7 +45,9 @@ export class OcrMappingService {
       const adapterType = (process.env.OCR_MAPPING_PROVIDER || 'bedrock').toLowerCase();
 
       // Use AI mapping
+      const startTime = Date.now();
       const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema);
+      this.logger.log(`⏱️ AI Mapping Logic took: ${Date.now() - startTime}ms`);
       const processingMethod: 'ai' | 'keyword' | 'hybrid' = mappedData && Object.keys(mappedData).length > 0 ? 'ai' : 'keyword';
 
       return this.computeResultFromMappedData(mappedData, vcFields, processingMethod);
