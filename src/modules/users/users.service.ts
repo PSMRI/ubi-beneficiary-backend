@@ -377,28 +377,19 @@ export class UserService {
 		// Generate pre-signed URLs for documents if using S3
 		const docsWithUrls = await Promise.all(
 			userDocs.map(async (doc) => {
-				// Check if this document has QR processing (doc_path is null for QR processing documents)
-				const isQRProcessingDoc = doc.doc_path === null;
+				let downloadUrl = null;
 
-				let downloadUrl;
-				let docPath;
-
-				// For QR processing documents, exclude download_url and doc_path from response
-				if (isQRProcessingDoc) {
-					downloadUrl = null;
-					docPath = null;
-				} else {
+				// Generate download URL if doc_path exists
+				if (doc.doc_path) {
 					downloadUrl = await this.documentUploadService.generateDownloadUrl(doc.doc_path);
-					docPath = doc.doc_path;
 				}
 
 				return {
 					...doc,
-					doc_path: docPath, // null for Dhiway VC_URL documents
 					is_uploaded: docTypes.some(
 						(obj) => obj.documentSubType === doc.doc_subtype,
 					),
-					download_url: downloadUrl, // null for Dhiway VC_URL documents
+					download_url: downloadUrl,
 				};
 			}),
 		);
@@ -833,11 +824,11 @@ export class UserService {
 		);
 
 		if (savedValues.length > 0) {
-			savedValues.forEach((savedValue, index) => {
+			for (const [index, savedValue] of savedValues.entries()) {
 				Logger.log(
 					`Saved value ${index + 1}: id=${savedValue.id}, value="${savedValue.value}", itemId=${savedValue.itemId}`,
 				);
-			});
+			}
 		}
 	}
 
@@ -2502,12 +2493,14 @@ export class UserService {
 			uploadDocumentDto,
 		);
 
-			// Validate and prepare document
-			await this.validateDocumentType(uploadDocumentDto);
-			const { requiresQRProcessing, documentConfig } =
-				await this.getDocumentConfig(uploadDocumentDto);
-			const issueVC =
-				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
+		// Validate and prepare document
+		await this.validateDocumentType(uploadDocumentDto);
+		const { requiresQRProcessing, documentConfig } =
+			await this.getDocumentConfig(uploadDocumentDto);
+		
+		const issueVC =
+			documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
+		const issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
 
 		// Process document
 		this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
@@ -2515,6 +2508,7 @@ export class UserService {
 			file,
 			uploadDocumentDto,
 			requiresQRProcessing,
+			documentConfig,
 		);
 
 		// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
@@ -2524,19 +2518,29 @@ export class UserService {
 			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
 			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
 
-			// Handle VC creation or file upload
-			const { uploadResult, downloadUrl, vcCreationResult, issuer } =
-				await this.handleDocumentStorage(
-					file,
-					uploadDocumentDto,
-					documentConfig,
-					issueVC,
-					vcMapping,
-					userDetails,
-				);
+		// Verify document only for issueVC: "no" cases with QR code
+		// Skip verification for regular OCR documents without QR code
+		if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
+			await this.verifyDocumentData(vcMapping.mapped_data, issuer);
+		} else if (issueVC === 'yes') {
+			Logger.log(`Skipping verification for document with issueVC: yes`);
+		} else if (issueVC === 'no' && !requiresQRProcessing) {
+			Logger.log(`Skipping verification for regular OCR document without QR code`);
+		}
+
+		// Handle VC creation or file upload
+		const { uploadResult, downloadUrl, vcCreationResult } =
+			await this.handleDocumentStorage(
+				file,
+				uploadDocumentDto,
+				documentConfig,
+				issueVC,
+				vcMapping,
+				userDetails,
+			);
 
 		// Save document record
-		Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!uploadResult?.downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
+		Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
 		const { savedDoc, isUpdate } = await this.saveDocumentRecord(
 			existingDoc,
 			userDetails.user_id,
@@ -2544,9 +2548,7 @@ export class UserService {
 			uploadDocumentDto,
 			vcMapping,
 			{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
-		);
-
-		// Update profile based on documents
+		);		// Update profile based on documents
 		try {
 			await this.updateProfile(userDetails);
 			Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
@@ -2682,6 +2684,58 @@ export class UserService {
 		);
 	}
 
+	/**
+	 * Verify document data with API for issueVC: "no" cases
+	 */
+	private async verifyDocumentData(mappedData: any, issuer: string): Promise<void> {
+		Logger.log(`Calling verification API for document with issueVC: no`);
+		
+		const verificationResult = await this.verifyVcWithApi(mappedData, issuer);
+
+		if (!verificationResult.success) {
+			const message = verificationResult.message ?? 'VC Verification failed';
+			throw new BadRequestException({
+				message,
+				errors: verificationResult.errors ?? [],
+				statusCode: 400,
+				error: 'Bad Request',
+			});
+		}
+		
+		Logger.log(`Document verification successful`);
+	}
+
+	/**
+	 * Prepare document metadata (docData, docDatatype, docDataLink)
+	 * Eliminates duplication between updateExistingDoc and createNewDoc
+	 */
+	private prepareDocumentMetadata(
+		vcMapping: any,
+		issueVC: string,
+		issuer: string,
+		uploadResult: any,
+		docDataLink?: string,
+	) {
+		const isDhiwayVcUrl = 
+			issuer?.toLowerCase() === 'dhiway' && 
+			vcMapping?.source === 'dhiway_vc_url' && 
+			issueVC === 'no';
+
+		let docData = null;
+		if (issueVC === 'yes') {
+			docData = JSON.stringify({});
+		} else if (vcMapping?.mapped_data) {
+			docData = JSON.stringify(vcMapping.mapped_data);
+		}
+
+		return {
+			docData,
+			docDatatype: isDhiwayVcUrl ? 'Application/JSON' : uploadResult.docDatatype,
+			docDataLink: isDhiwayVcUrl ? vcMapping?.vcUrl : (docDataLink || null),
+			isDhiwayVcUrl,
+		};
+	}
+
 	private async handleDocumentStorage(
 		file: Express.Multer.File,
 		uploadDocumentDto: UploadDocumentDto,
@@ -2690,16 +2744,24 @@ export class UserService {
 		vcMapping: any,
 		userDetails: any,
 	) {
-		const issuer =
-			uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
-		let uploadResult;
-		let downloadUrl = null;
+		// Always upload file to S3 regardless of issueVC configuration
+		Logger.log(`Uploading file to S3 storage (issueVC: ${issueVC})`);
+		const uploadResult = await this.uploadFileToStorage(
+			file,
+			uploadDocumentDto,
+			userDetails.user_id,
+		);
+
+		// Generate download URL for the uploaded file
+		const downloadUrl = uploadResult?.filePath
+			? await this.documentUploadService.generateDownloadUrl(uploadResult.filePath)
+			: null;
+
+		// Create VC record if issueVC is 'yes'
 		let vcCreationResult = null;
-
-
 		if (issueVC === 'yes') {
-			// Create VC record, no file upload to S3
-			Logger.log(`Document configured for VC creation (issueVC: yes) - creating VC record, skipping S3 upload`);
+			Logger.log(`Document configured for VC creation (issueVC: yes) - creating VC record`);
+			const issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
 			vcCreationResult = await this.createVcRecord(
 				file,
 				uploadDocumentDto,
@@ -2708,22 +2770,11 @@ export class UserService {
 				vcMapping,
 				userDetails,
 			);
-			uploadResult = this.createPlaceholderUploadResult(
-				userDetails.user_id,
-				file,
-			);
 		} else {
-			// Document configured for data extraction only (issueVC: no) - skip S3 upload and file path
-			Logger.log(`Document configured for data extraction only (issueVC: no) - skipping S3 upload and file storage, storing processed data only`);
-			uploadResult = this.createPlaceholderUploadResult(
-				userDetails.user_id,
-				file,
-			);
-			// No S3 upload for issueVC: no documents
-			// downloadUrl remains null - no file to download
+			Logger.log(`Document configured for data extraction only (issueVC: no) - file uploaded to S3, no VC creation`);
 		}
 
-		return { uploadResult, downloadUrl, vcCreationResult, issuer };
+		return { uploadResult, downloadUrl, vcCreationResult };
 	}
 
 
@@ -2777,16 +2828,6 @@ export class UserService {
 		return vcCreationResult;
 	}
 
-	private createPlaceholderUploadResult(
-		userId: string,
-		file: Express.Multer.File,
-	) {
-		return {
-			filePath: null, // Always null - no local placeholder paths
-			docDatatype: file.mimetype,
-			uploadedAt: new Date(),
-		};
-	}
 
 	private async uploadFileToStorage(
 		file: Express.Multer.File,
@@ -2942,11 +2983,25 @@ export class UserService {
 				);
 
 				if (documentConfig) {
-					requiresQRProcessing = documentConfig.issueVC?.toLowerCase() === 'no';
+					// QR processing should happen only when:
+					// 1. issueVC is "no" 
+					// 2. docHasQRCode is "yes"
+					const issueVC = documentConfig.issueVC?.toLowerCase();
+					// Support both docHasQRCode and docHasORCode (typo in some configs)
+					const docHasQRCode = (documentConfig.docHasQRCode || documentConfig.docHasORCode)?.toLowerCase();
+					
+					requiresQRProcessing = issueVC === 'no' && docHasQRCode === 'yes';
+					
 					Logger.log(
 						`Document config for ${uploadDocumentDto.docSubType}: issueVC=${documentConfig.issueVC}, ` +
-							`requiresQRProcessing=${requiresQRProcessing}`,
+							`docHasQRCode=${documentConfig.docHasQRCode || documentConfig.docHasORCode}, docQRContains=${documentConfig.docQRContains}, ` +
+							`issuer=${documentConfig.issuer}, requiresQRProcessing=${requiresQRProcessing}`,
 					);
+					
+					// Debug: log all config keys to identify the correct field name
+					if (!documentConfig.docHasQRCode && !documentConfig.docHasORCode) {
+						Logger.warn(`docHasQRCode is undefined. Available config keys: ${Object.keys(documentConfig).join(', ')}`);
+					}
 				}
 			}
 		} catch (configError) {
@@ -3136,81 +3191,159 @@ export class UserService {
 		file: Express.Multer.File,
 		uploadDocumentDto: UploadDocumentDto,
 		requiresQRProcessing: boolean,
+		documentConfig?: any,
 	) {
 		try {
-			Logger.log(
-				`Starting OCR extraction ${requiresQRProcessing ? 'with QR processing' : 'without QR processing'} for document validation`,
-			);
+			const isVcUrlCase = this.isVcUrlCase(requiresQRProcessing, documentConfig);
+			this.performOcrLogging(isVcUrlCase, requiresQRProcessing);
 
-			const extractedData = requiresQRProcessing
-				? await this.ocrService.extractTextFromBufferWithQR(
-						file.buffer,
-						file.mimetype,
-						uploadDocumentDto.docSubType,
-					)
-				: await this.ocrService.extractTextFromBuffer(
-						file.buffer,
-						file.mimetype,
-					);
+			const extractedData = await this.extractOcrData(file, uploadDocumentDto, requiresQRProcessing);
+			const ocrResult = this.buildOcrResult(extractedData, requiresQRProcessing);
 
-			const ocrResult = {
-				extractedText: extractedData.fullText,
-				confidence: extractedData.confidence,
-				metadata: extractedData.metadata,
-				qrProcessing:
-					requiresQRProcessing && 'qrProcessing' in extractedData
-						? extractedData.qrProcessing
-						: undefined,
-			};
+			this.logOcrSuccess(extractedData, requiresQRProcessing);
 
-		Logger.log(
-			`OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
-				(requiresQRProcessing &&
-				'qrProcessing' in extractedData &&
-				extractedData.qrProcessing &&
-				(extractedData.qrProcessing as any)?.qrCodeDetected
-					? ` (QR code processed)`
-					: ''),
-		);
+			const hasVcDataFromQR = this.hasVcDataFromQR(extractedData, requiresQRProcessing);
+			this.logVcDataDetection(hasVcDataFromQR, isVcUrlCase);
 
-		// Log if we detected Dhiway VC data
-		if (requiresQRProcessing && 
-			'qrProcessing' in extractedData && 
-			extractedData.qrProcessing && 
-			(extractedData.qrProcessing as any)?.processedData?.vcData) {
-			Logger.log(`Dhiway VC data detected in QR code - will skip OCR mapping and use VC data directly`);
-		}
-
-			if (extractedData.fullText.length === 0) {
-				Logger.error(`OCR validation failed: No text extracted from document`);
-				throw new BadRequestException(
-					'Document validation failed: No readable text found in the uploaded document. Please ensure the document contains clear, readable text and try again.',
-				);
-			}
-
-			if (extractedData.confidence < 10) {
-				Logger.error(
-					`OCR validation failed: Very low confidence (${extractedData.confidence}%)`,
-				);
-				throw new BadRequestException(
-					'Document validation failed: The document quality is too poor for reliable text extraction. Please upload a clearer, higher-quality image or document.',
-				);
-			}
+			this.validateOcrText(extractedData, hasVcDataFromQR, isVcUrlCase);
 
 			return ocrResult;
 		} catch (ocrError) {
-			Logger.error(`OCR processing failed: ${ocrError.message}`);
+			return this.handleOcrError(ocrError);
+		}
+	}
 
-			// If it's already a BadRequestException (like QR processing errors), preserve the user-friendly message
-			if (ocrError instanceof BadRequestException) {
-				throw ocrError;
-			}
+	private isVcUrlCase(requiresQRProcessing: boolean, documentConfig?: any): boolean {
+		return requiresQRProcessing && documentConfig?.docQRContains?.toLowerCase() === 'vc_url';
+	}
 
-			// For other errors, wrap in InternalServerErrorException
-			throw new InternalServerErrorException(
-				`Document processing failed: ${ocrError.message}`,
+	private performOcrLogging(isVcUrlCase: boolean, requiresQRProcessing: boolean): void {
+		const loggers = {
+			vcUrl: () => this.logVcUrlDetected(),
+			withQr: () => this.logOcrWithQrStart(),
+			onlyOcr: () => this.logOcrOnlyStart()
+		};
+
+		if (isVcUrlCase) {
+			loggers.vcUrl();
+		} else if (requiresQRProcessing) {
+			loggers.withQr();
+		} else {
+			loggers.onlyOcr();
+		}
+	}
+
+	private logVcUrlDetected(): void {
+		Logger.log(`VC_URL detected - performing QR processing only, skipping OCR text extraction`);
+	}
+
+	private logOcrWithQrStart(): void {
+		Logger.log('Starting OCR extraction with QR processing for document validation');
+	}
+
+	private logOcrOnlyStart(): void {
+		Logger.log('Starting OCR extraction without QR processing for document validation');
+	}
+
+	private async extractOcrData(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		requiresQRProcessing: boolean,
+	) {
+		const extractors = {
+			withQr: () => this.extractOcrDataWithQR(file, uploadDocumentDto),
+			onlyOcr: () => this.extractOcrDataOnly(file)
+		};
+
+		return requiresQRProcessing
+			? await extractors.withQr()
+			: await extractors.onlyOcr();
+	}
+
+	private async extractOcrDataWithQR(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		return await this.ocrService.extractTextFromBufferWithQR(
+			file.buffer,
+			file.mimetype,
+			uploadDocumentDto.docSubType,
+		);
+	}
+
+	private async extractOcrDataOnly(file: Express.Multer.File) {
+		return await this.ocrService.extractTextFromBuffer(file.buffer, file.mimetype);
+	}
+
+	private buildOcrResult(extractedData: any, requiresQRProcessing: boolean) {
+		return {
+			extractedText: extractedData.fullText,
+			confidence: extractedData.confidence,
+			metadata: extractedData.metadata,
+			qrProcessing:
+				requiresQRProcessing && 'qrProcessing' in extractedData
+					? extractedData.qrProcessing
+					: undefined,
+		};
+	}
+
+	private logOcrSuccess(extractedData: any, requiresQRProcessing: boolean): void {
+		const qrProcessed = this.isQrProcessed(extractedData, requiresQRProcessing);
+		Logger.log(
+			`OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
+				(qrProcessed ? ` (QR code processed)` : ''),
+		);
+	}
+
+	private isQrProcessed(extractedData: any, requiresQRProcessing: boolean): boolean {
+		return requiresQRProcessing &&
+			extractedData.qrProcessing?.qrCodeDetected;
+	}
+
+	private hasVcDataFromQR(extractedData: any, requiresQRProcessing: boolean): boolean {
+		return requiresQRProcessing &&
+			extractedData.qrProcessing?.processedData?.vcData;
+	}
+
+	private logVcDataDetection(hasVcDataFromQR: boolean, isVcUrlCase: boolean): void {
+		if (hasVcDataFromQR && isVcUrlCase) {
+			Logger.log(`VC_URL case: VC data fetched from QR code - OCR text extraction not required`);
+		}
+	}
+
+	private validateOcrText(extractedData: any, hasVcDataFromQR: boolean, isVcUrlCase: boolean): void {
+		const shouldSkipValidation = hasVcDataFromQR && isVcUrlCase;
+		if (shouldSkipValidation) {
+			return;
+		}
+
+		if (extractedData.fullText.length === 0) {
+			Logger.error(`OCR validation failed: No text extracted from document`);
+			throw new BadRequestException(
+				'Document validation failed: No readable text found in the uploaded document. Please ensure the document contains clear, readable text and try again.',
 			);
 		}
+
+		if (extractedData.confidence < 10) {
+			Logger.error(
+				`OCR validation failed: Very low confidence (${extractedData.confidence}%)`,
+			);
+			throw new BadRequestException(
+				'Document validation failed: The document quality is too poor for reliable text extraction. Please upload a clearer, higher-quality image or document.',
+			);
+		}
+	}
+
+	private handleOcrError(ocrError: any): never {
+		Logger.error(`OCR processing failed: ${ocrError.message}`);
+
+		if (ocrError instanceof BadRequestException) {
+			throw ocrError;
+		}
+
+		throw new InternalServerErrorException(
+			`Document processing failed: ${ocrError.message}`,
+		);
 	}
 
 	// Helper methods for document management
@@ -3224,51 +3357,37 @@ export class UserService {
 		issueVC?: string,
 		issuer?: string,
 	): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
-		// Check if this is a Dhiway VC_URL document or any QR processing document
-		const isDhiwayVcUrl = 
-			issuer?.toLowerCase() === 'dhiway' && 
-			vcMapping?.source === 'dhiway_vc_url' && 
-			issueVC === 'no';
-
-		// For all QR processing documents (issueVC: no), doc_path should be null
-		const isQRProcessingDoc = issueVC === 'no';
+		const metadata = this.prepareDocumentMetadata(
+			vcMapping,
+			issueVC,
+			issuer,
+			uploadResult,
+			docDataLink,
+		);
 
 		const previousPath = existingDoc.doc_path;
-		existingDoc.doc_path = isQRProcessingDoc ? null : uploadResult.filePath; // null for all QR processing documents
+		
+		// Update document fields
+		existingDoc.doc_path = uploadResult.filePath;
 		existingDoc.imported_from = uploadDocumentDto.importedFrom;
-		existingDoc.doc_datatype = isDhiwayVcUrl ? 'Application/JSON' : uploadResult.docDatatype; // Application/JSON for Dhiway VC_URL
+		existingDoc.doc_datatype = metadata.docDatatype;
 		existingDoc.uploaded_at = uploadResult.uploadedAt;
-
-		// Set doc_data based on issueVC flag
-		// If issueVC is "yes", set doc_data as empty object (data will be updated through different action)
-		// Otherwise, store mapped_data (will be automatically encrypted)
-		if (issueVC === 'yes') {
-			existingDoc.doc_data = JSON.stringify({}) as any;
-		} else if (vcMapping?.mapped_data) {
-			existingDoc.doc_data = JSON.stringify(vcMapping.mapped_data) as any;
-		}
-
-		// Set issuer if provided
+		existingDoc.doc_data = metadata.docData;
+		existingDoc.doc_verified = false;
+		existingDoc.doc_data_link = metadata.docDataLink;
+		
 		if (issuer) {
 			existingDoc.issuer = issuer;
 		}
 
-		// Set doc_verified as false (document needs verification)
-		existingDoc.doc_verified = false;
-
-		// Set doc_data_link - for Dhiway VC_URL use the .vc URL, otherwise use provided docDataLink
-		if (isDhiwayVcUrl) {
-			existingDoc.doc_data_link = vcMapping?.vcUrl;
-		} else if (docDataLink) {
-			existingDoc.doc_data_link = docDataLink;
-		}
-
 		const savedDoc = await this.userDocsRepository.save(existingDoc);
-		if (previousPath && !isQRProcessingDoc) {
-			// Only delete previous file if this is not a QR processing document
+		
+		// Delete previous file if different
+		if (previousPath && previousPath !== uploadResult.filePath) {
 			await this.documentUploadService.deleteFile(previousPath);
 		}
-		Logger.log(`Document updated successfully: ${savedDoc.doc_id}${isQRProcessingDoc ? ' (QR processing - no file storage)' : ''}`);
+		
+		Logger.log(`Document updated successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
 		return { savedDoc, isUpdate: true };
 	}
 
@@ -3281,24 +3400,13 @@ export class UserService {
 		issueVC?: string,
 		issuer?: string,
 	): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
-		// Set doc_data based on issueVC flag
-		// If issueVC is "yes", set doc_data as empty object (data will be updated through different action)
-		// Otherwise, store mapped_data (will be automatically encrypted)
-		let docData = null;
-		if (issueVC === 'yes') {
-			docData = JSON.stringify({}) as any;
-		} else if (vcMapping?.mapped_data) {
-			docData = JSON.stringify(vcMapping.mapped_data) as any;
-		}
-
-		// Check if this is a Dhiway VC_URL document or any QR processing document
-		const isDhiwayVcUrl = 
-			issuer?.toLowerCase() === 'dhiway' && 
-			vcMapping?.source === 'dhiway_vc_url' && 
-			issueVC === 'no';
-
-		// For all QR processing documents (issueVC: no), doc_path should be null
-		const isQRProcessingDoc = issueVC === 'no';
+		const metadata = this.prepareDocumentMetadata(
+			vcMapping,
+			issueVC,
+			issuer,
+			uploadResult,
+			docDataLink,
+		);
 
 		const newUserDoc = this.userDocsRepository.create({
 			user_id: userId,
@@ -3306,19 +3414,19 @@ export class UserService {
 			doc_subtype: uploadDocumentDto.docSubType,
 			doc_name: uploadDocumentDto.docName,
 			imported_from: uploadDocumentDto.importedFrom,
-			doc_path: isQRProcessingDoc ? null : uploadResult.filePath, // null for all QR processing documents
-			doc_data: docData,
-			doc_datatype: isDhiwayVcUrl ? 'Application/JSON' : uploadResult.docDatatype, // Application/JSON for Dhiway VC_URL
-			doc_verified: false, // Set as false instead of null - document needs verification
+			doc_path: uploadResult.filePath,
+			doc_data: metadata.docData,
+			doc_datatype: metadata.docDatatype,
+			doc_verified: false,
 			watcher_registered: false,
 			watcher_email: null,
 			watcher_callback_url: null,
-			doc_data_link: isDhiwayVcUrl ? vcMapping?.vcUrl : (docDataLink || null), // .vc URL for Dhiway VC_URL documents
+			doc_data_link: metadata.docDataLink,
 			issuer: issuer || null,
 		});
 
 		const savedDoc = await this.userDocsRepository.save(newUserDoc);
-		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}${isQRProcessingDoc ? ' (QR processing - no file storage)' : ''}`);
+		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
 		return { savedDoc, isUpdate: false };
 	}
 }
