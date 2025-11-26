@@ -2486,6 +2486,7 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 	) {
 		try {
+		const flowStartTime = Date.now();
 		const userDetails = await this.getUserDetails(req);
 		
 		const existingDoc = await this.findExistingDocument(
@@ -2504,22 +2505,27 @@ export class UserService {
 
 		// Process document
 		this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+		const ocrStartTime = Date.now();
 		const ocrResult = await this.performOcr(
 			file,
 			uploadDocumentDto,
 			requiresQRProcessing,
 			documentConfig,
 		);
+		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
 		// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
 		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
 		
+		const mappingStartTime = Date.now();
 		const vcMapping = isDhiwayVcUrl 
 			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
 			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
+		Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
 
 		// Verify document only for issueVC: "no" cases with QR code
 		// Skip verification for regular OCR documents without QR code
+		const verifyStartTime = Date.now();
 		if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
 			await this.verifyDocumentData(vcMapping.mapped_data, issuer);
 		} else if (issueVC === 'yes') {
@@ -2527,8 +2533,10 @@ export class UserService {
 		} else if (issueVC === 'no' && !requiresQRProcessing) {
 			Logger.log(`Skipping verification for regular OCR document without QR code`);
 		}
+		Logger.log(`⏱️ Verification took: ${Date.now() - verifyStartTime}ms`, 'UserService');
 
 		// Handle VC creation or file upload
+		const storageStartTime = Date.now();
 		const { uploadResult, downloadUrl, vcCreationResult } =
 			await this.handleDocumentStorage(
 				file,
@@ -2538,9 +2546,11 @@ export class UserService {
 				vcMapping,
 				userDetails,
 			);
+		Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
 
 		// Save document record
 		Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
+		const dbSaveStartTime = Date.now();
 		const { savedDoc, isUpdate } = await this.saveDocumentRecord(
 			existingDoc,
 			userDetails.user_id,
@@ -2556,6 +2566,7 @@ export class UserService {
 			Logger.error('Profile update failed after document upload:', error);
 			// Don't fail the entire operation if profile update fails
 		}
+		Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
 
 			// Build and return response
 			const responseData = this.buildResponseData(
@@ -2566,6 +2577,8 @@ export class UserService {
 				vcCreationResult,
 				vcMapping,
 			);
+
+			Logger.log(`⏱️ Total Document Upload Flow took: ${Date.now() - flowStartTime}ms`, 'UserService');
 
 			return new SuccessResponse({
 				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
