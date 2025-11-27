@@ -40,7 +40,6 @@ import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
 import { VcFieldsService, VcFields } from '../../common/helper/vcFieldService';
 import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
 import * as stringSimilarity from 'string-similarity';
-
 type StatusUpdateInfo = {
 	attempted: boolean;
 	success: boolean;
@@ -244,6 +243,7 @@ export class UserService {
 
 		const whosePhoneNumber = this.extractWhosePhoneNumber(customFields);
 		const pictureUrl = await this.generatePictureUrl(user?.image);
+
 		return {
 			...user,
 			whosePhoneNumber,
@@ -2757,6 +2757,7 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 	) {
 		try {
+			const flowStartTime = Date.now();
 			const userDetails = await this.getUserDetails(req);
 
 			const existingDoc = await this.findExistingDocument(
@@ -2775,20 +2776,45 @@ export class UserService {
 
 			// Process document
 			this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+			const ocrStartTime = Date.now();
 			const ocrResult = await this.performOcr(
 				file,
 				uploadDocumentDto,
 				requiresQRProcessing,
 				documentConfig,
 			);
+			Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
 			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
 			const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
 
+			const mappingStartTime = Date.now();
 			const vcMapping = isDhiwayVcUrl
 				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
 				: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
+			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
 
+			// Validate required fields for ALL documents before storage
+			const validationStartTime = Date.now();
+			Logger.log(`Validating required fields for document`);
+			const vcFields = await this.vcFieldsService.getVcFields(
+				uploadDocumentDto.docType,
+				uploadDocumentDto.docSubType,
+			);
+
+			// Validate required fields for both issueVC="yes" and issueVC="no" cases
+			if (vcFields && Object.keys(vcFields).length > 0) {
+				await this.validateRequiredFieldsFromOcrMapping(
+					vcFields,
+					vcMapping,
+					uploadDocumentDto,
+				);
+			} else {
+				Logger.warn(
+					`No vcFields configuration found for ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType} - skipping required field validation`,
+				);
+			}
+			Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
 
 			// Step: Perform VC field validation and matching against user profile
 			let matchingResult = null;
@@ -2816,17 +2842,21 @@ export class UserService {
 					`VC field matching error (non-critical): ${matchingError.message}`,
 				);
 			}
+
 			// Verify document only for issueVC: "no" cases with QR code
 			// Skip verification for regular OCR documents without QR code
+			const verifyStartTime = Date.now();
 			if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
 				await this.verifyDocumentData(vcMapping.mapped_data, issuer);
 			} else if (issueVC === 'yes') {
-				Logger.log(`Skipping verification for document with issueVC: yes`);
+				Logger.log(`Skipping external verification for document with issueVC: yes`);
 			} else if (issueVC === 'no' && !requiresQRProcessing) {
-				Logger.log(`Skipping verification for regular OCR document without QR code`);
+				Logger.log(`Skipping external verification for regular OCR document without QR code`);
 			}
-			console.log('vcMapping++++++++++++++++++++++++++++++++++++++++++++++', vcMapping);
+			Logger.log(`⏱️ External Verification took: ${Date.now() - verifyStartTime}ms`, 'UserService');
+
 			// Handle VC creation or file upload
+			const storageStartTime = Date.now();
 			const { uploadResult, downloadUrl, vcCreationResult } =
 				await this.handleDocumentStorage(
 					file,
@@ -2836,9 +2866,11 @@ export class UserService {
 					vcMapping,
 					userDetails,
 				);
+			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
 
 			// Save document record
 			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
+			const dbSaveStartTime = Date.now();
 			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
 				existingDoc,
 				userDetails.user_id,
@@ -2854,6 +2886,7 @@ export class UserService {
 				Logger.error('Profile update failed after document upload:', error);
 				// Don't fail the entire operation if profile update fails
 			}
+			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
 
 			// Build and return response
 			const responseData = this.buildResponseData(
@@ -2865,6 +2898,8 @@ export class UserService {
 				vcMapping,
 				matchingResult,
 			);
+
+			Logger.log(`⏱️ Total Document Upload Flow took: ${Date.now() - flowStartTime}ms`, 'UserService');
 
 			return new SuccessResponse({
 				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
@@ -3096,16 +3131,11 @@ export class UserService {
 			);
 		}
 
+		// Note: Required field validation is now done before storage in uploadDocument()
+		// to prevent S3 upload and DB storage for documents with missing required fields
 		const vcFields = await this.vcFieldsService.getVcFields(
 			uploadDocumentDto.docType,
 			uploadDocumentDto.docSubType,
-		);
-		console.log('vcFields++++++++++++++++++++++++++++++++++++++++++++++', vcFields);
-		console.log('vcMapping++++++++++++++++++++++++++++++++++++++++++++++', vcMapping);
-		await this.validateRequiredFieldsFromOcrMapping(
-			vcFields,
-			vcMapping,
-			uploadDocumentDto,
 		);
 
 		const vcCreationResult = await this.vcAdapterFactory.createRecord(
@@ -3214,7 +3244,6 @@ export class UserService {
 		if (vcMapping?.mapped_data) {
 			responseData.mapped_data = vcMapping.mapped_data;
 		}
-
 		// Include matching results if available
 		if (matchingResult) {
 			responseData.field_matching = {
@@ -3348,11 +3377,6 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 	) {
 		try {
-
-			console.log('vcFields++++++++++++++++++++++++++++++++++++++++++++++', vcFields);
-			console.log('vcMapping++++++++++++++++++++++++++++++++++++++++++++++', vcMapping);
-
-
 			Logger.log(
 				`Validating required fields - vcFields: ${Object.keys(vcFields || {}).length} fields, vcMapping present: ${!!vcMapping}`,
 			);
@@ -3367,6 +3391,7 @@ export class UserService {
 			const allMissingRequired = this.collectMissingRequiredFields(
 				vcFields,
 				vcMapping,
+				uploadDocumentDto,
 			);
 			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
@@ -3378,7 +3403,7 @@ export class UserService {
 				(config) => config?.required === true,
 			).length;
 			Logger.log(
-				`All ${requiredFieldsCount} required fields are present for VC creation`,
+				`All ${requiredFieldsCount} required fields are present for document`,
 			);
 		} catch (error) {
 			Logger.error(
@@ -3392,6 +3417,7 @@ export class UserService {
 	private collectMissingRequiredFields(
 		vcFields: VcFields,
 		vcMapping: any,
+		uploadDocumentDto?: UploadDocumentDto,
 	): string[] {
 		const missingFields = vcMapping.missing_fields || [];
 		Logger.log(
@@ -3407,6 +3433,7 @@ export class UserService {
 				vcFields,
 				vcMapping,
 				missingRequiredFields,
+				uploadDocumentDto,
 			);
 
 		return [...missingRequiredFields, ...additionalMissingRequired];
@@ -3430,12 +3457,26 @@ export class UserService {
 		vcFields: VcFields,
 		vcMapping: any,
 		missingRequiredFields: string[],
+		uploadDocumentDto?: UploadDocumentDto,
 	): string[] {
 		const additionalMissingRequired: string[] = [];
+		const issuer = uploadDocumentDto?.issuer?.toLowerCase();
+
 		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
 			// Only check required document fields (exclude fields with document_field: false)
 			if (fieldConfig?.required === true && fieldConfig?.document_field !== false) {
-				const fieldValue = vcMapping.mapped_data?.[fieldName];
+				// Handle Dhiway case where data is in credentialSubject
+				let fieldValue = vcMapping.mapped_data?.[fieldName];
+
+				// Check if this is Dhiway issuer and data might be in credentialSubject
+				if (issuer === 'dhiway' && this.isFieldValueEmpty(fieldValue)) {
+					// Try to get value from credentialSubject
+					fieldValue = vcMapping.mapped_data?.credentialSubject?.[fieldName];
+					Logger.debug(
+						`Dhiway issuer: Checking field '${fieldName}' in credentialSubject - found: ${!this.isFieldValueEmpty(fieldValue)}`,
+					);
+				}
+
 				if (
 					this.isFieldValueEmpty(fieldValue) &&
 					!missingRequiredFields.includes(fieldName)
@@ -3480,12 +3521,11 @@ export class UserService {
 	): void {
 		const fieldList = allMissingRequired.join(', ');
 		const errorMessage =
-			`Missing required field(s) for VC creation: ${fieldList}. ` +
+			`Missing required field(s): ${fieldList}. ` +
 			`Document Type: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}. ` +
-			`OCR could not extract these required fields from the uploaded document. ` +
 			`Please ensure these fields are clearly visible and readable in the document.`;
 
-		Logger.error(`VC validation failed: ${errorMessage}`);
+		Logger.error(`Document validation failed: ${errorMessage}`);
 		throw new BadRequestException(errorMessage);
 	}
 

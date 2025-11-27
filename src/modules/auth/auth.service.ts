@@ -495,11 +495,13 @@ export class AuthService {
       this.userService.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
 
       // Step 4: OCR extraction
+      const ocrStartTime = Date.now();
       const ocrResult = await this.userService.performOcr(
         file,
         uploadDocumentDto,
         requiresQRProcessing,
       );
+      this.loggerService.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'AuthService');
 
       // Step 5: Fetch vcFields
       const vcFields = await this.userService.getVcFieldsForDocument(
@@ -509,6 +511,7 @@ export class AuthService {
 
       // Step 6: OCR → structured mapping
       let vcMapping = null;
+      const mappingStartTime = Date.now();
       if (vcFields) {
         vcMapping = await this.userService.ocrMapping.mapAfterOcr(
           {
@@ -527,6 +530,7 @@ export class AuthService {
           warnings: ['No vcFields configuration found'],
         };
       }
+      this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
 
       this.loggerService.log('OTR Certificate processed successfully (OCR + mapping done)');
 
@@ -558,6 +562,7 @@ export class AuthService {
     const defaultPassword = process.env.SIGNUP_DEFAULT_PASSWORD;
 
     try {
+      const flowStartTime = Date.now();
       // 🟩 Step 1: Pre-process OTR Certificate
       const uploadDocumentDto: UploadDocumentDto = {
         docType: body.docType,
@@ -566,7 +571,9 @@ export class AuthService {
         importedFrom: body.importedFrom ?? 'registration',
         file,
       };
+      const processingStartTime = Date.now();
       const otrResult = await this.processOtrCertificate(file, uploadDocumentDto);
+      this.loggerService.log(`⏱️ Total OTR Processing (OCR+Mapping) took: ${Date.now() - processingStartTime}ms`, 'AuthService');
 
       ocrResult = otrResult.ocrResult;
       vcMapping = otrResult.vcMapping;
@@ -590,9 +597,11 @@ export class AuthService {
       this.validateRegistrationPayload(payload);
 
       // 🟩 Step 4: Register user
+      const regStartTime = Date.now();
       const registrationResponse = await this.registerWithUsernamePassword(
         payload,
       );
+      this.loggerService.log(`⏱️ User Registration took: ${Date.now() - regStartTime}ms`, 'AuthService');
       // Check if registration was successful
       if (registrationResponse instanceof ErrorResponse) {
         return registrationResponse;
@@ -604,6 +613,7 @@ export class AuthService {
 
       // 🟩 Step 5: Upload OTR Certificate file
       // Upload file to storage
+      const uploadStartTime = Date.now();
       const uploadResult = await this.documentUploadService.uploadFile(
         file,
         {
@@ -617,8 +627,10 @@ export class AuthService {
 
       // Save or update the document record
       const savedDoc = await this.userService.createNewDoc(registeredUser.user_id, uploadResult, uploadDocumentDto, vcMapping);
+      this.loggerService.log(`⏱️ Document Upload & Save took: ${Date.now() - uploadStartTime}ms`, 'AuthService');
 
 
+      this.loggerService.log(`⏱️ Total OTR Registration Flow took: ${Date.now() - flowStartTime}ms`, 'AuthService');
       // 🟩 Step 6: Return success response
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
