@@ -58,4 +58,8 @@ export class User {
 
   @UpdateDateColumn({ type: 'timestamptz', nullable: true })
   updated_at: Date;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  name: string;
+
 }
