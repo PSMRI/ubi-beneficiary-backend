@@ -39,6 +39,7 @@ import { OcrService } from '@services/ocr/ocr.service';
 import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
 import { VcFieldsService, VcFields } from '../../common/helper/vcFieldService';
 import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
+import * as stringSimilarity from 'string-similarity';
 
 type StatusUpdateInfo = {
 	attempted: boolean;
@@ -2472,6 +2473,277 @@ export class UserService {
 	}
 
 	/**
+	 * Helper function to calculate string similarity percentage using string-similarity library
+	 * @param a First string
+	 * @param b Second string
+	 * @returns Similarity percentage (0-100)
+	 */
+	private getMatchPercentage(a: string, b: string): number {
+		if (!a || !b) {
+			return 0;
+		}
+
+		const str1 = String(a).toLowerCase().trim();
+		const str2 = String(b).toLowerCase().trim();
+
+		// Use string-similarity library's compareTwoStrings method (Dice's coefficient)
+		const rating = stringSimilarity.compareTwoStrings(str1, str2);
+
+		return Number((rating * 100).toFixed(2));
+	}
+
+	/**
+	 * Validates and matches VC fields against user profile data
+	 * Performs field-level comparison using string similarity
+	 * 
+	 * @param userId User ID to fetch profile data
+	 * @param vcMapping VC mapping data containing extracted/mapped fields
+	 * @param uploadDocumentDto Document metadata including docType and docSubType
+	 * @param issuer Issuer name
+	 * @returns Validation results with field matches
+	 * @throws BadRequestException if any field match is below configured threshold
+	 */
+	private async validateAndMatchVcFields(
+		userId: string,
+		vcMapping: any,
+		uploadDocumentDto: UploadDocumentDto,
+		issuer: string,
+	): Promise<{
+		fieldResults: Record<string, {
+			certificateValue: any;
+			userValue: any;
+			calculatedMatch: number;
+			threshold: number;
+			passed: boolean;
+		}>;
+		validationPassed: boolean;
+	}> {
+		Logger.log(`Starting VC field validation for user: ${userId}, docType: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`);
+
+		// Step 1: Fetch vcFields configuration
+		const vcFields = await this.vcFieldsService.getVcFields(
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
+
+		if (!vcFields) {
+			throw new BadRequestException(
+				`No vcFields configuration found for document type: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
+			);
+		}
+
+		// Step 2: Fetch user profile data (both entity fields and custom fields)
+		const userProfile = await this.fetchUserProfileForMatching(userId);
+
+		Logger.log(`User profile fetched with ${Object.keys(userProfile).length} fields`);
+
+		// Step 3: Determine VC data source based on issueVC
+		const vcData = this.getVcDataSource(vcMapping, issuer);
+
+		Logger.log(`Using VC data source for issuer: ${issuer}`);
+
+		// Step 4: Process each field with matching configuration
+		const fieldResults: Record<string, any> = {};
+		const failedFields: string[] = [];
+
+		// Only process fields that have matching configuration
+		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
+			// Skip fields without matching configuration
+			if (!fieldConfig?.matching) {
+				continue;
+			}
+
+			const matchingConfig = fieldConfig.matching;
+
+			try {
+				// Extract certificate value from VC data
+				const certificateValue = vcData[fieldName];
+
+				// Validate certificate value exists
+				if (certificateValue === null || certificateValue === undefined) {
+					throw new BadRequestException(
+						`Missing required field '${fieldName}' in VC data for matching`,
+					);
+				}
+
+				// Extract user profile value using compareWith field
+				const compareWithField = matchingConfig.compareWith;
+				if (!compareWithField) {
+					throw new BadRequestException(
+						`Missing 'compareWith' configuration for field '${fieldName}' in vcFields`,
+					);
+				}
+
+				const userValue = userProfile[compareWithField];
+
+				// Validate user profile value exists
+				if (userValue === null || userValue === undefined || userValue === '') {
+					throw new BadRequestException(
+						`Missing required field '${compareWithField}' in user profile for matching with '${fieldName}'`,
+					);
+				}
+
+				// Convert to strings for comparison
+				const certValueStr = String(certificateValue);
+				const userValueStr = String(userValue);
+
+				// Calculate similarity percentage using string-similarity library
+				const calculatedMatch = this.getMatchPercentage(certValueStr, userValueStr);
+
+				// Get required threshold from configuration (default 80%)
+				const threshold = matchingConfig.matchPercentage || 80;
+
+				Logger.log(
+					`Field: ${fieldName} | Certificate: "${certValueStr}" | User: "${userValueStr}" | Calculated: ${calculatedMatch}% | Required: ${threshold}%`,
+				);
+
+				// Compare against threshold
+				if (calculatedMatch < threshold) {
+					// Field failed - collect for error message
+					failedFields.push(fieldName);
+
+					fieldResults[fieldName] = {
+						certificateValue: certValueStr,
+						userValue: userValueStr,
+						calculatedMatch,
+						threshold,
+						passed: false,
+					};
+				} else {
+					// Field passed
+					fieldResults[fieldName] = {
+						certificateValue: certValueStr,
+						userValue: userValueStr,
+						calculatedMatch,
+						threshold,
+						passed: true,
+					};
+				}
+			} catch (error) {
+				// Handle field-level errors
+				if (error instanceof BadRequestException) {
+					throw error;
+				}
+
+				Logger.error(
+					`Error processing field '${fieldName}': ${error.message}`,
+					error.stack,
+				);
+				throw new BadRequestException(
+					`Error processing field '${fieldName}': ${error.message}`,
+				);
+			}
+		}
+
+		// After checking all fields, throw error if any failed
+		if (failedFields.length > 0) {
+			Logger.error(
+				`VC field validation failed with ${failedFields.length} field(s) not matching`,
+			);
+
+			// Format error message based on number of failed fields
+			let errorMessage: string;
+			if (failedFields.length === 1) {
+				// Single field: "firstname does not match the user profile. Please re-upload the document."
+				errorMessage = `${failedFields[0]} does not match the user profile. Please re-upload the document.`;
+			} else {
+				// Multiple fields: "father_name, student_name, district not match the user profile. Please re-upload the document."
+				errorMessage = `${failedFields.join(', ')} not match the user profile. Please re-upload the document.`;
+			}
+
+			throw new BadRequestException(errorMessage);
+		}
+
+		Logger.log(
+			`VC field validation successful. All ${Object.keys(fieldResults).length} fields passed their thresholds.`,
+		);
+
+		return {
+			fieldResults,
+			validationPassed: true,
+		};
+	}
+
+	/**
+	 * Fetches user profile data for matching
+	 * Combines data from user entity and custom fields
+	 * @param userId User ID
+	 * @returns Combined user profile data
+	 */
+	private async fetchUserProfileForMatching(
+		userId: string,
+	): Promise<Record<string, any>> {
+		// Fetch user entity data
+		const user = await this.userRepository.findOne({
+			where: { user_id: userId },
+		});
+
+		if (!user) {
+			throw new NotFoundException(`User with ID '${userId}' not found`);
+		}
+
+		// Fetch custom fields
+		const customFields = await this.customFieldsService.getCustomFields(
+			userId,
+			FieldContext.USERS,
+		);
+
+		// Combine user entity fields and custom fields into a flat object
+		const userProfile: Record<string, any> = {
+			user_id: user.user_id,
+			firstName: user.firstName,
+			middleName: user.middleName,
+			lastName: user.lastName,
+			name: user.name,
+			email: user.email,
+			phoneNumber: user.phoneNumber,
+			dob: user.dob,
+			image: user.image,
+		};
+
+		// Add custom fields to profile
+		for (const customField of customFields) {
+			userProfile[customField.name] = customField.value;
+		}
+
+		Logger.debug(
+			`User profile fields: ${Object.keys(userProfile).join(', ')}`,
+		);
+
+		return userProfile;
+	}
+
+	/**
+	 * Gets the appropriate VC data source based on issueVC configuration
+	 * @param vcMapping VC mapping data
+	 * @param issuer Issuer name
+	 * @returns VC data to use for matching
+	 */
+	private getVcDataSource(vcMapping: any, issuer: string): any {
+		if (!vcMapping || !vcMapping.mapped_data) {
+			throw new BadRequestException('VC mapping data is missing or invalid');
+		}
+
+		// For issueVC = "no", use credentialSubject
+
+		if (issuer.toLowerCase() === 'dhiway') {
+			console.log("vcMapping.mapped_data", vcMapping.mapped_data);
+
+			if (!vcMapping.mapped_data.credentialSubject) {
+				throw new BadRequestException(
+					'credentialSubject not found in VC data for issueVC: no case',
+				);
+			}
+			Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
+			return vcMapping.mapped_data.credentialSubject;
+		}
+
+		// For issueVC = "yes", use mapped_data directly
+		Logger.log('Using vcMapping.mapped_data for issueVC: yes');
+		return vcMapping.mapped_data;
+	}
+
+	/**
 	 * Upload a document file with metadata and store it in the database
 	 * If a document with the same type, subtype, and name exists for the user, it will be updated
 	 * @param req The request object containing authenticated user information
@@ -2517,6 +2789,33 @@ export class UserService {
 				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
 				: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
 
+
+			// Step: Perform VC field validation and matching against user profile
+			let matchingResult = null;
+			try {
+				matchingResult = await this.validateAndMatchVcFields(
+					userDetails.user_id,
+					vcMapping,
+					uploadDocumentDto,
+					issuer,
+				);
+				const passedFieldsCount = Object.values(matchingResult.fieldResults).filter(
+					(field: any) => field.passed
+				).length;
+				Logger.log(
+					`VC field matching successful. ${passedFieldsCount} field(s) validated and passed.`,
+				);
+			} catch (matchingError) {
+				// If matching validation fails, throw the error to stop document upload
+				if (matchingError instanceof BadRequestException) {
+					Logger.error(`VC field matching failed: ${matchingError.message}`);
+					throw matchingError;
+				}
+				// For other errors, log and continue (matching is optional if not configured)
+				Logger.warn(
+					`VC field matching error (non-critical): ${matchingError.message}`,
+				);
+			}
 			// Verify document only for issueVC: "no" cases with QR code
 			// Skip verification for regular OCR documents without QR code
 			if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
@@ -2564,6 +2863,7 @@ export class UserService {
 				downloadUrl,
 				vcCreationResult,
 				vcMapping,
+				matchingResult,
 			);
 
 			return new SuccessResponse({
@@ -2883,6 +3183,7 @@ export class UserService {
 		downloadUrl: string | null,
 		vcCreationResult: any,
 		vcMapping: any,
+		matchingResult?: any,
 	) {
 		const responseData: any = {
 			doc_id: savedDoc.doc_id,
@@ -2912,6 +3213,14 @@ export class UserService {
 
 		if (vcMapping?.mapped_data) {
 			responseData.mapped_data = vcMapping.mapped_data;
+		}
+
+		// Include matching results if available
+		if (matchingResult) {
+			responseData.field_matching = {
+				field_results: matchingResult.fieldResults,
+				validation_passed: matchingResult.validationPassed,
+			};
 		}
 
 		return responseData;
