@@ -308,8 +308,7 @@ export class AuthService {
   }
 
   private prepareUserDataV2(body) {
-    const trimmedFirstName = body?.firstName?.trim();
-    const trimmedLastName = body?.lastName?.trim();
+    const trimmedName = body?.name?.trim();
     const trimmedPhoneNumber = body?.phoneNumber?.trim();
     const trimmedUsername = body?.username?.trim();
     const password =
@@ -317,8 +316,7 @@ export class AuthService {
 
     return {
       enabled: 'true',
-      firstName: trimmedFirstName,
-      lastName: trimmedLastName,
+      firstName: trimmedName,
       username: trimmedUsername,
       credentials: [
         {
@@ -331,8 +329,7 @@ export class AuthService {
       attributes: {
         // Custom user attributes
         phoneNumber: '+91' + trimmedPhoneNumber,
-        firstName: trimmedFirstName,
-        lastName: trimmedLastName,
+        firstName: trimmedName,
       },
       groups: this.defaultGroupPath ? [this.defaultGroupPath] : [],
     };
@@ -580,8 +577,7 @@ export class AuthService {
 
       // 🟩 Step 2: Enrich registration payload with OTR extracted data
       const payload = {
-        firstName: vcMapping?.mapped_data?.firstname || '',
-        lastName: vcMapping?.mapped_data?.lastname || '',
+        name: vcMapping?.mapped_data?.name || '',
         username: vcMapping?.mapped_data?.otr_number
           ? vcMapping.mapped_data.otr_number.toString()
           : '',
@@ -690,11 +686,8 @@ export class AuthService {
 
     const missingFields: string[] = [];
 
-    if (!payload.firstName || payload.firstName.trim() === '') {
-      missingFields.push('firstName');
-    }
-    if (!payload.lastName || payload.lastName.trim() === '') {
-      missingFields.push('lastName');
+    if (!payload.name || payload.name.trim() === '') {
+      missingFields.push('name');
     }
     if (!payload.username || payload.username.trim() === '') {
       missingFields.push('username');
