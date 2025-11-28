@@ -1,12 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AdminService } from '@modules/admin/admin.service';
 
-export type VcFields = Record<string, { 
+export type VcFields = Record<string, {
   type?: 'string' | 'number' | 'boolean' | 'integer' | 'object' | 'file' | 'date';
   required?: boolean;
   description?: string;
   role?: 'original_document' | 'beneficiary_user_id';
   document_field?: boolean;
+  matching?: {
+    compareWith: string;
+    matchPercentage: number;
+  };
 }>;
 
 /**
@@ -17,7 +21,7 @@ export type VcFields = Record<string, {
 export class VcFieldsService {
   private readonly logger = new Logger(VcFieldsService.name);
 
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   /**
    * Get vcFields configuration for a document type
@@ -28,9 +32,9 @@ export class VcFieldsService {
   async getVcFields(docType: string, docSubType: string): Promise<VcFields | null> {
     try {
       this.logger.debug(`Fetching vcFields for docType: ${docType}, docSubType: ${docSubType}`);
-      
+
       const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
-      
+
       if (!vcConfig?.value) {
         this.logger.warn('vcConfiguration not found in settings');
         return null;
@@ -47,7 +51,7 @@ export class VcFieldsService {
       }
 
       // Find matching configuration
-      const matchingConfig = configValue.find((config: any) => 
+      const matchingConfig = configValue.find((config: any) =>
         config.docType === docType && config.documentSubType === docSubType
       );
 
@@ -82,7 +86,7 @@ export class VcFieldsService {
    */
   vcFieldsToSchema(vcFields: VcFields): Record<string, any> {
     const properties: Record<string, any> = {};
-    
+
     for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
       properties[fieldName] = {
         type: fieldConfig.type || 'string',
