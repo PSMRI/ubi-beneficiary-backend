@@ -3907,6 +3907,74 @@ export class UserService {
 	}
 
 	/**
+	 * Verify VC data for published status
+	 * @param updatedDoc - The updated document
+	 * @param documentIssuer - The issuer of the document
+	 * @returns ErrorResponse if verification fails, null if successful
+	 */
+	private async verifyPublishedVc(
+		updatedDoc: UserDoc,
+		documentIssuer: string,
+	): Promise<ErrorResponse | null> {
+		try {
+			// Parse VC data from doc_data for verification
+			let vcDataForVerification;
+			try {
+				vcDataForVerification = typeof updatedDoc.doc_data === 'string' 
+					? JSON.parse(updatedDoc.doc_data) 
+					: updatedDoc.doc_data;
+			} catch (parseError) {
+				Logger.error(`Failed to parse VC data for verification: ${parseError.message}`);
+				throw new BadRequestException('Invalid VC data format for verification');
+			}
+
+			Logger.log(`Verifying VC data before profile update for published callback`);
+			const verificationResult = await this.verifyVcWithApi(vcDataForVerification, documentIssuer);
+
+			if (!verificationResult.success) {
+				Logger.error(`VC verification failed after callback: ${verificationResult.message}`);
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage: verificationResult.message || 'VC verification failed after callback',
+				});
+			}
+
+			Logger.log(`VC verification successful before profile update`);
+			return null;
+		} catch (verifyError) {
+			Logger.error(`VC verification error after callback: ${verifyError.message}`);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage: verifyError.message || 'VC verification failed after callback',
+			});
+		}
+	}
+
+	/**
+	 * Update user profile after VC callback
+	 * @param updatedDoc - The updated document
+	 * @param callbackStatus - The callback status
+	 */
+	private async updateUserProfileAfterCallback(
+		updatedDoc: UserDoc,
+		callbackStatus: string,
+	): Promise<void> {
+		try {
+			const user = await this.userRepository.findOne({
+				where: { user_id: updatedDoc.user_id },
+			});
+
+			if (user) {
+				await this.updateProfile(user);
+				Logger.log(`Profile updated for user: ${user.user_id} after ${callbackStatus} callback`);
+			}
+		} catch (profileError) {
+			Logger.error('Profile update failed after VC callback:', profileError);
+			// Don't fail the entire operation if profile update fails
+		}
+	}
+
+	/**
 	 * Process VC callback using adapter approach
 	 * Common logic for all issuers - delegates complex processing to adapter
 	 * @param publicId - The public ID (UUID) from the callback
@@ -3983,54 +4051,15 @@ export class UserService {
 
 			// Verify document before profile update for published status (issueVC: yes case)
 			if (callbackResult.status === 'published') {
-				try {
-					// Parse VC data from doc_data for verification
-					let vcDataForVerification;
-					try {
-						vcDataForVerification = typeof updatedDoc.doc_data === 'string' 
-							? JSON.parse(updatedDoc.doc_data) 
-							: updatedDoc.doc_data;
-					} catch (parseError) {
-						Logger.error(`Failed to parse VC data for verification: ${parseError.message}`);
-						throw new BadRequestException('Invalid VC data format for verification');
-					}
-
-					Logger.log(`Verifying VC data before profile update for published callback`);
-					const verificationResult = await this.verifyVcWithApi(vcDataForVerification, documentIssuer);
-
-					if (!verificationResult.success) {
-						Logger.error(`VC verification failed after callback: ${verificationResult.message}`);
-						return new ErrorResponse({
-							statusCode: HttpStatus.BAD_REQUEST,
-							errorMessage: verificationResult.message || 'VC verification failed after callback',
-						});
-					}
-
-					Logger.log(`VC verification successful before profile update`);
-				} catch (verifyError) {
-					Logger.error(`VC verification error after callback: ${verifyError.message}`);
-					return new ErrorResponse({
-						statusCode: HttpStatus.BAD_REQUEST,
-						errorMessage: verifyError.message || 'VC verification failed after callback',
-					});
+				const verificationError = await this.verifyPublishedVc(updatedDoc, documentIssuer);
+				if (verificationError) {
+					return verificationError;
 				}
 			}
 
 			// Update profile for all successful callbacks (common logic)
 			// Profile needs to be updated regardless of status to reflect document changes
-			try {
-				const user = await this.userRepository.findOne({
-					where: { user_id: updatedDoc.user_id },
-				});
-
-				if (user) {
-					await this.updateProfile(user);
-					Logger.log(`Profile updated for user: ${user.user_id} after ${callbackResult.status} callback`);
-				}
-			} catch (profileError) {
-				Logger.error('Profile update failed after VC callback:', profileError);
-				// Don't fail the entire operation if profile update fails
-			}
+			await this.updateUserProfileAfterCallback(updatedDoc, callbackResult.status);
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
