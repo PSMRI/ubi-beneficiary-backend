@@ -41,6 +41,7 @@ import { WalletCallbackDto } from './dto/wallet-callback.dto';
 import { UploadDocDTO } from './dto/upload-doc.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
+import { VcCallbackDto } from './dto/vc-callback.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -448,4 +449,33 @@ export class UserController {
       );
     }
   }
+
+  @Post('/vc-callbacks')
+  @ApiOperation({ 
+    summary: 'Handle VC callback',
+    description: 'Processes VC status change notifications (published, rejected, deleted, revoked) and updates document data. Issuer is automatically determined from the document record using adapter approach.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'VC callback processed successfully' 
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 'No VC found for the given public ID' 
+  })
+  @ApiResponse({ 
+    status: 500, 
+    description: 'Internal server error' 
+  })
+  async handleVcCallback(@Body() callbackDto: VcCallbackDto) {
+    Logger.log(`Received VC callback: ${JSON.stringify(callbackDto)}`);
+    
+    // Process callback - issuer will be determined from document record using adapter approach
+    return await this.userService.processVcCallback(
+      callbackDto.publicId,
+      callbackDto.status,
+      callbackDto.timestamp
+    );
+  }
+
 }

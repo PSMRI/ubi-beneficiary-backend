@@ -2742,22 +2742,25 @@ export class UserService {
 			throw new BadRequestException('VC mapping data is missing or invalid');
 		}
 
-		// For issueVC = "no", use credentialSubject
-
+		// For Dhiway issuer, check if credentialSubject exists
+		// If it exists (issueVC = "no" case), use it
+		// If it doesn't exist (issueVC = "yes" case), use mapped_data directly
 		if (issuer.toLowerCase() === 'dhiway') {
 			console.log("vcMapping.mapped_data", vcMapping.mapped_data);
 
-			if (!vcMapping.mapped_data.credentialSubject) {
-				throw new BadRequestException(
-					'credentialSubject not found in VC data for issueVC: no case',
-				);
+			// Only use credentialSubject if it exists (issueVC = "no" case)
+			if (vcMapping.mapped_data.credentialSubject) {
+				Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
+				return vcMapping.mapped_data.credentialSubject;
 			}
-			Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
-			return vcMapping.mapped_data.credentialSubject;
+			
+			// If credentialSubject doesn't exist, use mapped_data directly (issueVC = "yes" case)
+			Logger.log('Using vcMapping.mapped_data directly for issueVC: yes (no credentialSubject)');
+			return vcMapping.mapped_data;
 		}
 
-		// For issueVC = "yes", use mapped_data directly
-		Logger.log('Using vcMapping.mapped_data for issueVC: yes');
+		// For non-Dhiway issuers, use mapped_data directly
+		Logger.log('Using vcMapping.mapped_data for non-Dhiway issuer');
 		return vcMapping.mapped_data;
 	}
 
@@ -2874,7 +2877,25 @@ export class UserService {
 				uploadDocumentDto,
 				vcMapping,
 				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
-			);		// Update profile based on documents
+			);
+
+			// Verify document before profile update for issueVC: "no" cases
+			// (Verification for issueVC: "yes" happens after VC callback when published)
+			if (issueVC === 'no' && vcMapping?.mapped_data) {
+				try {
+					Logger.log(`Verifying document before profile update for issueVC: no`);
+					await this.verifyDocumentData(vcMapping.mapped_data, issuer);
+					Logger.log(`Document verification successful before profile update`);
+				} catch (verifyError) {
+					Logger.error(`Document verification failed before profile update: ${verifyError.message}`);
+					return new ErrorResponse({
+						statusCode: HttpStatus.BAD_REQUEST,
+						errorMessage: verifyError.message || 'Document verification failed',
+					});
+				}
+			}
+
+			// Update profile based on documents
 			try {
 				await this.updateProfile(userDetails);
 				Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
@@ -3799,7 +3820,22 @@ export class UserService {
 		existingDoc.doc_data = metadata.docData;
 		existingDoc.doc_verified = false;
 		existingDoc.doc_data_link = metadata.docDataLink;
-
+		existingDoc.issuance_callback_registered = issueVC === 'yes'; // true for VC creation, false for direct upload
+		
+		// Extract and store vc_public_id from verification URL using adapter
+		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
+			const adapter = this.vcAdapterFactory.getAdapter(issuer);
+			if (adapter) {
+				const publicId = adapter.extractPublicId(metadata.docDataLink);
+				if (publicId) {
+					existingDoc.vc_public_id = publicId;
+					Logger.log(`Extracted and stored vc_public_id: ${publicId} using ${issuer} adapter`);
+				} else {
+					Logger.warn(`Could not extract public ID from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				}
+			}
+		}
+		
 		if (issuer) {
 			existingDoc.issuer = issuer;
 		}
@@ -3832,6 +3868,20 @@ export class UserService {
 			docDataLink,
 		);
 
+		// Extract vc_public_id from verification URL if VC creation using adapter
+		let vcPublicId: string | null = null;
+		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
+			const adapter = this.vcAdapterFactory.getAdapter(issuer);
+			if (adapter) {
+				vcPublicId = adapter.extractPublicId(metadata.docDataLink);
+				if (vcPublicId) {
+					Logger.log(`Extracted vc_public_id: ${vcPublicId} from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				} else {
+					Logger.warn(`Could not extract public ID from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				}
+			}
+		}
+
 		const newUserDoc = this.userDocsRepository.create({
 			user_id: userId,
 			doc_type: uploadDocumentDto.docType,
@@ -3846,11 +3896,189 @@ export class UserService {
 			watcher_email: null,
 			watcher_callback_url: null,
 			doc_data_link: metadata.docDataLink,
+			vc_public_id: vcPublicId,
 			issuer: issuer || null,
+			issuance_callback_registered: issueVC === 'yes', // true for VC creation, false for direct upload
 		});
 
 		const savedDoc = await this.userDocsRepository.save(newUserDoc);
 		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
 		return { savedDoc, isUpdate: false };
 	}
+
+	/**
+	 * Verify VC data for published status
+	 * @param updatedDoc - The updated document
+	 * @param documentIssuer - The issuer of the document
+	 * @returns ErrorResponse if verification fails, null if successful
+	 */
+	private async verifyPublishedVc(
+		updatedDoc: UserDoc,
+		documentIssuer: string,
+	): Promise<ErrorResponse | null> {
+		try {
+			// Parse VC data from doc_data for verification
+			let vcDataForVerification;
+			try {
+				vcDataForVerification = typeof updatedDoc.doc_data === 'string' 
+					? JSON.parse(updatedDoc.doc_data) 
+					: updatedDoc.doc_data;
+			} catch (parseError) {
+				Logger.error(`Failed to parse VC data for verification: ${parseError.message}`);
+				throw new BadRequestException('Invalid VC data format for verification');
+			}
+
+			Logger.log(`Verifying VC data before profile update for published callback`);
+			const verificationResult = await this.verifyVcWithApi(vcDataForVerification, documentIssuer);
+
+			if (!verificationResult.success) {
+				Logger.error(`VC verification failed after callback: ${verificationResult.message}`);
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage: verificationResult.message || 'VC verification failed after callback',
+				});
+			}
+
+			Logger.log(`VC verification successful before profile update`);
+			return null;
+		} catch (verifyError) {
+			Logger.error(`VC verification error after callback: ${verifyError.message}`);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage: verifyError.message || 'VC verification failed after callback',
+			});
+		}
+	}
+
+	/**
+	 * Update user profile after VC callback
+	 * @param updatedDoc - The updated document
+	 * @param callbackStatus - The callback status
+	 */
+	private async updateUserProfileAfterCallback(
+		updatedDoc: UserDoc,
+		callbackStatus: string,
+	): Promise<void> {
+		try {
+			const user = await this.userRepository.findOne({
+				where: { user_id: updatedDoc.user_id },
+			});
+
+			if (user) {
+				await this.updateProfile(user);
+				Logger.log(`Profile updated for user: ${user.user_id} after ${callbackStatus} callback`);
+			}
+		} catch (profileError) {
+			Logger.error('Profile update failed after VC callback:', profileError);
+			// Don't fail the entire operation if profile update fails
+		}
+	}
+
+	/**
+	 * Process VC callback using adapter approach
+	 * Common logic for all issuers - delegates complex processing to adapter
+	 * @param publicId - The public ID (UUID) from the callback
+	 * @param status - The status from callback (published, rejected, deleted, revoked)
+	 * @param timestamp - Optional timestamp from callback
+	 * @returns Success response with updated document details
+	 */
+	async processVcCallback(
+		publicId: string,
+		status: 'published' | 'rejected' | 'deleted' | 'revoked',
+		timestamp?: string,
+	): Promise<SuccessResponse | ErrorResponse> {
+		try {
+			Logger.log(`Processing VC callback for public ID: ${publicId}, status: ${status}`);
+
+			// Find document by vc_public_id (exact match for faster lookup)
+			const userDoc = await this.userDocsRepository.findOne({
+				where: {
+					vc_public_id: publicId,
+					issuance_callback_registered: true,
+				},
+			});
+
+			if (!userDoc) {
+				Logger.warn(`No VC found for public ID: ${publicId}`);
+				return new ErrorResponse({
+					statusCode: HttpStatus.NOT_FOUND,
+					errorMessage: `No VC found for public ID: ${publicId}`,
+				});
+			}
+
+			Logger.log(`Found document ${userDoc.doc_id} for public ID ${publicId}`);
+
+			// Get issuer from document record (automatically determined)
+			const documentIssuer = userDoc.issuer;
+			if (!documentIssuer) {
+				Logger.error(`No issuer found in document ${userDoc.doc_id}`);
+				return new ErrorResponse({
+					statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+					errorMessage: `No issuer found for document ${userDoc.doc_id}`,
+				});
+			}
+
+			// Process callback using adapter (handles all status-specific logic)
+			const callbackResult = await this.vcAdapterFactory.processCallback(
+				documentIssuer,
+				publicId,
+				status,
+				userDoc.doc_data_link,
+			);
+
+			if (!callbackResult.success) {
+				Logger.error(`Callback processing failed: ${callbackResult.message}`);
+				return new ErrorResponse({
+					statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+					errorMessage: callbackResult.message || 'Callback processing failed',
+				});
+			}
+
+			// Update document based on callback result (common logic for all issuers)
+			if (callbackResult.status === 'published') {
+				userDoc.doc_data = JSON.stringify(callbackResult.vcData) as any;
+				userDoc.doc_verified = true;
+			} else {
+				// rejected, deleted, revoked
+				userDoc.doc_data = null;
+				userDoc.doc_verified = null;
+			}
+
+			userDoc.issuance_callback_registered = false;
+
+			const updatedDoc = await this.userDocsRepository.save(userDoc);
+			Logger.log(`Document ${updatedDoc.doc_id} updated with status: ${callbackResult.status}`);
+
+			// Verify document before profile update for published status (issueVC: yes case)
+			if (callbackResult.status === 'published') {
+				const verificationError = await this.verifyPublishedVc(updatedDoc, documentIssuer);
+				if (verificationError) {
+					return verificationError;
+				}
+			}
+
+			// Update profile for all successful callbacks (common logic)
+			// Profile needs to be updated regardless of status to reflect document changes
+			await this.updateUserProfileAfterCallback(updatedDoc, callbackResult.status);
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: `VC ${callbackResult.status} successfully`,
+				data: {
+					doc_id: updatedDoc.doc_id,
+					user_id: updatedDoc.user_id,
+					public_id: publicId,
+					status: callbackResult.status,
+					issuer: documentIssuer,
+				},
+			});
+		} catch (error) {
+			Logger.error(`Error processing VC callback: ${error.message}`, error.stack);
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message || 'Failed to process VC callback',
+			});
+		}
+	}
 }
+

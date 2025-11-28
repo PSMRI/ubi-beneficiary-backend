@@ -43,6 +43,9 @@ export class UserDoc {
 	@Column({ type: 'varchar', length: 1500, nullable: true })
 	doc_data_link: string;
 
+	@Column({ type: 'varchar', length: 255, nullable: true })
+	vc_public_id: string | null;
+
 	@Column({ type: 'varchar', length: 50, nullable: true })
 	issuer: string | null;
 
@@ -67,6 +70,9 @@ export class UserDoc {
 
 	@Column({ type: 'varchar', length: 1500, nullable: true })
 	watcher_callback_url: string | null;
+
+	@Column({ type: 'boolean', default: false, nullable: false })
+	issuance_callback_registered: boolean;
 
 	@CreateDateColumn({ type: 'timestamptz', default: () => 'NOW()' })
 	uploaded_at: Date;
