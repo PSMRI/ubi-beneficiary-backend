@@ -2742,22 +2742,25 @@ export class UserService {
 			throw new BadRequestException('VC mapping data is missing or invalid');
 		}
 
-		// For issueVC = "no", use credentialSubject
-
+		// For Dhiway issuer, check if credentialSubject exists
+		// If it exists (issueVC = "no" case), use it
+		// If it doesn't exist (issueVC = "yes" case), use mapped_data directly
 		if (issuer.toLowerCase() === 'dhiway') {
 			console.log("vcMapping.mapped_data", vcMapping.mapped_data);
 
-			if (!vcMapping.mapped_data.credentialSubject) {
-				throw new BadRequestException(
-					'credentialSubject not found in VC data for issueVC: no case',
-				);
+			// Only use credentialSubject if it exists (issueVC = "no" case)
+			if (vcMapping.mapped_data.credentialSubject) {
+				Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
+				return vcMapping.mapped_data.credentialSubject;
 			}
-			Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
-			return vcMapping.mapped_data.credentialSubject;
+			
+			// If credentialSubject doesn't exist, use mapped_data directly (issueVC = "yes" case)
+			Logger.log('Using vcMapping.mapped_data directly for issueVC: yes (no credentialSubject)');
+			return vcMapping.mapped_data;
 		}
 
-		// For issueVC = "yes", use mapped_data directly
-		Logger.log('Using vcMapping.mapped_data for issueVC: yes');
+		// For non-Dhiway issuers, use mapped_data directly
+		Logger.log('Using vcMapping.mapped_data for non-Dhiway issuer');
 		return vcMapping.mapped_data;
 	}
 
