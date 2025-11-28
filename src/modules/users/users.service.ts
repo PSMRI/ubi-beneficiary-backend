@@ -3423,6 +3423,21 @@ export class UserService {
 		existingDoc.doc_data = metadata.docData;
 		existingDoc.doc_verified = false;
 		existingDoc.doc_data_link = metadata.docDataLink;
+		existingDoc.issuance_callback_registered = issueVC === 'yes'; // true for VC creation, false for direct upload
+		
+		// Extract and store vc_public_id from verification URL using adapter
+		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
+			const adapter = this.vcAdapterFactory.getAdapter(issuer);
+			if (adapter) {
+				const publicId = adapter.extractPublicId(metadata.docDataLink);
+				if (publicId) {
+					existingDoc.vc_public_id = publicId;
+					Logger.log(`Extracted and stored vc_public_id: ${publicId} using ${issuer} adapter`);
+				} else {
+					Logger.warn(`Could not extract public ID from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				}
+			}
+		}
 		
 		if (issuer) {
 			existingDoc.issuer = issuer;
@@ -3456,6 +3471,20 @@ export class UserService {
 			docDataLink,
 		);
 
+		// Extract vc_public_id from verification URL if VC creation using adapter
+		let vcPublicId: string | null = null;
+		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
+			const adapter = this.vcAdapterFactory.getAdapter(issuer);
+			if (adapter) {
+				vcPublicId = adapter.extractPublicId(metadata.docDataLink);
+				if (vcPublicId) {
+					Logger.log(`Extracted vc_public_id: ${vcPublicId} from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				} else {
+					Logger.warn(`Could not extract public ID from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				}
+			}
+		}
+
 		const newUserDoc = this.userDocsRepository.create({
 			user_id: userId,
 			doc_type: uploadDocumentDto.docType,
@@ -3470,11 +3499,124 @@ export class UserService {
 			watcher_email: null,
 			watcher_callback_url: null,
 			doc_data_link: metadata.docDataLink,
+			vc_public_id: vcPublicId,
 			issuer: issuer || null,
+			issuance_callback_registered: issueVC === 'yes', // true for VC creation, false for direct upload
 		});
 
 		const savedDoc = await this.userDocsRepository.save(newUserDoc);
 		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
 		return { savedDoc, isUpdate: false };
+	}
+
+	/**
+	 * Process VC callback using adapter approach
+	 * Common logic for all issuers - delegates complex processing to adapter
+	 * @param publicId - The public ID (UUID) from the callback
+	 * @param status - The status from callback (published, rejected, deleted, revoked)
+	 * @param timestamp - Optional timestamp from callback
+	 * @returns Success response with updated document details
+	 */
+	async processVcCallback(
+		publicId: string,
+		status: 'published' | 'rejected' | 'deleted' | 'revoked',
+		timestamp?: string,
+	): Promise<SuccessResponse | ErrorResponse> {
+		try {
+			Logger.log(`Processing VC callback for public ID: ${publicId}, status: ${status}`);
+
+			// Find document by vc_public_id (exact match for faster lookup)
+			const userDoc = await this.userDocsRepository.findOne({
+				where: {
+					vc_public_id: publicId,
+					issuance_callback_registered: true,
+				},
+			});
+
+			if (!userDoc) {
+				Logger.warn(`No VC found for public ID: ${publicId}`);
+				return new ErrorResponse({
+					statusCode: HttpStatus.NOT_FOUND,
+					errorMessage: `No VC found for public ID: ${publicId}`,
+				});
+			}
+
+			Logger.log(`Found document ${userDoc.doc_id} for public ID ${publicId}`);
+
+			// Get issuer from document record (automatically determined)
+			const documentIssuer = userDoc.issuer;
+			if (!documentIssuer) {
+				Logger.error(`No issuer found in document ${userDoc.doc_id}`);
+				return new ErrorResponse({
+					statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+					errorMessage: `No issuer found for document ${userDoc.doc_id}`,
+				});
+			}
+
+			// Process callback using adapter (handles all status-specific logic)
+			const callbackResult = await this.vcAdapterFactory.processCallback(
+				documentIssuer,
+				publicId,
+				status,
+				userDoc.doc_data_link,
+			);
+
+			if (!callbackResult.success) {
+				Logger.error(`Callback processing failed: ${callbackResult.message}`);
+				return new ErrorResponse({
+					statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+					errorMessage: callbackResult.message || 'Callback processing failed',
+				});
+			}
+
+			// Update document based on callback result (common logic for all issuers)
+			if (callbackResult.status === 'published') {
+				userDoc.doc_data = JSON.stringify(callbackResult.vcData) as any;
+				userDoc.doc_verified = true;
+			} else {
+				// rejected, deleted, revoked
+				userDoc.doc_data = null;
+				userDoc.doc_verified = null;
+			}
+
+			userDoc.issuance_callback_registered = false;
+
+			const updatedDoc = await this.userDocsRepository.save(userDoc);
+			Logger.log(`Document ${updatedDoc.doc_id} updated with status: ${callbackResult.status}`);
+
+			// Update profile for all successful callbacks (common logic)
+			// Profile needs to be updated regardless of status to reflect document changes
+			try {
+				const user = await this.userRepository.findOne({
+					where: { user_id: updatedDoc.user_id },
+				});
+
+				if (user) {
+					await this.updateProfile(user);
+					Logger.log(`Profile updated for user: ${user.user_id} after ${callbackResult.status} callback`);
+				}
+			} catch (profileError) {
+				Logger.error('Profile update failed after VC callback:', profileError);
+				// Don't fail the entire operation if profile update fails
+			}
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: `VC ${callbackResult.status} successfully`,
+				data: {
+					doc_id: updatedDoc.doc_id,
+					user_id: updatedDoc.user_id,
+					public_id: publicId,
+					status: callbackResult.status,
+					issuer: documentIssuer,
+				},
+			});
+		} catch (error) {
+			Logger.error(`Error processing VC callback: ${error.message}`, error.stack);
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message || 'Failed to process VC callback',
+			});
+		}
 	}
 }

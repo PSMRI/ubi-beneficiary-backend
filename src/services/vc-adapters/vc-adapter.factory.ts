@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DhiwayVcAdapter } from './dhiway-vc.adapter';
-import { VcCreationResponse } from './vc-adapter.interface';
+import { VcCreationResponse, VcAdapterInterface, CallbackResult } from './vc-adapter.interface';
 
 /**
  * Factory service for managing VC adapter implementations
@@ -16,7 +16,7 @@ export class VcAdapterFactory {
 	 * @param issuer - Issuer type (e.g., 'dhiway', 'sunbird', 'sunbirdrc')
 	 * @returns VC adapter implementation
 	 */
-	getAdapter(issuer: string): DhiwayVcAdapter | null {
+	getAdapter(issuer: string): VcAdapterInterface | null {
 		const normalizedIssuer = issuer?.toLowerCase().trim();
 
 		switch (normalizedIssuer) {
@@ -62,5 +62,45 @@ export class VcAdapterFactory {
 		}
 
 		return adapter.createRecord(spaceId, mappedData, originalFile, userId, vcFields);
+	}
+
+	/**
+	 * Process a VC callback using the appropriate adapter
+	 * @param issuer - Issuer type
+	 * @param publicId - Public ID (UUID) from callback
+	 * @param status - The status from callback
+	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
+	 */
+	async processCallback(
+		issuer: string,
+		publicId: string,
+		status: 'published' | 'rejected' | 'deleted' | 'revoked',
+		docDataLink?: string,
+	): Promise<CallbackResult> {
+		const adapter = this.getAdapter(issuer);
+
+		if (!adapter) {
+			return {
+				success: false,
+				status: status,
+				message: `No VC adapter available for issuer: ${issuer}`,
+			};
+		}
+
+		return adapter.processCallback(publicId, status, docDataLink);
+	}
+
+	/**
+	 * Process a publish callback using the appropriate adapter (deprecated - use processCallback instead)
+	 * @param issuer - Issuer type
+	 * @param publicId - Public ID (UUID) from callback
+	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
+	 */
+	async processPublishCallback(
+		issuer: string,
+		publicId: string,
+		docDataLink?: string,
+	): Promise<CallbackResult> {
+		return this.processCallback(issuer, publicId, 'published', docDataLink);
 	}
 }

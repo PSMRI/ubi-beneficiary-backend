@@ -1,31 +1,179 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import * as FormData from 'form-data';
-
-export interface VcCreationResponse {
-	success: boolean;
-	verificationUrl?: string;
-	recordId?: string;
-	message?: string;
-	error?: any;
-}
+import { BaseVcAdapter } from './base-vc.adapter';
+import { VcCreationResponse, CallbackResult } from './vc-adapter.interface';
 
 @Injectable()
-export class DhiwayVcAdapter {
-	private readonly logger = new Logger(DhiwayVcAdapter.name);
+export class DhiwayVcAdapter extends BaseVcAdapter {
 	private readonly baseUrl: string;
 	private readonly organizationId: string;
 	private readonly authToken: string;
 	private readonly userId: string;
 
 	constructor(private readonly configService: ConfigService) {
+		super();
 		this.baseUrl = this.configService.get<string>('VITE_VC_BASE_URL');
 		this.organizationId = this.configService.get<string>(
 			'VITE_VC_ORGANIZATION_ID',
 		);
 		this.authToken = this.configService.get<string>('VITE_VC_AUTH_TOKEN');
 		this.userId = this.configService.get<string>('VITE_VC_USER_ID');
+	}
+
+	/**
+	 * Get the issuer name for this adapter
+	 */
+	getIssuerName(): string {
+		return 'dhiway';
+	}
+
+	/**
+	 * Process a VC callback for any status (published, rejected, deleted, revoked)
+	 * @param publicId - The public ID (UUID) from the callback
+	 * @param status - The status from callback
+	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
+	 * @returns CallbackResult with status and VC data (if published)
+	 */
+	async processCallback(
+		publicId: string,
+		status: 'published' | 'rejected' | 'deleted' | 'revoked',
+		docDataLink?: string,
+	): Promise<CallbackResult> {
+		try {
+			this.logger.log(`Processing ${status} callback for Dhiway public ID: ${publicId}`);
+
+			if (status === 'published') {
+				// Fetch VC data from Dhiway .vc URL
+				const vcData = await this.fetchVcDataAfterPublish(publicId, docDataLink);
+				
+				this.logSuccess('Publish callback processing', { publicId });
+				
+				return {
+					success: true,
+					status: 'published',
+					vcData: vcData,
+					message: 'VC published successfully',
+				};
+			} else {
+				// For rejected, deleted, revoked - no need to fetch VC data
+				this.logSuccess(`${status} callback processing`, { publicId });
+				
+				return {
+					success: true,
+					status: status,
+					message: `VC ${status} successfully`,
+				};
+			}
+		} catch (error) {
+			this.logger.error(`Callback processing failed for public ID ${publicId}:`, error);
+			return {
+				success: false,
+				status: status,
+				message: error.message || `Failed to process ${status} callback`,
+				error: error,
+			};
+		}
+	}
+
+	/**
+	 * Process a publish callback for a VC record (deprecated - use processCallback instead)
+	 * @param publicId - The public ID (UUID) from the callback
+	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
+	 * @returns CallbackResult with VC data fetched from Dhiway
+	 */
+	async processPublishCallback(publicId: string, docDataLink?: string): Promise<CallbackResult> {
+		return this.processCallback(publicId, 'published', docDataLink);
+	}
+
+	/**
+	 * Fetch VC data after publish from Dhiway .vc URL
+	 * @param publicId - The public ID (UUID) to fetch VC data for
+	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
+	 * @returns VC data from Dhiway platform
+	 */
+	async fetchVcDataAfterPublish(publicId: string, docDataLink?: string): Promise<any> {
+		try {
+			this.logger.log(`Fetching published VC data for public ID: ${publicId}`);
+			
+			// Use doc_data_link if provided (already includes .vc), otherwise construct URL
+			const vcUrl = docDataLink;
+			this.logger.debug(`Fetching VC from URL: ${vcUrl}`);
+
+			// Fetch VC data from Dhiway platform
+			const response = await axios.get(vcUrl, {
+				headers: {
+					'Accept': 'application/json',
+					'Content-Type': 'application/json',
+				},
+				timeout: 10000, // 10 second timeout
+			});
+
+			// Validate response
+			if (!response.data) {
+				throw new Error('Empty response from VC URL');
+			}
+
+			// Validate VC structure
+			if (!this.validateVcData(response.data)) {
+				throw new Error('Invalid VC data structure received from Dhiway');
+			}
+
+			this.logger.log(`Successfully fetched VC data for public ID: ${publicId}`);
+			this.logger.debug(`VC data keys: ${Object.keys(response.data).join(', ')}`);
+
+			return response.data;
+		} catch (error) {
+			this.logger.error(`Failed to fetch VC data for public ID ${publicId}:`, error);
+			
+			if (axios.isAxiosError(error)) {
+				const status = error.response?.status;
+				const message = error.response?.data?.message || error.message;
+				
+				if (status === 404) {
+					throw new Error(`VC not found for public ID: ${publicId}. The VC may not be published yet.`);
+				}
+				
+				throw new Error(`Failed to fetch VC from Dhiway: ${message} (Status: ${status || 'Unknown'})`);
+			}
+			
+			throw new Error(`Failed to fetch VC data: ${error.message}`);
+		}
+	}
+
+	/**
+	 * Verify a VC record
+	 * @param vcData - The VC data to verify
+	 * @returns Verification result
+	 */
+	async verifyRecord(vcData: any): Promise<{ success: boolean; message?: string; errors?: any[] }> {
+		try {
+			this.logger.log('Verifying Dhiway VC record');
+			
+			if (!this.validateVcData(vcData)) {
+				return {
+					success: false,
+					message: 'Invalid VC data structure',
+					errors: ['VC data does not contain required fields']
+				};
+			}
+
+			// For mock implementation, always return success for valid structure
+			this.logSuccess('VC verification');
+			
+			return {
+				success: true,
+				message: 'VC verification successful'
+			};
+		} catch (error) {
+			this.logger.error('VC verification failed:', error);
+			return {
+				success: false,
+				message: 'VC verification failed',
+				errors: [error.message]
+			};
+		}
 	}
 
 	/**
@@ -45,7 +193,7 @@ export class DhiwayVcAdapter {
 		vcFields?: Record<string, any>,
 	): Promise<VcCreationResponse> {
 		try {
-			const validationError = this.validateConfiguration(spaceId);
+			const validationError = this.validateDhiwayConfiguration(spaceId);
 			if (validationError) {
 				return validationError;
 			}
@@ -71,11 +219,18 @@ export class DhiwayVcAdapter {
 
 			return this.processResponse(response.data);
 		} catch (error) {
-			return this.handleError(error);
+			return this.handleDhiwayError(error);
 		}
 	}
 
-	private validateConfiguration(spaceId: string): VcCreationResponse | null {
+	private validateDhiwayConfiguration(spaceId: string): VcCreationResponse | null {
+		// Use base class validation for spaceId
+		const baseValidation = super.validateConfiguration(spaceId);
+		if (baseValidation) {
+			return baseValidation;
+		}
+
+		// Dhiway-specific configuration validation
 		if (
 			!this.baseUrl ||
 			!this.organizationId ||
@@ -86,14 +241,6 @@ export class DhiwayVcAdapter {
 			return {
 				success: false,
 				message: 'Missing Dhiway VC configuration in environment variables',
-			};
-		}
-
-		if (!spaceId) {
-			this.logger.error('Space ID not provided');
-			return {
-				success: false,
-				message: 'Space ID is required for VC creation',
 			};
 		}
 
@@ -203,7 +350,7 @@ export class DhiwayVcAdapter {
 	}
 
 	private processResponse(data: any): VcCreationResponse {
-		const verificationUrl = data?.verificationUrl || data?.verification_url;
+		let verificationUrl = data?.verificationUrl || data?.verification_url;
 		const recordId = data?.recordId || data?.record_id || data?.id;
 
 		if (!verificationUrl) {
@@ -213,6 +360,11 @@ export class DhiwayVcAdapter {
 				message: 'No verificationUrl returned from Dhiway API',
 				error: data,
 			};
+		}
+
+		// Ensure verificationUrl ends with .vc
+		if (!verificationUrl.endsWith('.vc')) {
+			verificationUrl = `${verificationUrl}.vc`;
 		}
 
 		this.logger.log(
@@ -227,40 +379,48 @@ export class DhiwayVcAdapter {
 		};
 	}
 
-	private handleError(error: any): VcCreationResponse {
-		this.logger.error(
-			'Error creating Dhiway VC record:',
-			error?.response?.data || error.message,
-		);
-		this.logger.error(
-			`Full error details - Status: ${error?.response?.status}, StatusText: ${error?.response?.statusText}`,
-		);
-		this.logger.error(`Request URL: ${error?.config?.url}`);
-		this.logger.error(
-			`Error response: ${JSON.stringify(error?.response?.data, null, 2)}`,
-		);
-
-		const errorMessage = this.extractErrorMessage(error);
-
-		return {
-			success: false,
-			message: errorMessage,
-			error: error?.response?.data || error.message,
-		};
+	private handleDhiwayError(error: any): VcCreationResponse {
+		// Use base class error handling
+		return super.handleError(error, 'VC creation') as VcCreationResponse;
 	}
 
-	private extractErrorMessage(error: any): string {
-		if (error?.response?.data) {
-			const errorData = error.response.data;
-			return (
-				errorData.error ||
-				errorData.message ||
-				errorData.details ||
-				(typeof errorData === 'string'
-					? errorData
-					: 'Failed to create VC record')
-			);
+	/**
+	 * Extract public ID from Dhiway verification URL
+	 * Dhiway URLs are in format: https://dway.io/depwd/{publicId}.vc
+	 * @param verificationUrl - The verification URL from Dhiway
+	 * @returns The public ID (UUID) or null if not found
+	 */
+	extractPublicId(verificationUrl?: string): string | null {
+		if (!verificationUrl) {
+			return null;
 		}
-		return error.message || 'Failed to create VC record';
+
+		try {
+			// Extract UUID from URL pattern: https://dway.io/depwd/{uuid}.vc
+			const uuidRegex = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+			const match = uuidRegex.exec(verificationUrl);
+			if (match?.[1]) {
+				return match[1];
+			}
+			
+			// Alternative: Extract from path segments
+			const urlParts = verificationUrl.split('/');
+			const lastPart = urlParts.at(-1);
+			if (lastPart) {
+				// Remove .vc extension if present
+				const cleanId = lastPart.replace(/\.vc$/, '');
+				// Validate it looks like a UUID
+				if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId)) {
+					return cleanId;
+				}
+			}
+			
+			return null;
+		} catch (error) {
+			this.logger.warn(`Failed to extract public ID from URL: ${verificationUrl}`, error);
+			return null;
+		}
 	}
+
 }
+
