@@ -14,13 +14,13 @@ export class User {
   @PrimaryColumn({ type: 'uuid', default: () => 'gen_random_uuid()' })
   user_id: string;
 
-  @Column({ length: 50 })
+  @Column({ length: 50, nullable: true })
   firstName: string;
 
   @Column({ length: 50, nullable: true })
   middleName: string;
 
-  @Column({ length: 50 })
+  @Column({ length: 50, nullable: true })
   lastName: string;
 
   @Column({ length: 100, unique: true })
@@ -58,4 +58,7 @@ export class User {
 
   @UpdateDateColumn({ type: 'timestamptz', nullable: true })
   updated_at: Date;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  name: string;
 }

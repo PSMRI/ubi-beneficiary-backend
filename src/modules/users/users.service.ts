@@ -114,7 +114,7 @@ export class UserService {
 		private readonly ocrMappingService: OcrMappingService,
 		private readonly vcFieldsService: VcFieldsService,
 		private readonly vcAdapterFactory: VcAdapterFactory,
-	) {}
+	) { }
 
 	/*  async create(createUserDto: CreateUserDto) {
 	   const user = this.userRepository.create(createUserDto);
@@ -183,7 +183,7 @@ export class UserService {
 			const ssoId = this.extractSsoIdFromRequest(req);
 			const userDetails = await this.getUserBySsoId(ssoId);
 			const userData = await this.buildUserResponse(userDetails.user_id, decryptData);
-			
+
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
 				message: 'User retrieved successfully.',
@@ -259,7 +259,7 @@ export class UserService {
 	 */
 	private extractWhosePhoneNumber(customFields: CustomField[]): string | null {
 		Logger.debug(`Custom fields count: ${customFields?.length || 0}`);
-		
+
 		if (!customFields || customFields.length === 0) {
 			Logger.warn('No custom fields found for user');
 			return null;
@@ -267,18 +267,18 @@ export class UserService {
 
 		const fieldNames = customFields.map(f => f.name);
 		Logger.debug(`Available custom fields: ${fieldNames.join(', ')}`);
-		
+
 		const whosePhoneNumberField = customFields.find(
 			(field) => field.name === 'whosePhoneNumber',
 		);
-		
+
 		if (!whosePhoneNumberField) {
 			Logger.warn('whosePhoneNumber field not found in custom fields');
 			return null;
 		}
 
 		Logger.debug(`Found whosePhoneNumber field with value: ${whosePhoneNumberField.value}`);
-		
+
 		if (whosePhoneNumberField.value == null) {
 			return null;
 		}
@@ -286,7 +286,7 @@ export class UserService {
 		const value = String(whosePhoneNumberField.value).trim();
 		const result = value || null;
 		Logger.debug(`Processed whosePhoneNumber value: ${result}`);
-		
+
 		return result;
 	}
 
@@ -432,8 +432,7 @@ export class UserService {
 
 	async createKeycloakData(body: any): Promise<User> {
 		const user = this.userRepository.create({
-			firstName: body.firstName,
-			lastName: body.lastName,
+			name: body.name,
 			email: body.email ?? '',
 			phoneNumber: body.phoneNumber ?? '',
 			sso_provider: 'keycloak',
@@ -620,10 +619,10 @@ export class UserService {
 	): Promise<SuccessResponse | ErrorResponse> {
 		try {
 			const userDetails = await this.getUserDetails(req);
-			
+
 			// Update basic user fields
 			this.updateBasicUserFields(userDetails, updateUserProfileDto);
-			
+
 			// Handle picture upload if provided
 			if (picture) {
 				await this.handlePictureUpload(userDetails, picture);
@@ -847,12 +846,12 @@ export class UserService {
 				(field) => field.name === 'whosePhoneNumber',
 			);
 
-		if (whosePhoneNumberField?.value != null) {
-			const value = String(whosePhoneNumberField.value).trim();
-			const result = value || null;
-			Logger.log(`Retrieved existing whosePhoneNumber value: ${result}`);
-			return result;
-		}
+			if (whosePhoneNumberField?.value != null) {
+				const value = String(whosePhoneNumberField.value).trim();
+				const result = value || null;
+				Logger.log(`Retrieved existing whosePhoneNumber value: ${result}`);
+				return result;
+			}
 
 			Logger.debug('No whosePhoneNumber value found in custom fields');
 			return null;
@@ -1824,10 +1823,10 @@ export class UserService {
 			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
 
 			if (!authToken) {
-				const message = isWalletRegistrationEnabled 
+				const message = isWalletRegistrationEnabled
 					? 'Wallet token not found - user may not be registered with wallet'
 					: 'Wallet registration is disabled - skipping watcher registration';
-				
+
 				Logger.warn(`E-Wallet watcher registration skipped: ${message}`);
 				return {
 					success: false,
@@ -2396,11 +2395,11 @@ export class UserService {
 	}) {
 		try {
 			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
-			
+
 			if (!isWalletRegistrationEnabled) {
 				Logger.warn('Wallet registration is disabled but received wallet callback - processing anyway for existing documents');
 			}
-			
+
 			Logger.log(
 				`Processing wallet callback for recordPublicId: ${callbackData.recordPublicId}`,
 			);
@@ -2486,109 +2485,109 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 	) {
 		try {
-		const flowStartTime = Date.now();
-		const userDetails = await this.getUserDetails(req);
-		
-		const existingDoc = await this.findExistingDocument(
-			userDetails.user_id,
-			uploadDocumentDto,
-		);
+			const flowStartTime = Date.now();
+			const userDetails = await this.getUserDetails(req);
 
-		// Validate and prepare document
-		await this.validateDocumentType(uploadDocumentDto);
-		const { requiresQRProcessing, documentConfig } =
-			await this.getDocumentConfig(uploadDocumentDto);
-		
-		const issueVC =
-			documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
-		const issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
-
-		// Process document
-		this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
-		const ocrStartTime = Date.now();
-		const ocrResult = await this.performOcr(
-			file,
-			uploadDocumentDto,
-			requiresQRProcessing,
-			documentConfig,
-		);
-		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
-
-		// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
-		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
-		
-		const mappingStartTime = Date.now();
-		const vcMapping = isDhiwayVcUrl 
-			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
-		Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
-
-		// Validate required fields for ALL documents before storage
-		const validationStartTime = Date.now();
-		Logger.log(`Validating required fields for document`);
-		const vcFields = await this.vcFieldsService.getVcFields(
-			uploadDocumentDto.docType,
-			uploadDocumentDto.docSubType,
-		);
-		
-		// Validate required fields for both issueVC="yes" and issueVC="no" cases
-		if (vcFields && Object.keys(vcFields).length > 0) {
-			await this.validateRequiredFieldsFromOcrMapping(
-				vcFields,
-				vcMapping,
+			const existingDoc = await this.findExistingDocument(
+				userDetails.user_id,
 				uploadDocumentDto,
 			);
-		} else {
-			Logger.warn(
-				`No vcFields configuration found for ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType} - skipping required field validation`,
-			);
-		}
-		Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
 
-		// Verify document only for issueVC: "no" cases with QR code
-		// Skip verification for regular OCR documents without QR code
-		const verifyStartTime = Date.now();
-		if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
-			await this.verifyDocumentData(vcMapping.mapped_data, issuer);
-		} else if (issueVC === 'yes') {
-			Logger.log(`Skipping external verification for document with issueVC: yes`);
-		} else if (issueVC === 'no' && !requiresQRProcessing) {
-			Logger.log(`Skipping external verification for regular OCR document without QR code`);
-		}
-		Logger.log(`⏱️ External Verification took: ${Date.now() - verifyStartTime}ms`, 'UserService');
+			// Validate and prepare document
+			await this.validateDocumentType(uploadDocumentDto);
+			const { requiresQRProcessing, documentConfig } =
+				await this.getDocumentConfig(uploadDocumentDto);
 
-		// Handle VC creation or file upload
-		const storageStartTime = Date.now();
-		const { uploadResult, downloadUrl, vcCreationResult } =
-			await this.handleDocumentStorage(
+			const issueVC =
+				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
+			const issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
+
+			// Process document
+			this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+			const ocrStartTime = Date.now();
+			const ocrResult = await this.performOcr(
 				file,
 				uploadDocumentDto,
+				requiresQRProcessing,
 				documentConfig,
-				issueVC,
-				vcMapping,
-				userDetails,
 			);
-		Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
+			Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
-		// Save document record
-		Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
-		const dbSaveStartTime = Date.now();
-		const { savedDoc, isUpdate } = await this.saveDocumentRecord(
-			existingDoc,
-			userDetails.user_id,
-			uploadResult,
-			uploadDocumentDto,
-			vcMapping,
-			{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
-		);		// Update profile based on documents
-		try {
-			await this.updateProfile(userDetails);
-			Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
-		} catch (error) {
-			Logger.error('Profile update failed after document upload:', error);
-			// Don't fail the entire operation if profile update fails
-		}
-		Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
+			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
+			const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+
+			const mappingStartTime = Date.now();
+			const vcMapping = isDhiwayVcUrl
+				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
+				: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
+			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
+
+			// Validate required fields for ALL documents before storage
+			const validationStartTime = Date.now();
+			Logger.log(`Validating required fields for document`);
+			const vcFields = await this.vcFieldsService.getVcFields(
+				uploadDocumentDto.docType,
+				uploadDocumentDto.docSubType,
+			);
+
+			// Validate required fields for both issueVC="yes" and issueVC="no" cases
+			if (vcFields && Object.keys(vcFields).length > 0) {
+				await this.validateRequiredFieldsFromOcrMapping(
+					vcFields,
+					vcMapping,
+					uploadDocumentDto,
+				);
+			} else {
+				Logger.warn(
+					`No vcFields configuration found for ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType} - skipping required field validation`,
+				);
+			}
+			Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
+
+			// Verify document only for issueVC: "no" cases with QR code
+			// Skip verification for regular OCR documents without QR code
+			const verifyStartTime = Date.now();
+			if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
+				await this.verifyDocumentData(vcMapping.mapped_data, issuer);
+			} else if (issueVC === 'yes') {
+				Logger.log(`Skipping external verification for document with issueVC: yes`);
+			} else if (issueVC === 'no' && !requiresQRProcessing) {
+				Logger.log(`Skipping external verification for regular OCR document without QR code`);
+			}
+			Logger.log(`⏱️ External Verification took: ${Date.now() - verifyStartTime}ms`, 'UserService');
+
+			// Handle VC creation or file upload
+			const storageStartTime = Date.now();
+			const { uploadResult, downloadUrl, vcCreationResult } =
+				await this.handleDocumentStorage(
+					file,
+					uploadDocumentDto,
+					documentConfig,
+					issueVC,
+					vcMapping,
+					userDetails,
+				);
+			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
+
+			// Save document record
+			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
+			const dbSaveStartTime = Date.now();
+			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
+				existingDoc,
+				userDetails.user_id,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
+			);		// Update profile based on documents
+			try {
+				await this.updateProfile(userDetails);
+				Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
+			} catch (error) {
+				Logger.error('Profile update failed after document upload:', error);
+				// Don't fail the entire operation if profile update fails
+			}
+			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
 
 			// Build and return response
 			const responseData = this.buildResponseData(
@@ -2632,13 +2631,13 @@ export class UserService {
 	 * Check if this is a Dhiway VC_URL document that should skip OCR mapping
 	 */
 	private isDhiwayVcUrlDocument(
-		ocrResult: any, 
-		uploadDocumentDto: UploadDocumentDto, 
+		ocrResult: any,
+		uploadDocumentDto: UploadDocumentDto,
 		documentConfig: any
 	): boolean {
 		// Check if QR processing detected VC data
 		const qrProcessing = ocrResult?.qrProcessing;
-		
+
 		if (!qrProcessing?.qrCodeDetected) {
 			return false;
 		}
@@ -2649,7 +2648,7 @@ export class UserService {
 
 		const isDhiway = issuer?.toLowerCase() === 'dhiway';
 		const isVcUrl = contentType?.toLowerCase() === 'vc_url';
-		
+
 		// Check if QR processing result has VC data (from Dhiway processor)
 		const hasVcData = qrProcessing?.processedData?.vcData;
 
@@ -2724,7 +2723,7 @@ export class UserService {
 	 */
 	private async verifyDocumentData(mappedData: any, issuer: string): Promise<void> {
 		Logger.log(`Calling verification API for document with issueVC: no`);
-		
+
 		const verificationResult = await this.verifyVcWithApi(mappedData, issuer);
 
 		if (!verificationResult.success) {
@@ -2736,7 +2735,7 @@ export class UserService {
 				error: 'Bad Request',
 			});
 		}
-		
+
 		Logger.log(`Document verification successful`);
 	}
 
@@ -2751,9 +2750,9 @@ export class UserService {
 		uploadResult: any,
 		docDataLink?: string,
 	) {
-		const isDhiwayVcUrl = 
-			issuer?.toLowerCase() === 'dhiway' && 
-			vcMapping?.source === 'dhiway_vc_url' && 
+		const isDhiwayVcUrl =
+			issuer?.toLowerCase() === 'dhiway' &&
+			vcMapping?.source === 'dhiway_vc_url' &&
 			issueVC === 'no';
 
 		let docData = null;
@@ -2888,23 +2887,23 @@ export class UserService {
 	) {
 		return existingDoc
 			? await this.updateExistingDoc(
-					existingDoc,
-					uploadResult,
-					uploadDocumentDto,
-					vcMapping,
-					options.docDataLink,
-					options.issueVC,
-					options.issuer,
-				)
+				existingDoc,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				options.docDataLink,
+				options.issueVC,
+				options.issuer,
+			)
 			: await this.createNewDoc(
-					userId,
-					uploadResult,
-					uploadDocumentDto,
-					vcMapping,
-					options.docDataLink,
-					options.issueVC,
-					options.issuer,
-				);
+				userId,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				options.docDataLink,
+				options.issueVC,
+				options.issuer,
+			);
 	}
 
 	private buildResponseData(
@@ -3021,15 +3020,15 @@ export class UserService {
 					const issueVC = documentConfig.issueVC?.toLowerCase();
 					// Support both docHasQRCode and docHasORCode (typo in some configs)
 					const docHasQRCode = (documentConfig.docHasQRCode || documentConfig.docHasORCode)?.toLowerCase();
-					
+
 					requiresQRProcessing = issueVC === 'no' && docHasQRCode === 'yes';
-					
+
 					Logger.log(
 						`Document config for ${uploadDocumentDto.docSubType}: issueVC=${documentConfig.issueVC}, ` +
-							`docHasQRCode=${documentConfig.docHasQRCode || documentConfig.docHasORCode}, docQRContains=${documentConfig.docQRContains}, ` +
-							`issuer=${documentConfig.issuer}, requiresQRProcessing=${requiresQRProcessing}`,
+						`docHasQRCode=${documentConfig.docHasQRCode || documentConfig.docHasORCode}, docQRContains=${documentConfig.docQRContains}, ` +
+						`issuer=${documentConfig.issuer}, requiresQRProcessing=${requiresQRProcessing}`,
 					);
-					
+
 					// Debug: log all config keys to identify the correct field name
 					if (!documentConfig.docHasQRCode && !documentConfig.docHasORCode) {
 						Logger.warn(`docHasQRCode is undefined. Available config keys: ${Object.keys(documentConfig).join(', ')}`);
@@ -3154,13 +3153,13 @@ export class UserService {
 	): string[] {
 		const additionalMissingRequired: string[] = [];
 		const issuer = uploadDocumentDto?.issuer?.toLowerCase();
-		
+
 		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
 			// Only check required document fields (exclude fields with document_field: false)
 			if (fieldConfig?.required === true && fieldConfig?.document_field !== false) {
 				// Handle Dhiway case where data is in credentialSubject
 				let fieldValue = vcMapping.mapped_data?.[fieldName];
-				
+
 				// Check if this is Dhiway issuer and data might be in credentialSubject
 				if (issuer === 'dhiway' && this.isFieldValueEmpty(fieldValue)) {
 					// Try to get value from credentialSubject
@@ -3169,7 +3168,7 @@ export class UserService {
 						`Dhiway issuer: Checking field '${fieldName}' in credentialSubject - found: ${!this.isFieldValueEmpty(fieldValue)}`,
 					);
 				}
-				
+
 				if (
 					this.isFieldValueEmpty(fieldValue) &&
 					!missingRequiredFields.includes(fieldName)
@@ -3339,7 +3338,7 @@ export class UserService {
 		const qrProcessed = this.isQrProcessed(extractedData, requiresQRProcessing);
 		Logger.log(
 			`OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
-				(qrProcessed ? ` (QR code processed)` : ''),
+			(qrProcessed ? ` (QR code processed)` : ''),
 		);
 	}
 
@@ -3414,7 +3413,7 @@ export class UserService {
 		);
 
 		const previousPath = existingDoc.doc_path;
-		
+
 		// Update document fields
 		existingDoc.doc_path = uploadResult.filePath;
 		existingDoc.imported_from = uploadDocumentDto.importedFrom;
@@ -3423,18 +3422,18 @@ export class UserService {
 		existingDoc.doc_data = metadata.docData;
 		existingDoc.doc_verified = false;
 		existingDoc.doc_data_link = metadata.docDataLink;
-		
+
 		if (issuer) {
 			existingDoc.issuer = issuer;
 		}
 
 		const savedDoc = await this.userDocsRepository.save(existingDoc);
-		
+
 		// Delete previous file if different
 		if (previousPath && previousPath !== uploadResult.filePath) {
 			await this.documentUploadService.deleteFile(previousPath);
 		}
-		
+
 		Logger.log(`Document updated successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
 		return { savedDoc, isUpdate: true };
 	}
