@@ -2553,71 +2553,18 @@ export class UserService {
 				continue;
 			}
 
-			const matchingConfig = fieldConfig.matching;
-
 			try {
-				// Extract certificate value from VC data
-				const certificateValue = vcData[fieldName];
-
-				// Validate certificate value exists
-				if (certificateValue === null || certificateValue === undefined) {
-					throw new BadRequestException(
-						`Missing required field '${fieldName}' in VC data for matching`,
-					);
-				}
-
-				// Extract user profile value using compareWith field
-				const compareWithField = matchingConfig.compareWith;
-				if (!compareWithField) {
-					throw new BadRequestException(
-						`Missing 'compareWith' configuration for field '${fieldName}' in vcFields`,
-					);
-				}
-
-				const userValue = userProfile[compareWithField];
-
-				// Validate user profile value exists
-				if (userValue === null || userValue === undefined || userValue === '') {
-					throw new BadRequestException(
-						`Missing required field '${compareWithField}' in user profile for matching with '${fieldName}'`,
-					);
-				}
-
-				// Convert to strings for comparison
-				const certValueStr = String(certificateValue);
-				const userValueStr = String(userValue);
-
-				// Calculate similarity percentage using string-similarity library
-				const calculatedMatch = this.getMatchPercentage(certValueStr, userValueStr);
-
-				// Get required threshold from configuration (default 80%)
-				const threshold = matchingConfig.matchPercentage || 80;
-
-				Logger.log(
-					`Field: ${fieldName} | Certificate: "${certValueStr}" | User: "${userValueStr}" | Calculated: ${calculatedMatch}% | Required: ${threshold}%`,
+				const { passed, result } = this.processFieldMatching(
+					fieldName,
+					fieldConfig,
+					vcData,
+					userProfile,
 				);
 
-				// Compare against threshold
-				if (calculatedMatch < threshold) {
-					// Field failed - collect for error message
-					failedFields.push(fieldName);
+				fieldResults[fieldName] = result;
 
-					fieldResults[fieldName] = {
-						certificateValue: certValueStr,
-						userValue: userValueStr,
-						calculatedMatch,
-						threshold,
-						passed: false,
-					};
-				} else {
-					// Field passed
-					fieldResults[fieldName] = {
-						certificateValue: certValueStr,
-						userValue: userValueStr,
-						calculatedMatch,
-						threshold,
-						passed: true,
-					};
+				if (!passed) {
+					failedFields.push(fieldName);
 				}
 			} catch (error) {
 				// Handle field-level errors
@@ -2641,16 +2588,7 @@ export class UserService {
 				`VC field validation failed with ${failedFields.length} field(s) not matching`,
 			);
 
-			// Format error message based on number of failed fields
-			let errorMessage: string;
-			if (failedFields.length === 1) {
-				// Single field: "firstname does not match the user profile. Please re-upload the document."
-				errorMessage = `${failedFields[0]} does not match the user profile. Please re-upload the document.`;
-			} else {
-				// Multiple fields: "father_name, student_name, district not match the user profile. Please re-upload the document."
-				errorMessage = `${failedFields.join(', ')} not match the user profile. Please re-upload the document.`;
-			}
-
+			const errorMessage = this.formatFieldMatchingError(failedFields);
 			throw new BadRequestException(errorMessage);
 		}
 
@@ -2662,6 +2600,87 @@ export class UserService {
 			fieldResults,
 			validationPassed: true,
 		};
+	}
+
+	/**
+	 * Processes a single field matching against user profile
+	 * @param fieldName Field name from VC
+	 * @param fieldConfig Field configuration from vcFields
+	 * @param vcData VC data source
+	 * @param userProfile User profile data
+	 * @returns Field result with match information
+	 */
+	private processFieldMatching(
+		fieldName: string,
+		fieldConfig: any,
+		vcData: any,
+		userProfile: Record<string, any>,
+	): { passed: boolean; result: any } {
+		const matchingConfig = fieldConfig.matching;
+
+		// Extract certificate value from VC data
+		const certificateValue = vcData[fieldName];
+
+		// Validate certificate value exists
+		if (certificateValue === null || certificateValue === undefined) {
+			throw new BadRequestException(
+				`Missing required field '${fieldName}' in VC data for matching`,
+			);
+		}
+
+		// Extract user profile value using compareWith field
+		const compareWithField = matchingConfig.compareWith;
+		if (!compareWithField) {
+			throw new BadRequestException(
+				`Missing 'compareWith' configuration for field '${fieldName}' in vcFields`,
+			);
+		}
+
+		const userValue = userProfile[compareWithField];
+
+		// Validate user profile value exists
+		if (userValue === null || userValue === undefined || userValue === '') {
+			throw new BadRequestException(
+				`Missing required field '${compareWithField}' in user profile for matching with '${fieldName}'`,
+			);
+		}
+
+		// Convert to strings for comparison
+		const certValueStr = String(certificateValue);
+		const userValueStr = String(userValue);
+
+		// Calculate similarity percentage
+		const calculatedMatch = this.getMatchPercentage(certValueStr, userValueStr);
+
+		// Get required threshold from configuration (default 80%)
+		const threshold = matchingConfig.matchPercentage || 80;
+
+		Logger.log(
+			`Field: ${fieldName} | Certificate: "${certValueStr}" | User: "${userValueStr}" | Calculated: ${calculatedMatch}% | Required: ${threshold}%`,
+		);
+
+		// Create field result
+		const result = {
+			certificateValue: certValueStr,
+			userValue: userValueStr,
+			calculatedMatch,
+			threshold,
+			passed: calculatedMatch >= threshold,
+		};
+
+		return { passed: result.passed, result };
+	}
+
+	/**
+	 * Formats error message for failed field matching
+	 * @param failedFields Array of failed field names
+	 * @returns Formatted error message
+	 */
+	private formatFieldMatchingError(failedFields: string[]): string {
+		if (failedFields.length === 1) {
+			return `${failedFields[0]} does not match the user profile. Please re-upload the document.`;
+		}
+		return `${failedFields.join(', ')} not match the user profile. Please re-upload the document.`;
 	}
 
 	/**
@@ -2720,7 +2739,7 @@ export class UserService {
 	 * @returns VC data to use for matching
 	 */
 	private getVcDataSource(vcMapping: any, issuer: string): any {
-		if (!vcMapping || !vcMapping.mapped_data) {
+		if (!vcMapping?.mapped_data) {
 			throw new BadRequestException('VC mapping data is missing or invalid');
 		}
 
@@ -2817,43 +2836,21 @@ export class UserService {
 			Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
 
 			// Step: Perform VC field validation and matching against user profile
-			let matchingResult = null;
-			try {
-				matchingResult = await this.validateAndMatchVcFields(
-					userDetails.user_id,
-					vcMapping,
-					uploadDocumentDto,
-					issuer,
-				);
-				const passedFieldsCount = Object.values(matchingResult.fieldResults).filter(
-					(field: any) => field.passed
-				).length;
-				Logger.log(
-					`VC field matching successful. ${passedFieldsCount} field(s) validated and passed.`,
-				);
-			} catch (matchingError) {
-				// If matching validation fails, throw the error to stop document upload
-				if (matchingError instanceof BadRequestException) {
-					Logger.error(`VC field matching failed: ${matchingError.message}`);
-					throw matchingError;
-				}
-				// For other errors, log and continue (matching is optional if not configured)
-				Logger.warn(
-					`VC field matching error (non-critical): ${matchingError.message}`,
-				);
-			}
+			const matchingResult = await this.performFieldMatching(
+				userDetails.user_id,
+				vcMapping,
+				uploadDocumentDto,
+				issuer,
+			);
 
 			// Verify document only for issueVC: "no" cases with QR code
 			// Skip verification for regular OCR documents without QR code
-			const verifyStartTime = Date.now();
-			if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
-				await this.verifyDocumentData(vcMapping.mapped_data, issuer);
-			} else if (issueVC === 'yes') {
-				Logger.log(`Skipping external verification for document with issueVC: yes`);
-			} else if (issueVC === 'no' && !requiresQRProcessing) {
-				Logger.log(`Skipping external verification for regular OCR document without QR code`);
-			}
-			Logger.log(`⏱️ External Verification took: ${Date.now() - verifyStartTime}ms`, 'UserService');
+			await this.performDocumentVerification(
+				issueVC,
+				requiresQRProcessing,
+				vcMapping,
+				issuer,
+			);
 
 			// Handle VC creation or file upload
 			const storageStartTime = Date.now();
@@ -2911,6 +2908,79 @@ export class UserService {
 		} catch (error) {
 			return this.handleUploadError(error);
 		}
+	}
+
+	/**
+	 * Performs field matching validation against user profile
+	 * @param userId User ID
+	 * @param vcMapping VC mapping data
+	 * @param uploadDocumentDto Document metadata
+	 * @param issuer Issuer name
+	 * @returns Matching result or null if validation is not configured
+	 */
+	private async performFieldMatching(
+		userId: string,
+		vcMapping: any,
+		uploadDocumentDto: UploadDocumentDto,
+		issuer: string,
+	): Promise<any> {
+		try {
+			const matchingResult = await this.validateAndMatchVcFields(
+				userId,
+				vcMapping,
+				uploadDocumentDto,
+				issuer,
+			);
+
+			const passedFieldsCount = Object.values(matchingResult.fieldResults).filter(
+				(field: any) => field.passed
+			).length;
+
+			Logger.log(
+				`VC field matching successful. ${passedFieldsCount} field(s) validated and passed.`,
+			);
+
+			return matchingResult;
+		} catch (matchingError) {
+			// If matching validation fails, throw the error to stop document upload
+			if (matchingError instanceof BadRequestException) {
+				Logger.error(`VC field matching failed: ${matchingError.message}`);
+				throw matchingError;
+			}
+
+			// For other errors, log and continue (matching is optional if not configured)
+			Logger.warn(
+				`VC field matching error (non-critical): ${matchingError.message}`,
+			);
+
+			return null;
+		}
+	}
+
+	/**
+	 * Performs document verification for issueVC: "no" cases
+	 * @param issueVC Issue VC flag
+	 * @param requiresQRProcessing Whether document requires QR processing
+	 * @param vcMapping VC mapping data
+	 * @param issuer Issuer name
+	 */
+	private async performDocumentVerification(
+		issueVC: string,
+		requiresQRProcessing: boolean,
+		vcMapping: any,
+		issuer: string,
+	): Promise<void> {
+		const verifyStartTime = Date.now();
+
+		if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
+			await this.verifyDocumentData(vcMapping.mapped_data, issuer);
+		} else if (issueVC === 'yes') {
+			Logger.log(`Skipping external verification for document with issueVC: yes`);
+		} else if (issueVC === 'no' && !requiresQRProcessing) {
+			Logger.log(`Skipping external verification for regular OCR document without QR code`);
+		}
+
+		Logger.log(`⏱️ External Verification took: ${Date.now() - verifyStartTime}ms`, 'UserService');
 	}
 
 	private async findExistingDocument(
