@@ -432,8 +432,7 @@ export class UserService {
 
 	async createKeycloakData(body: any): Promise<User> {
 		const user = this.userRepository.create({
-			firstName: body.firstName,
-			lastName: body.lastName,
+			name: body.name,
 			email: body.email ?? '',
 			phoneNumber: body.phoneNumber ?? '',
 			sso_provider: 'keycloak',
