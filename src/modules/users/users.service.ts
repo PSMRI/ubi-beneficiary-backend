@@ -40,6 +40,7 @@ import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
 import { VcFieldsService, VcFields } from '../../common/helper/vcFieldService';
 import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
 import * as stringSimilarity from 'string-similarity';
+
 type StatusUpdateInfo = {
 	attempted: boolean;
 	success: boolean;
@@ -2314,6 +2315,7 @@ export class UserService {
 		for (const userDoc of userDocs) {
 			userDoc.doc_data = JSON.stringify(updatedDocData) as any;
 			userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
+			userDoc.verified_at = new Date(); // Set verification timestamp
 
 			// Save the updated document
 			const updatedUserDoc = await this.userDocsRepository.save(userDoc);
@@ -2886,6 +2888,12 @@ export class UserService {
 					Logger.log(`Verifying document before profile update for issueVC: no`);
 					await this.verifyDocumentData(vcMapping.mapped_data, issuer);
 					Logger.log(`Document verification successful before profile update`);
+					
+					// Update doc_verified and verified_at after successful verification
+					savedDoc.doc_verified = true;
+					savedDoc.verified_at = new Date();
+					await this.userDocsRepository.save(savedDoc);
+					Logger.log(`Document marked as verified: doc_id=${savedDoc.doc_id}`);
 				} catch (verifyError) {
 					Logger.error(`Document verification failed before profile update: ${verifyError.message}`);
 					return new ErrorResponse({
@@ -3819,8 +3827,11 @@ export class UserService {
 		existingDoc.uploaded_at = uploadResult.uploadedAt;
 		existingDoc.doc_data = metadata.docData;
 		existingDoc.doc_verified = false;
+		existingDoc.verified_at = null; // Reset verification timestamp on document update
 		existingDoc.doc_data_link = metadata.docDataLink;
 		existingDoc.issuance_callback_registered = issueVC === 'yes'; // true for VC creation, false for direct upload
+		existingDoc.vc_status = issueVC === 'yes' ? 'pending' : null; // Reset to 'pending' for VC, null for non-VC
+		existingDoc.vc_status_updated_at = issueVC === 'yes' ? new Date() : null;
 		
 		// Extract and store vc_public_id from verification URL using adapter
 		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
@@ -3892,6 +3903,7 @@ export class UserService {
 			doc_data: metadata.docData,
 			doc_datatype: metadata.docDatatype,
 			doc_verified: false,
+			verified_at: null,
 			watcher_registered: false,
 			watcher_email: null,
 			watcher_callback_url: null,
@@ -3899,6 +3911,8 @@ export class UserService {
 			vc_public_id: vcPublicId,
 			issuer: issuer || null,
 			issuance_callback_registered: issueVC === 'yes', // true for VC creation, false for direct upload
+			vc_status: issueVC === 'yes' ? 'pending' : null, // Set to 'pending' for VC documents, null for non-VC
+			vc_status_updated_at: issueVC === 'yes' ? new Date() : null,
 		});
 
 		const savedDoc = await this.userDocsRepository.save(newUserDoc);
@@ -3907,7 +3921,7 @@ export class UserService {
 	}
 
 	/**
-	 * Verify VC data for published status
+	 * Verify VC data for issued status and update doc_verified and verified_at
 	 * @param updatedDoc - The updated document
 	 * @param documentIssuer - The issuer of the document
 	 * @returns ErrorResponse if verification fails, null if successful
@@ -3928,7 +3942,7 @@ export class UserService {
 				throw new BadRequestException('Invalid VC data format for verification');
 			}
 
-			Logger.log(`Verifying VC data before profile update for published callback`);
+			Logger.log(`Verifying VC data before profile update for issued callback`);
 			const verificationResult = await this.verifyVcWithApi(vcDataForVerification, documentIssuer);
 
 			if (!verificationResult.success) {
@@ -3939,7 +3953,14 @@ export class UserService {
 				});
 			}
 
-			Logger.log(`VC verification successful before profile update`);
+			Logger.log(`VC verification successful - updating doc_verified and verified_at`);
+			
+			// Update doc_verified and verified_at after successful verification
+			updatedDoc.doc_verified = true;
+			updatedDoc.verified_at = new Date();
+			await this.userDocsRepository.save(updatedDoc);
+			
+			Logger.log(`Document ${updatedDoc.doc_id} verified successfully at ${updatedDoc.verified_at}`);
 			return null;
 		} catch (verifyError) {
 			Logger.error(`VC verification error after callback: ${verifyError.message}`);
@@ -3978,13 +3999,13 @@ export class UserService {
 	 * Process VC callback using adapter approach
 	 * Common logic for all issuers - delegates complex processing to adapter
 	 * @param publicId - The public ID (UUID) from the callback
-	 * @param status - The status from callback (published, rejected, deleted, revoked)
+	 * @param status - The status from callback (issued, revoked, deleted)
 	 * @param timestamp - Optional timestamp from callback
 	 * @returns Success response with updated document details
 	 */
 	async processVcCallback(
 		publicId: string,
-		status: 'published' | 'rejected' | 'deleted' | 'revoked',
+		status: 'issued' | 'revoked' | 'deleted',
 		timestamp?: string,
 	): Promise<SuccessResponse | ErrorResponse> {
 		try {
@@ -4035,22 +4056,32 @@ export class UserService {
 			}
 
 			// Update document based on callback result (common logic for all issuers)
-			if (callbackResult.status === 'published') {
+			if (callbackResult.status === 'issued') {
 				userDoc.doc_data = JSON.stringify(callbackResult.vcData) as any;
-				userDoc.doc_verified = true;
-			} else {
-				// rejected, deleted, revoked
+				userDoc.doc_verified = null; // Will be set to true after verification API
+				userDoc.vc_status = 'issued';
+			} else if (callbackResult.status === 'revoked') {
+				// Keep the data but mark as revoked
+				userDoc.doc_verified = false;
+				userDoc.verified_at = null;
+				userDoc.vc_status = 'revoked';
+			} else if (callbackResult.status === 'deleted') {
+				// Remove data for deleted VCs
 				userDoc.doc_data = null;
 				userDoc.doc_verified = null;
+				userDoc.verified_at = null;
+				userDoc.vc_status = 'deleted';
 			}
 
 			userDoc.issuance_callback_registered = false;
+			userDoc.vc_status_updated_at = new Date(timestamp || new Date().toISOString());
 
 			const updatedDoc = await this.userDocsRepository.save(userDoc);
 			Logger.log(`Document ${updatedDoc.doc_id} updated with status: ${callbackResult.status}`);
 
-			// Verify document before profile update for published status (issueVC: yes case)
-			if (callbackResult.status === 'published') {
+			// Verify document before profile update for issued status (issueVC: yes case)
+			// Verification API will set doc_verified = true and verified_at timestamp
+			if (callbackResult.status === 'issued') {
 				const verificationError = await this.verifyPublishedVc(updatedDoc, documentIssuer);
 				if (verificationError) {
 					return verificationError;
@@ -4070,6 +4101,8 @@ export class UserService {
 					public_id: publicId,
 					status: callbackResult.status,
 					issuer: documentIssuer,
+					verified: updatedDoc.doc_verified,
+					verified_at: updatedDoc.verified_at,
 				},
 			});
 		} catch (error) {

@@ -453,11 +453,27 @@ export class UserController {
   @Post('/vc-callbacks')
   @ApiOperation({ 
     summary: 'Handle VC callback',
-    description: 'Processes VC status change notifications (published, rejected, deleted, revoked) and updates document data. Issuer is automatically determined from the document record using adapter approach.'
+    description: 'Processes VC status change notifications (issued, revoked, deleted) and updates document data. Issuer is automatically determined from the document record using adapter approach.'
   })
   @ApiResponse({ 
     status: 200, 
-    description: 'VC callback processed successfully' 
+    description: 'VC callback processed successfully',
+    schema: {
+      example: {
+        success: true,
+        statusCode: 200,
+        message: 'VC issued successfully',
+        data: {
+          doc_id: '0bf1e149-1dd0-4899-b42a-f77255a86fde',
+          user_id: '82192ec3-6897-4288-ab8e-f8a191b0445c',
+          public_id: 'ff8f29d1-8ba5-49a3-bcc2-0e277f7c1790',
+          status: 'issued',
+          issuer: 'dhiway',
+          verified: true,
+          verified_at: '2025-12-01T10:30:00Z'
+        }
+      }
+    }
   })
   @ApiResponse({ 
     status: 404, 

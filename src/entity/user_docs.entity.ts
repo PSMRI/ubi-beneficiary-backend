@@ -74,6 +74,28 @@ export class UserDoc {
 	@Column({ type: 'boolean', default: false, nullable: false })
 	issuance_callback_registered: boolean;
 
+	@Column({ 
+		type: 'varchar', 
+		length: 50, 
+		nullable: true,
+		comment: 'Current status of VC: pending (draft awaiting issuer action), issued (credential issued), revoked (credential revoked), deleted (draft/credential deleted), or null for non-VC documents'
+	})
+	vc_status: 'pending' | 'issued' | 'revoked' | 'deleted' | null;
+
+	@Column({ 
+		type: 'timestamptz', 
+		nullable: true,
+		comment: 'Timestamp when vc_status was last updated by callback'
+	})
+	vc_status_updated_at: Date | null;
+
+	@Column({ 
+		type: 'timestamptz', 
+		nullable: true,
+		comment: 'Timestamp when document was verified by verification API'
+	})
+	verified_at: Date | null;
+
 	@CreateDateColumn({ type: 'timestamptz', default: () => 'NOW()' })
 	uploaded_at: Date;
 }

@@ -68,13 +68,13 @@ export class VcAdapterFactory {
 	 * Process a VC callback using the appropriate adapter
 	 * @param issuer - Issuer type
 	 * @param publicId - Public ID (UUID) from callback
-	 * @param status - The status from callback
+	 * @param status - The status from callback (issued, revoked, deleted)
 	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
 	 */
 	async processCallback(
 		issuer: string,
 		publicId: string,
-		status: 'published' | 'rejected' | 'deleted' | 'revoked',
+		status: 'issued' | 'revoked' | 'deleted',
 		docDataLink?: string,
 	): Promise<CallbackResult> {
 		const adapter = this.getAdapter(issuer);
@@ -91,7 +91,7 @@ export class VcAdapterFactory {
 	}
 
 	/**
-	 * Process a publish callback using the appropriate adapter (deprecated - use processCallback instead)
+	 * Process a publish callback using the appropriate adapter (deprecated - use processCallback with status='issued' instead)
 	 * @param issuer - Issuer type
 	 * @param publicId - Public ID (UUID) from callback
 	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
@@ -101,6 +101,6 @@ export class VcAdapterFactory {
 		publicId: string,
 		docDataLink?: string,
 	): Promise<CallbackResult> {
-		return this.processCallback(issuer, publicId, 'published', docDataLink);
+		return this.processCallback(issuer, publicId, 'issued', docDataLink);
 	}
 }

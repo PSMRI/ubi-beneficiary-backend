@@ -11,16 +11,16 @@ export class VcCallbackDto {
 	publicId: string;
 
 	@ApiProperty({
-		description: 'Status of the VC issuance',
-		example: 'published',
-		enum: ['published', 'rejected', 'deleted', 'revoked'],
+		description: 'Status of the VC: issued (credential issued by issuer), revoked (credential revoked), deleted (draft/credential deleted)',
+		example: 'issued',
+		enum: ['issued', 'revoked', 'deleted'],
 	})
 	@IsString()
 	@IsNotEmpty()
-	@IsIn(['published', 'rejected', 'deleted', 'revoked'], {
-		message: 'Status must be one of: published, rejected, deleted, revoked',
+	@IsIn(['issued', 'revoked', 'deleted'], {
+		message: 'Status must be one of: issued, revoked, deleted',
 	})
-	status: 'published' | 'rejected' | 'deleted' | 'revoked';
+	status: 'issued' | 'revoked' | 'deleted';
 
 	@ApiProperty({
 		description: 'Timestamp when the status change occurred',

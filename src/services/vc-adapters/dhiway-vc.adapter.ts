@@ -30,34 +30,34 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 	}
 
 	/**
-	 * Process a VC callback for any status (published, rejected, deleted, revoked)
+	 * Process a VC callback for any status (issued, revoked, deleted)
 	 * @param publicId - The public ID (UUID) from the callback
-	 * @param status - The status from callback
+	 * @param status - The status from callback (issued, revoked, deleted)
 	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
-	 * @returns CallbackResult with status and VC data (if published)
+	 * @returns CallbackResult with status and VC data (if issued)
 	 */
 	async processCallback(
 		publicId: string,
-		status: 'published' | 'rejected' | 'deleted' | 'revoked',
+		status: 'issued' | 'revoked' | 'deleted',
 		docDataLink?: string,
 	): Promise<CallbackResult> {
 		try {
 			this.logger.log(`Processing ${status} callback for Dhiway public ID: ${publicId}`);
 
-			if (status === 'published') {
+			if (status === 'issued') {
 				// Fetch VC data from Dhiway .vc URL
 				const vcData = await this.fetchVcDataAfterPublish(publicId, docDataLink);
 				
-				this.logSuccess('Publish callback processing', { publicId });
+				this.logSuccess('Issue callback processing', { publicId });
 				
 				return {
 					success: true,
-					status: 'published',
+					status: 'issued',
 					vcData: vcData,
-					message: 'VC published successfully',
+					message: 'VC issued successfully',
 				};
 			} else {
-				// For rejected, deleted, revoked - no need to fetch VC data
+				// For revoked, deleted - no need to fetch VC data
 				this.logSuccess(`${status} callback processing`, { publicId });
 				
 				return {
@@ -78,13 +78,13 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 	}
 
 	/**
-	 * Process a publish callback for a VC record (deprecated - use processCallback instead)
+	 * Process a publish callback for a VC record (deprecated - use processCallback with status='issued' instead)
 	 * @param publicId - The public ID (UUID) from the callback
 	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
 	 * @returns CallbackResult with VC data fetched from Dhiway
 	 */
 	async processPublishCallback(publicId: string, docDataLink?: string): Promise<CallbackResult> {
-		return this.processCallback(publicId, 'published', docDataLink);
+		return this.processCallback(publicId, 'issued', docDataLink);
 	}
 
 	/**

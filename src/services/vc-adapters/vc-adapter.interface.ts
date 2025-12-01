@@ -10,7 +10,7 @@ export interface VcCreationResponse {
 
 export interface CallbackResult {
 	success: boolean;
-	status: 'published' | 'rejected' | 'deleted' | 'revoked';
+	status: 'issued' | 'revoked' | 'deleted';
 	vcData?: any;
 	message?: string;
 	error?: any;
@@ -38,16 +38,16 @@ export abstract class VcAdapterInterface {
 	): Promise<VcCreationResponse>;
 
 	/**
-	 * Process a VC callback for any status (published, rejected, deleted, revoked)
+	 * Process a VC callback for any status (issued, revoked, deleted)
 	 * @param publicId - The public ID (UUID) from the callback
-	 * @param status - The status from callback
+	 * @param status - The status from callback (issued, revoked, deleted)
 	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
-	 * @returns CallbackResult with status and VC data (if published)
+	 * @returns CallbackResult with status and VC data (if issued)
 	 */
-	abstract processCallback(publicId: string, status: 'published' | 'rejected' | 'deleted' | 'revoked', docDataLink?: string): Promise<CallbackResult>;
+	abstract processCallback(publicId: string, status: 'issued' | 'revoked' | 'deleted', docDataLink?: string): Promise<CallbackResult>;
 
 	/**
-	 * Process a publish callback for a VC record (deprecated - use processCallback instead)
+	 * Process a publish callback for a VC record (deprecated - use processCallback with status='issued' instead)
 	 * @param publicId - The public ID (UUID) from the callback
 	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
 	 * @returns CallbackResult with VC data if successful

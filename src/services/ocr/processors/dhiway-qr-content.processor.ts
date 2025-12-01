@@ -120,6 +120,8 @@ export class DhiwayQRContentProcessor extends BaseQRContentProcessor {
 
   private async fetchDhiwayVcJson(url: string, documentConfig?: any): Promise<any> {
     try {
+      this.logger.log(`Fetching VC JSON from URL: ${url}`);
+      
       // Make simple GET API call to fetch VC JSON data from Dhiway URL
       const response = await axios.get(url, {
         headers: {
@@ -127,13 +129,27 @@ export class DhiwayQRContentProcessor extends BaseQRContentProcessor {
           'Content-Type': 'application/json',
         },
         timeout: 10000, // 10 second timeout
+        maxRedirects: 5, // Follow up to 5 redirects
+        validateStatus: (status) => status >= 200 && status < 300, // Only accept 2xx responses
       });
+      
+      this.logger.log(`Successfully fetched VC JSON from ${url} (Final URL after redirects: ${response.request?.res?.responseUrl || url})`);
       
       // Return the JSON response directly
       return response.data;
     } catch (error) {
-      this.logger.error(`Failed to fetch VC JSON from ${url}: ${error.message}`);
-      throw new Error(`GET request to Dhiway VC endpoint failed: ${error.message}`);
+      // Enhanced error logging
+      const errorDetails = {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        url: url,
+        responseData: error.response?.data,
+      };
+      
+      this.logger.error(`Failed to fetch VC JSON from ${url}:`, JSON.stringify(errorDetails, null, 2));
+      throw new Error(`GET request to Dhiway VC endpoint failed: ${error.message || error.code || 'Unknown error'}`);
     }
   }
 }
