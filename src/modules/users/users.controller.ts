@@ -450,10 +450,10 @@ export class UserController {
     }
   }
 
-  @Post('/vc-callbacks')
+  @Post('/vc/process-event')
   @ApiOperation({ 
-    summary: 'Handle VC callback',
-    description: 'Processes VC status change notifications (issued, revoked, deleted) and updates document data. Issuer is automatically determined from the document record using adapter approach.'
+    summary: 'Handle VC event',
+    description: 'Processes VC status change events (issued, revoked, deleted) and updates document data. Issuer is automatically determined from the document record using adapter approach.'
   })
   @ApiResponse({ 
     status: 200, 
@@ -483,11 +483,11 @@ export class UserController {
     status: 500, 
     description: 'Internal server error' 
   })
-  async handleVcCallback(@Body() callbackDto: VcCallbackDto) {
-    Logger.log(`Received VC callback: ${JSON.stringify(callbackDto)}`);
+  async handleVcEvent(@Body() callbackDto: VcCallbackDto) {
+    Logger.log(`Received VC event: ${JSON.stringify(callbackDto)}`);
     
-    // Process callback - issuer will be determined from document record using adapter approach
-    return await this.userService.processVcCallback(
+    // Process event - issuer will be determined from document record using adapter approach
+    return await this.userService.processVcEvent(
       callbackDto.publicId,
       callbackDto.status,
       callbackDto.timestamp

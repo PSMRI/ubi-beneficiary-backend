@@ -3996,20 +3996,20 @@ export class UserService {
 	}
 
 	/**
-	 * Process VC callback using adapter approach
-	 * Common logic for all issuers - delegates complex processing to adapter
-	 * @param publicId - The public ID (UUID) from the callback
-	 * @param status - The status from callback (issued, revoked, deleted)
-	 * @param timestamp - Optional timestamp from callback
-	 * @returns Success response with updated document details
-	 */
-	async processVcCallback(
+	* Process VC event using adapter approach
+	* Common logic for all issuers - delegates complex processing to adapter
+	* @param publicId - The public ID (UUID) from the event payload
+	* @param status - The status from event (issued, revoked, deleted)
+	* @param timestamp - Optional timestamp from event
+	* @returns Success response with updated document details
+	*/
+	async processVcEvent(
 		publicId: string,
 		status: 'issued' | 'revoked' | 'deleted',
 		timestamp?: string,
 	): Promise<SuccessResponse | ErrorResponse> {
 		try {
-			Logger.log(`Processing VC callback for public ID: ${publicId}, status: ${status}`);
+			Logger.log(`Processing VC event for public ID: ${publicId}, status: ${status}`);
 
 			// Find document by vc_public_id (exact match for faster lookup)
 			const userDoc = await this.userDocsRepository.findOne({
@@ -4039,7 +4039,7 @@ export class UserService {
 				});
 			}
 
-			// Process callback using adapter (handles all status-specific logic)
+			// Process event using adapter (handles all status-specific logic)
 			const callbackResult = await this.vcAdapterFactory.processCallback(
 				documentIssuer,
 				publicId,
@@ -4106,10 +4106,10 @@ export class UserService {
 				},
 			});
 		} catch (error) {
-			Logger.error(`Error processing VC callback: ${error.message}`, error.stack);
+			Logger.error(`Error processing VC event: ${error.message}`, error.stack);
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message || 'Failed to process VC callback',
+				errorMessage: error.message || 'Failed to process VC event',
 			});
 		}
 	}
