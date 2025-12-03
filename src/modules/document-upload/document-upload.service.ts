@@ -12,6 +12,7 @@ import { UPLOAD_CONFIG } from '../../config/upload.config';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'node:path';
 import { DocumentMetadata, UploadResult } from './interfaces';
+import { I18nService } from '../../common/services/i18n.service';
 
 /**
  * Generic document upload service
@@ -26,7 +27,8 @@ export class DocumentUploadService {
     @Inject('FileStorageService')
     private readonly fileStorageService: IFileStorageService,
     private readonly configService: ConfigService,
-  ) {}
+    private readonly i18n: I18nService,
+  ) { }
 
   /**
    * Generic file upload method - can be used by any module
@@ -63,7 +65,7 @@ export class DocumentUploadService {
       );
 
       if (!uploadedPath) {
-        throw new InternalServerErrorException('Failed to upload file to storage');
+        throw new InternalServerErrorException('FILE_UPLOAD_FAILED');
       }
 
       this.logger.log(`File uploaded successfully to: ${uploadedPath}`);
@@ -71,7 +73,7 @@ export class DocumentUploadService {
       // For profile pictures, return only the relative path for database storage
       const isProfilePicture = metadata?.docType === 'profile' && metadata?.docSubType === 'picture';
       let dbFilePath = uploadedPath;
-      
+
       if (isProfilePicture) {
         const profilePicturePrefix = this.configService.get<string>(
           'AWS_S3_PROFILE_PICTURE_PREFIX',
@@ -160,9 +162,8 @@ export class DocumentUploadService {
    */
   validateFileSignature(buffer: Buffer, filename: string): void {
     if (!buffer || buffer.length < 4) {
-      throw new BadRequestException(
-        'Invalid file: file is too small or corrupted',
-      );
+      const errorMessage = this.i18n.t('validation.FILE_TOO_SMALL_OR_CORRUPTED');
+      throw new BadRequestException(errorMessage);
     }
 
     const firstBytes = buffer.subarray(0, 8);
@@ -198,9 +199,10 @@ export class DocumentUploadService {
 
     // If none of the signatures match, throw an error
     const detectedHex = firstBytes.subarray(0, 4).toString('hex').toUpperCase();
-    throw new BadRequestException(
-      `Invalid file signature for ${filename}. Expected PDF, JPEG, or PNG but detected signature: ${detectedHex}`,
-    );
+    const errorMessage = this.i18n.t('validation.FILE_INVALID_SIGNATURE', {
+      args: { filename, signature: detectedHex }
+    });
+    throw new BadRequestException(errorMessage);
   }
 
   // Private helper methods
@@ -210,7 +212,7 @@ export class DocumentUploadService {
    */
   private validateFilePresence(file: Express.Multer.File): void {
     if (!file?.buffer || !file?.originalname) {
-      throw new BadRequestException('No file uploaded');
+      throw new BadRequestException('FILE_UPLOAD_NO_FILE');
     }
   }
 
@@ -236,12 +238,12 @@ export class DocumentUploadService {
       !allowedExts.has(fileExtension) ||
       (file.mimetype && !allowedMimes.has(file.mimetype))
     ) {
-      throw new BadRequestException('Unsupported file type');
+      throw new BadRequestException('FILE_UPLOAD_UNSUPPORTED_TYPE');
     }
 
     const fileSizeLimit = maxFileSize || UPLOAD_CONFIG.maxFileSize;
     if (file.size && file.size > fileSizeLimit) {
-      throw new BadRequestException('File too large');
+      throw new BadRequestException('FILE_UPLOAD_FILE_TOO_LARGE');
     }
 
     // Validate file signature
@@ -272,10 +274,10 @@ export class DocumentUploadService {
       'FILE_PREFIX_ENV',
       'local',
     );
-    
+
     // Check if this is a profile picture upload
     const isProfilePicture = metadata?.docType === 'profile' && metadata?.docSubType === 'picture';
-    
+
     if (isProfilePicture) {
       const profilePicturePrefix = this.configService.get<string>(
         'AWS_S3_PROFILE_PICTURE_PREFIX',
@@ -284,7 +286,7 @@ export class DocumentUploadService {
       // Upload with profile picture prefix but return relative path for database
       return `${profilePicturePrefix}/${filePrefix}/${ownerId}/${uuidv4()}${fileExtension}`;
     }
-    
+
     // Default behavior for all other documents
     return `${filePrefix}/${ownerId}/${uuidv4()}${fileExtension}`;
   }
