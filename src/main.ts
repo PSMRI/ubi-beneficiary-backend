@@ -12,12 +12,15 @@ import {
 } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ResponseInterceptor } from './common/Interceptors/response.interceptor';
+import { I18nResponseInterceptor } from './common/Interceptors/i18n-response.interceptor';
+import { I18nExceptionFilter } from './common/filters/i18n-exception.filter';
+import { I18nService } from './common/services/i18n.service';
 import { LoggerService } from './logger/logger.service';
 import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
-	
+
 	// Replace NestJS default logger with our Sentry-enabled logger
 	const customLogger = app.get(LoggerService);
 	app.useLogger(customLogger);
@@ -54,7 +57,18 @@ async function bootstrap() {
 			},
 		}),
 	);
-	app.useGlobalInterceptors(new ResponseInterceptor());
+	// Register interceptors
+	// Note: Interceptors execute in reverse order for responses
+	// So ResponseInterceptor runs first (converts SuccessResponse to plain object)
+	// Then I18nResponseInterceptor runs second (translates the message)
+	const i18nService = app.get(I18nService);
+	app.useGlobalInterceptors(
+		new ResponseInterceptor(),
+		new I18nResponseInterceptor(i18nService)
+	);
+
+	// Register global exception filter for i18n error translation
+	app.useGlobalFilters(new I18nExceptionFilter());
 
 	// Configure Swagger
 	const config = new DocumentBuilder()
