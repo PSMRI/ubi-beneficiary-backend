@@ -23,7 +23,7 @@ import {
 export class HousekeepingController {
 	private readonly logger = new Logger(HousekeepingController.name);
 
-	constructor(private readonly housekeepingService: HousekeepingService) {}
+	constructor(private readonly housekeepingService: HousekeepingService) { }
 
 	@Post('/register-watchers')
 	@ApiOperation({
@@ -56,7 +56,7 @@ export class HousekeepingController {
 			if (error instanceof UnauthorizedException) {
 				throw error;
 			}
-			throw new UnauthorizedException('Failed to register watchers');
+			throw new UnauthorizedException('HOUSEKEEPING_WATCHER_REGISTRATION_FAILED');
 		}
 	}
 
@@ -88,7 +88,7 @@ export class HousekeepingController {
 			if (error instanceof UnauthorizedException) {
 				throw error;
 			}
-			throw new UnauthorizedException('Failed to get migration status');
+			throw new UnauthorizedException('HOUSEKEEPING_MIGRATION_STATUS_FAILED');
 		}
 	}
 } 
