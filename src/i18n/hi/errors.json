@@ -207,5 +207,9 @@
     "MISSING_REQUIRED_FIELD_VC": "VC डेटा में आवश्यक फ़ील्ड '{{fieldName}}' अनुपलब्ध है",
     "MISSING_REQUIRED_FIELD_PROFILE": "उपयोगकर्ता प्रोफ़ाइल में आवश्यक फ़ील्ड '{{fieldName}}' अनुपलब्ध है",
     "MISSING_COMPARE_WITH_CONFIG": "फ़ील्ड '{{fieldName}}' के लिए 'compareWith' कॉन्फ़िगरेशन अनुपलब्ध है",
-    "MISSING_REQUIRED_FIELDS_IN_DOCUMENT": "आवश्यक फ़ील्ड अनुपलब्ध: {{fields}}। दस्तावेज़ प्रकार: {{docType}}/{{docSubType}}। कृपया सुनिश्चित करें कि ये फ़ील्ड दस्तावेज़ में स्पष्ट रूप से दिखाई दें और पठनीय हों।"
+    "MISSING_REQUIRED_FIELDS_IN_DOCUMENT": "आवश्यक फ़ील्ड अनुपलब्ध: {{fields}}। दस्तावेज़ प्रकार: {{docType}}/{{docSubType}}। कृपया सुनिश्चित करें कि ये फ़ील्ड दस्तावेज़ में स्पष्ट रूप से दिखाई दें और पठनीय हों।",
+    "VC_SPACE_ID_REQUIRED": "VC निर्माण के लिए Space ID आवश्यक है। कृपया vcConfiguration में spaceId कॉन्फ़िगर करें।",
+    "VC_DOCUMENT_TYPE_REQUIRED": "दस्तावेज़ प्रकार आवश्यक है और खाली नहीं हो सकता।",
+    "VC_DOCUMENT_SUBTYPE_REQUIRED": "दस्तावेज़ उप-प्रकार आवश्यक है और खाली नहीं हो सकता।",
+    "VC_MISSING_VC_FIELDS_CONFIG": "आवश्यक फ़ील्ड का सत्यापन नहीं किया जा सकता: vcFields कॉन्फ़िगरेशन या मैपिंग डेटा अनुपलब्ध है।"
 }

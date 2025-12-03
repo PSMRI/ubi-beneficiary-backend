@@ -207,5 +207,9 @@
     "MISSING_REQUIRED_FIELD_VC": "Missing required field '{{fieldName}}' in VC data",
     "MISSING_REQUIRED_FIELD_PROFILE": "Missing required field '{{fieldName}}' in user profile",
     "MISSING_COMPARE_WITH_CONFIG": "Missing 'compareWith' configuration for field '{{fieldName}}'",
-    "MISSING_REQUIRED_FIELDS_IN_DOCUMENT": "Missing required field(s): {{fields}}. Document Type: {{docType}}/{{docSubType}}. Please ensure these fields are clearly visible and readable in the document."
+    "MISSING_REQUIRED_FIELDS_IN_DOCUMENT": "Missing required field(s): {{fields}}. Document Type: {{docType}}/{{docSubType}}. Please ensure these fields are clearly visible and readable in the document.",
+    "VC_SPACE_ID_REQUIRED": "Space ID is required for VC creation. Please configure spaceId in vcConfiguration.",
+    "VC_DOCUMENT_TYPE_REQUIRED": "Document type is required and cannot be empty.",
+    "VC_DOCUMENT_SUBTYPE_REQUIRED": "Document subtype is required and cannot be empty.",
+    "VC_MISSING_VC_FIELDS_CONFIG": "Cannot validate required fields: missing vcFields configuration or mapping data."
 }
