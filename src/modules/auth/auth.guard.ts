@@ -25,13 +25,13 @@ export class AuthGuard implements CanActivate {
     // Check if Authorization header is present
     const authHeader = request.header('authorization');
     if (!authHeader) {
-      throw new UnauthorizedException('Authorization header is missing');
+      throw new UnauthorizedException('AUTH_AUTHORIZATION_HEADER_MISSING');
     }
 
     // Split and validate the Bearer token format
     const [bearer, token] = authHeader.split(' ');
     if (bearer.toLowerCase() !== 'bearer' || !token) {
-      throw new UnauthorizedException('Bearer token not found or invalid');
+      throw new UnauthorizedException('AUTH_BEARER_TOKEN_MISSING');
     }
 
     // Decode and validate the token
@@ -39,12 +39,12 @@ export class AuthGuard implements CanActivate {
 
     // Check for keycloak_id in token payload (subject)
     if (!decoded?.sub) {
-      throw new UnauthorizedException('Invalid token: keycloak_id missing');
+      throw new UnauthorizedException('AUTH_INVALID_TOKEN_KEYCLOAK_ID_MISSING');
     }
 
     // Check token expiry
     if (Date.now() >= decoded.exp * 1000) {
-      throw new UnauthorizedException('Token has expired');
+      throw new UnauthorizedException('AUTH_TOKEN_EXPIRED');
     }
 
     request.user = {
@@ -62,7 +62,7 @@ export class AuthGuard implements CanActivate {
       return decoded;
     } catch (err) {
       console.error('Token verification failed:', err);
-      throw new UnauthorizedException('Invalid token');
+      throw new UnauthorizedException('AUTH_INVALID_TOKEN');
     }
   }
 }
