@@ -628,7 +628,7 @@ export class HasuraService {
     try {
       return await this.queryDb(query);
     } catch (error) {
-      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+      throw new HttpException('HASURA_BAD_REQUEST', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -643,7 +643,7 @@ export class HasuraService {
     try {
       return await this.queryDb(query);
     } catch (error) {
-      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+      throw new HttpException('HASURA_BAD_REQUEST', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -658,7 +658,7 @@ export class HasuraService {
     try {
       return await this.queryDb(query);
     } catch (error) {
-      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+      throw new HttpException('HASURA_BAD_REQUEST', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -673,7 +673,7 @@ export class HasuraService {
     try {
       return await this.queryDb(query);
     } catch (error) {
-      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+      throw new HttpException('HASURA_BAD_REQUEST', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -690,7 +690,7 @@ export class HasuraService {
       return result;
     } catch (error) {
       this.logger.error('Error deleting all jobs:', error);
-      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+      throw new HttpException('HASURA_BAD_REQUEST', HttpStatus.BAD_REQUEST);
     }
   }
   async deleteJobsByBpps(bpps: string[]) {
@@ -718,7 +718,7 @@ export class HasuraService {
         `Error deleting jobs for BPPs [${validBpps.join(', ')}]:`,
         error,
       );
-      throw new HttpException('Bad request', HttpStatus.BAD_REQUEST);
+      throw new HttpException('HASURA_BAD_REQUEST', HttpStatus.BAD_REQUEST);
     }
   }
 
@@ -814,7 +814,7 @@ export class HasuraService {
       const response = await this.queryDb(query);
       return response.data[`${this.order_db}`][0].OrderContentRelationship[0];
     } catch (error) {
-      throw new HttpException('Invalid order id', HttpStatus.BAD_REQUEST);
+      throw new HttpException('HASURA_INVALID_ORDER_ID', HttpStatus.BAD_REQUEST);
     }
 
   }
@@ -834,7 +834,7 @@ export class HasuraService {
       const response = await this.queryDb(query, data);
       return response;
     } catch (error) {
-      throw new HttpException('Unable to add telemetry', HttpStatus.BAD_REQUEST);
+      throw new HttpException('HASURA_TELEMETRY_ADD_FAILED', HttpStatus.BAD_REQUEST);
     }
   }
 
