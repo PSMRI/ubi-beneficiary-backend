@@ -1,20 +1,20 @@
 import {
-	Controller,
-	Get,
-	Post,
-	Patch,
-	Body,
-	Param,
-	Query,
-	UseGuards,
-	Req,
-	Delete,
-	InternalServerErrorException,
-	UnauthorizedException,
-	Logger,
-	UseInterceptors,
-	UploadedFile,
-	BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+  Delete,
+  InternalServerErrorException,
+  UnauthorizedException,
+  Logger,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
   ParseFilePipe,
   MaxFileSizeValidator,
 } from '@nestjs/common';
@@ -45,9 +45,9 @@ import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 @ApiTags('Users')
 @Controller('users')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(private readonly userService: UserService) { }
 
-  
+
   /* @Post('/create')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Create a new user' })
@@ -57,18 +57,18 @@ export class UserController {
     return this.userService.create(createUserDto);
   }
  */
- /*  @UseGuards(AuthGuard)
-  @Put('/update/:userId')
-  @ApiBasicAuth('access-token')
-  @ApiOperation({ summary: 'Update an existing user' })
-  @ApiResponse({ status: 200, description: 'User successfully updated' })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  async update(
-    @Param('userId', new ParseUUIDPipe()) userId: string,
-    @Body() updateUserDto: any,
-  ) {
-    return this.userService.update(userId, updateUserDto);
-  } */
+  /*  @UseGuards(AuthGuard)
+   @Put('/update/:userId')
+   @ApiBasicAuth('access-token')
+   @ApiOperation({ summary: 'Update an existing user' })
+   @ApiResponse({ status: 200, description: 'User successfully updated' })
+   @ApiResponse({ status: 404, description: 'User not found' })
+   async update(
+     @Param('userId', new ParseUUIDPipe()) userId: string,
+     @Body() updateUserDto: any,
+   ) {
+     return this.userService.update(userId, updateUserDto);
+   } */
 
   @UseGuards(AuthGuard)
   @Get('/get_one')
@@ -127,7 +127,7 @@ export class UserController {
         'users.controller:updateProfile',
       );
       throw new InternalServerErrorException(
-        'An error occurred while updating user profile',
+        'USER_PROFILE_UPDATE_FAILED',
       );
     }
   }
@@ -160,12 +160,13 @@ export class UserController {
   @UseGuards(AuthGuard)
   @Post('/wallet/user_docs')
   @ApiBasicAuth('access-token')
-    @ApiBody({ type: [UploadDocDTO] 
-    })
+  @ApiBody({
+    type: [UploadDocDTO]
+  })
   @ApiOperation({ summary: 'Save user docs' })
   @ApiResponse({ status: 200, description: 'User docs saved successfully' })
   @ApiResponse({ status: 400, description: 'Bad Request' })
-  
+
   async createUserDocs(
     @Req() req: Request,
     @Body() createUserDocDto: CreateUserDocDTO[],
@@ -220,7 +221,7 @@ export class UserController {
     status: 200,
     description: 'User application data',
     type: UserApplication,
-  }) 
+  })
   @ApiResponse({ status: 404, description: 'User application not found' })
   async findOneUserApplication(
     @Param('internal_application_id') internal_application_id: string,
@@ -260,7 +261,7 @@ export class UserController {
 
   @Delete('/delete-doc/:doc_id')
   @UseGuards(AuthGuard)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Delete a document',
     description: 'Deletes a document from the database and removes the associated file from the uploads folder'
   })
@@ -278,7 +279,7 @@ export class UserController {
       }
       Logger.error('Failed to delete document:', error);
       throw new InternalServerErrorException(
-        'An error occurred while processing your request',
+        'APP_OPERATION_FAILED',
       );
     }
   }
@@ -308,7 +309,7 @@ export class UserController {
   @ApiBasicAuth('access-token')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Upload a document file with metadata',
     description: 'Uploads a new document or updates an existing one if a document with the same type, subtype, and name already exists for the user. Old file will be replaced with the new one.'
   })
@@ -316,8 +317,8 @@ export class UserController {
     description: 'Document upload with metadata',
     type: UploadDocumentDto,
   })
-  @ApiResponse({ 
-    status: 201, 
+  @ApiResponse({
+    status: 201,
     description: 'Document uploaded successfully (new document created)',
     schema: {
       example: {
@@ -360,8 +361,8 @@ export class UserController {
       }
     }
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Document updated successfully (existing document replaced)',
     schema: {
       example: {
@@ -425,7 +426,7 @@ export class UserController {
       if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
         throw error;
       }
-      
+
       // If it's already an InternalServerErrorException from the service layer,
       // preserve the original error message instead of overriding it
       if (error instanceof InternalServerErrorException) {
@@ -436,7 +437,7 @@ export class UserController {
         );
         throw error; // Re-throw the original exception with its meaningful message
       }
-      
+
       // For other unexpected errors, wrap with generic message
       Logger.error(
         error?.message ?? 'Failed to upload document',
@@ -444,7 +445,7 @@ export class UserController {
         'users.controller:uploadDocument',
       );
       throw new InternalServerErrorException(
-        'An error occurred while uploading the document',
+        'FILE_UPLOAD_FAILED',
       );
     }
   }
