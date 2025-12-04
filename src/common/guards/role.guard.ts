@@ -19,12 +19,12 @@ interface AuthenticatedRequest extends Request {
       }
     };
   };
- 
+
 }
 
 @Injectable()
 export class RoleGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector) { }
 
   canActivate(
     context: ExecutionContext,
@@ -40,10 +40,10 @@ export class RoleGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    
+
     // Check if user is authenticated (AuthGuard should have already run)
     if (!request.user) {
-      throw new UnauthorizedException('User not authenticated');
+      throw new UnauthorizedException('GUARD_USER_NOT_AUTHENTICATED');
     }
 
     // Extract roles from the already decoded JWT token (stored by AuthGuard)
@@ -51,7 +51,7 @@ export class RoleGuard implements CanActivate {
     const userRoles: string[] = request?.user?.resource_access?.['beneficiary-app']?.roles ?? [];
 
     // Check if user has any of the required roles
-    const hasRequiredRole = requiredRoles.some(role => 
+    const hasRequiredRole = requiredRoles.some(role =>
       userRoles.includes(role) && isValidRole(role)
     );
 

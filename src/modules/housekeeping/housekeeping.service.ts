@@ -23,7 +23,7 @@ export class HousekeepingService {
 		@InjectRepository(User)
 		private readonly userRepository: Repository<User>,
 		private readonly configService: ConfigService
-	) {}
+	) { }
 
 	/**
 	 * Validate the secret key for housekeeping operations
@@ -45,7 +45,7 @@ export class HousekeepingService {
 		try {
 			// Validate secret key
 			if (!this.validateSecretKey(secretKey)) {
-				throw new UnauthorizedException('Invalid secret key');
+				throw new UnauthorizedException('HOUSEKEEPING_INVALID_SECRET');
 			}
 
 			this.logger.log('Starting watcher registration for existing documents');
@@ -91,7 +91,7 @@ export class HousekeepingService {
 			const batchSize = 10;
 			for (let i = 0; i < documents.length; i += batchSize) {
 				const batch = documents.slice(i, i + batchSize);
-				
+
 				// Process batch concurrently
 				const batchPromises = batch.map(async (doc) => {
 					try {
@@ -183,14 +183,14 @@ export class HousekeepingService {
 
 			// Check if wallet registration is enabled
 			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
-			
+
 			// Get wallet token from user
 			const walletToken = user.walletToken;
 			if (!walletToken) {
-				const errorMessage = isWalletRegistrationEnabled 
+				const errorMessage = isWalletRegistrationEnabled
 					? 'No wallet token found for user'
 					: 'Wallet registration is disabled - skipping watcher registration';
-				
+
 				this.logger.warn(`Skipping watcher registration for document ${doc.doc_id}: ${errorMessage}`);
 				return {
 					success: false,
@@ -265,7 +265,7 @@ export class HousekeepingService {
 		try {
 			// Validate secret key
 			if (!this.validateSecretKey(secretKey)) {
-				throw new UnauthorizedException('Invalid secret key');
+				throw new UnauthorizedException('HOUSEKEEPING_INVALID_SECRET');
 			}
 
 			if (operation === 'register_watchers') {

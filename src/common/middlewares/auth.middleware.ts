@@ -47,7 +47,7 @@ export class AuthMiddleware implements NestMiddleware {
       // If keycloak_id is not found in token payload (subject)
       if (!keycloak_id) {
         req.mw_userid = null;
-        throw new Error('User not found');
+        throw new Error('MIDDLEWARE_USER_NOT_FOUND');
       }
 
       const roles = decoded?.resource_access?.hasura?.roles ?? [];

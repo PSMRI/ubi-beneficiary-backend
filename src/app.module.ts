@@ -26,6 +26,7 @@ import { NetworkCache } from './entity/network-cache.entity';
 import { StorageProviderModule } from './services/storage-providers/storage-provider.module';
 import { OcrModule } from './services/ocr/ocr.module';
 import { OcrMappingModule } from './services/ocr-mapping/ocr-mapping.module';
+import { I18nModule } from './common/i18n.module';
 
 @Module({
 	imports: [
@@ -65,6 +66,7 @@ import { OcrMappingModule } from './services/ocr-mapping/ocr-mapping.module';
 		StorageProviderModule,
 		OcrModule,
 		OcrMappingModule,
+		I18nModule,
 	],
 	controllers: [AppController],
 	providers: [
