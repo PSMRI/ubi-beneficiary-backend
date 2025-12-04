@@ -40,6 +40,8 @@ import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
 import { VcFieldsService, VcFields } from '../../common/helper/vcFieldService';
 import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
 import * as stringSimilarity from 'string-similarity';
+import { I18nService } from 'src/common/services/i18n.service';
+
 type StatusUpdateInfo = {
 	attempted: boolean;
 	success: boolean;
@@ -114,6 +116,7 @@ export class UserService {
 		private readonly ocrMappingService: OcrMappingService,
 		private readonly vcFieldsService: VcFieldsService,
 		private readonly vcAdapterFactory: VcAdapterFactory,
+		private readonly i18n: I18nService,
 	) { }
 
 	/*  async create(createUserDto: CreateUserDto) {
@@ -121,11 +124,11 @@ export class UserService {
 	   try {
 		 const savedUser = await this.userRepository.save(user);
    
-		 return new SuccessResponse({
-		   statusCode: HttpStatus.OK, // Created
-		   message: 'User created successfully.',
-		   data: savedUser,
-		 });
+		return new SuccessResponse({
+		  statusCode: HttpStatus.OK, // Created
+		  message: 'USER_CREATED',
+		  data: savedUser,
+		});
 	   } catch (error) {
 		 return new ErrorResponse({
 		   statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
@@ -164,7 +167,7 @@ export class UserService {
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
-				message: 'User and associated info updated successfully',
+				message: 'USER_UPDATED',
 				data: {
 					...updatedUser,
 					userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
@@ -186,7 +189,7 @@ export class UserService {
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
-				message: 'User retrieved successfully.',
+				message: 'USER_FETCHED',
 				data: userData,
 			});
 		} catch (error) {
@@ -341,7 +344,7 @@ export class UserService {
 			};
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
-				message: 'User consent retrieved successfully.',
+				message: 'DATA_RETRIEVED',
 				data: final,
 			});
 		} catch (error) {
@@ -405,7 +408,7 @@ export class UserService {
 		// Format the response
 		return {
 			statusCode: 200,
-			message: 'User consent retrieved successfully.',
+			message: 'DATA_RETRIEVED',
 			data: consents.map((consent) => ({
 				id: consent.id,
 				user_id: consent.user_id,
@@ -449,7 +452,7 @@ export class UserService {
 			} catch (error) {
 				Logger.error('Error stringifying doc_data:', error);
 				throw new BadRequestException(
-					'Invalid doc_data format: Unable to stringify JSON',
+					'USER_DOC_DATA_INVALID_FORMAT',
 				);
 			}
 		}
@@ -470,7 +473,7 @@ export class UserService {
 		  const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
 		  return new SuccessResponse({
 			statusCode: HttpStatus.OK,
-			message: 'User docs added to DB successfully.',
+			message: 'DOCUMENT_UPLOADED',
 			data: savedUserDoc,
 		  });
 		} catch (error) {
@@ -598,7 +601,7 @@ export class UserService {
 	async getUserDetails(req: any): Promise<User> {
 		const sso_id = req?.user?.keycloak_id;
 		if (!sso_id) {
-			throw new UnauthorizedException('Invalid or missing Keycloak ID');
+			throw new UnauthorizedException('USER_INVALID_KEYCLOAK_ID');
 		}
 
 		const userDetails = await this.userRepository.findOne({
@@ -642,7 +645,7 @@ export class UserService {
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
-				message: 'User profile updated successfully',
+				message: 'USER_PROFILE_UPDATED',
 				data: {
 					user_id: updatedUser.user_id,
 					phoneNumber: updatedUser.phoneNumber,
@@ -775,7 +778,7 @@ export class UserService {
 					'whosePhoneNumber field not found in custom fields. Please create the field first in the fields table.',
 				);
 				throw new BadRequestException(
-					'whosePhoneNumber custom field does not exist. Please create it first.',
+					'USER_WHOSE_PHONE_NUMBER_FIELD_NOT_FOUND',
 				);
 			}
 
@@ -913,7 +916,7 @@ export class UserService {
 		} catch (error) {
 			Logger.error('Error in updating fields: ', error);
 			throw new InternalServerErrorException(
-				'An unexpected error occurred while updating profile.',
+				'USER_PROFILE_UPDATE_FAILED',
 			);
 		}
 	}
@@ -1079,7 +1082,7 @@ export class UserService {
 					await this.userApplicationRepository.save(existingApplication);
 				return new SuccessResponse({
 					statusCode: HttpStatus.OK,
-					message: 'User application resubmitted successfully.',
+					message: 'USER_APPLICATION_UPDATED',
 					data: updated,
 				});
 			} else {
@@ -1091,14 +1094,14 @@ export class UserService {
 					await this.userApplicationRepository.save(userApplication);
 				return new SuccessResponse({
 					statusCode: HttpStatus.OK,
-					message: 'User application submitted successfully.',
+					message: 'USER_APPLICATION_SUBMITTED',
 					data: response,
 				});
 			}
 		} catch (error) {
 			console.error('Error while creating/updating user application:', error);
 			throw new InternalServerErrorException(
-				'Failed to create or update user application',
+				'USER_APPLICATIONS_UPDATE_FAILED',
 			);
 		}
 	}
@@ -1114,7 +1117,7 @@ export class UserService {
 		}
 		return new SuccessResponse({
 			statusCode: HttpStatus.OK,
-			message: 'User application retrieved successfully.',
+			message: 'DATA_RETRIEVED',
 			data: userApplication,
 		});
 	}
@@ -1154,7 +1157,7 @@ export class UserService {
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
-				message: 'User applications list retrieved successfully.',
+				message: 'DATA_RETRIEVED',
 				data: {
 					applications: userApplication,
 					total,
@@ -1164,7 +1167,7 @@ export class UserService {
 		} catch (error) {
 			console.error('Error while fetching user applications:', error);
 			throw new InternalServerErrorException(
-				'Failed to fetch user applications',
+				'USER_APPLICATIONS_FETCH_FAILED',
 			);
 		}
 	}
@@ -1516,7 +1519,7 @@ export class UserService {
 	async delete(req: any, doc_id: string) {
 		const IsValidUser = req?.user;
 		if (!IsValidUser) {
-			throw new UnauthorizedException('User is not authenticated');
+			throw new UnauthorizedException('AUTH_USER_NOT_AUTHENTICATED');
 		}
 		const sso_id = IsValidUser.keycloak_id;
 
@@ -1593,7 +1596,7 @@ export class UserService {
 
 		return new SuccessResponse({
 			statusCode: HttpStatus.OK,
-			message: 'Document deleted successfully',
+			message: 'DOCUMENT_DELETED',
 		});
 	}
 
@@ -1851,7 +1854,7 @@ export class UserService {
 
 			return {
 				success: true,
-				message: 'Watcher registered successfully',
+				message: 'HOUSEKEEPING_WATCHER_REGISTERED',
 				data: response.data,
 			};
 		} catch (error) {
@@ -1903,7 +1906,7 @@ export class UserService {
 
 			return {
 				success: true,
-				message: 'Watcher registered successfully',
+				message: 'HOUSEKEEPING_WATCHER_REGISTERED',
 				data: response.data,
 			};
 		} catch (error) {
@@ -2038,7 +2041,7 @@ export class UserService {
 		} catch (error) {
 			Logger.error(`Error while getting user applications: ${error}`);
 			throw new InternalServerErrorException(
-				'Failed to fetch user applications',
+				'USER_APPLICATIONS_FETCH_FAILED',
 			);
 		}
 	}
@@ -2094,7 +2097,7 @@ export class UserService {
 		});
 
 		if (!userApplication) {
-			throw new Error(`UserApplication not found for orderId: ${orderId}`);
+			throw new Error(JSON.stringify({ key: 'USER_APPLICATION_NOT_FOUND', params: { orderId } }));
 		}
 
 		const bppId = userApplication.benefit_provider_id;
@@ -2102,7 +2105,7 @@ export class UserService {
 		const transactionId = userApplication.transaction_id;
 		if (!bapId || !bapUri || !bppId || !bppUri || !transactionId) {
 			throw new Error(
-				'Missing required configuration for BAP/BPP or transaction_id not found in database',
+				'USER_ERROR_IN_QUERY_RUNNER',
 			);
 		}
 
@@ -2153,7 +2156,7 @@ export class UserService {
 			return parsedStatus; // { status: '...', comment: '...' }
 		} catch (error) {
 			console.error(`Error while getting status from response: ${error}`);
-			throw new Error('Error while getting status from response');
+			throw new Error('USER_STATUS_FETCH_FAILED');
 		}
 	}
 
@@ -2179,7 +2182,7 @@ export class UserService {
 			};
 		} catch (error) {
 			Logger.error(`Error while processing applications: ${error}`);
-			throw new InternalServerErrorException('Failed to process applications');
+			throw new InternalServerErrorException('USER_APPLICATIONS_FETCH_FAILED');
 		}
 	}
 
@@ -2219,7 +2222,7 @@ export class UserService {
 		} catch (error) {
 			Logger.error(`Error in update application statuses: ${error}`);
 			throw new InternalServerErrorException(
-				'Failed to update application statuses',
+				'USER_APPLICATIONS_UPDATE_FAILED',
 			);
 		}
 	}
@@ -2507,6 +2510,7 @@ export class UserService {
 		vcMapping: any,
 		uploadDocumentDto: UploadDocumentDto,
 		issuer: string,
+		req: any,
 	): Promise<{
 		fieldResults: Record<string, {
 			certificateValue: any;
@@ -2553,11 +2557,12 @@ export class UserService {
 			}
 
 			try {
-				const { passed, result } = this.processFieldMatching(
+				const { passed, result } = await this.processFieldMatching(
 					fieldName,
 					fieldConfig,
 					vcData,
 					userProfile,
+					req,
 				);
 
 				fieldResults[fieldName] = result;
@@ -2609,12 +2614,13 @@ export class UserService {
 	 * @param userProfile User profile data
 	 * @returns Field result with match information
 	 */
-	private processFieldMatching(
+	async processFieldMatching(
 		fieldName: string,
 		fieldConfig: any,
 		vcData: any,
 		userProfile: Record<string, any>,
-	): { passed: boolean; result: any } {
+		req: any,
+	): Promise<{ passed: boolean; result: any; }> {
 		const matchingConfig = fieldConfig.matching;
 
 		// Extract certificate value from VC data
@@ -2622,26 +2628,41 @@ export class UserService {
 
 		// Validate certificate value exists
 		if (certificateValue === null || certificateValue === undefined) {
-			throw new BadRequestException(
-				`Missing required field '${fieldName}' in VC data for matching`,
-			);
+			const errorMessage = await this.i18n.t('errors.MISSING_REQUIRED_FIELD_VC', {
+				args: { fieldName },
+				lang: req.headers['accept-language'] || 'en',
+			});
+
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
+
 		}
 
 		// Extract user profile value using compareWith field
 		const compareWithField = matchingConfig.compareWith;
 		if (!compareWithField) {
-			throw new BadRequestException(
-				`Missing 'compareWith' configuration for field '${fieldName}' in vcFields`,
-			);
+			const errorMessage = this.i18n.t('validation.MISSING_COMPARE_WITH_CONFIG', {
+				args: { fieldName }
+			});
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
 		}
 
 		const userValue = userProfile[compareWithField];
 
 		// Validate user profile value exists
 		if (userValue === null || userValue === undefined || userValue === '') {
-			throw new BadRequestException(
-				`Missing required field '${compareWithField}' in user profile for matching with '${fieldName}'`,
-			);
+			const errorMessage = this.i18n.t('validation.MISSING_REQUIRED_FIELD_PROFILE', {
+				args: { fieldName: compareWithField }
+			});
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
 		}
 
 		// Convert to strings for comparison
@@ -2690,6 +2711,7 @@ export class UserService {
 	 */
 	private async fetchUserProfileForMatching(
 		userId: string,
+
 	): Promise<Record<string, any>> {
 		// Fetch user entity data
 		const user = await this.userRepository.findOne({
@@ -2739,7 +2761,7 @@ export class UserService {
 	 */
 	private getVcDataSource(vcMapping: any, issuer: string): any {
 		if (!vcMapping?.mapped_data) {
-			throw new BadRequestException('VC mapping data is missing or invalid');
+			throw new BadRequestException('USER_VC_MAPPING_DATA_MISSING');
 		}
 
 		// For issueVC = "no", use credentialSubject
@@ -2840,6 +2862,7 @@ export class UserService {
 				vcMapping,
 				uploadDocumentDto,
 				issuer,
+				req,
 			);
 
 			// Verify document only for issueVC: "no" cases with QR code
@@ -2922,6 +2945,7 @@ export class UserService {
 		vcMapping: any,
 		uploadDocumentDto: UploadDocumentDto,
 		issuer: string,
+		req: any,
 	): Promise<any> {
 		try {
 			const matchingResult = await this.validateAndMatchVcFields(
@@ -2929,6 +2953,7 @@ export class UserService {
 				vcMapping,
 				uploadDocumentDto,
 				issuer,
+				req,
 			);
 
 			const passedFieldsCount = Object.values(matchingResult.fieldResults).filter(
@@ -3039,7 +3064,7 @@ export class UserService {
 		const vcData = qrProcessing?.processedData?.vcData;
 
 		if (!vcData) {
-			throw new Error('No VC data found in Dhiway QR processing result');
+			throw new Error('USER_NO_VC_DATA_FROM_QR');
 		}
 
 		// Use the VC data directly as the mapped data
@@ -3195,9 +3220,7 @@ export class UserService {
 
 		const spaceId = documentConfig?.spaceId;
 		if (!spaceId) {
-			throw new BadRequestException(
-				'Space ID is required for VC creation. Please configure spaceId in vcConfiguration.',
-			);
+			throw new BadRequestException('VC_SPACE_ID_REQUIRED');
 		}
 
 		// Note: Required field validation is now done before storage in uploadDocument()
@@ -3217,9 +3240,7 @@ export class UserService {
 		);
 
 		if (!vcCreationResult.success) {
-			throw new InternalServerErrorException(
-				vcCreationResult.message || 'Failed to create VC record',
-			);
+			throw new InternalServerErrorException(vcCreationResult.message || 'Failed to create VC record',);
 		}
 
 		Logger.log(
@@ -3424,18 +3445,14 @@ export class UserService {
 	// Helper to validate document type and subtype
 	public async validateDocumentType(uploadDocumentDto: UploadDocumentDto) {
 		if (!uploadDocumentDto.docType || uploadDocumentDto.docType.trim() === '') {
-			throw new BadRequestException(
-				'Document type is required and cannot be empty.',
-			);
+			throw new BadRequestException('VC_DOCUMENT_TYPE_REQUIRED');
 		}
 
 		if (
 			!uploadDocumentDto.docSubType ||
 			uploadDocumentDto.docSubType.trim() === ''
 		) {
-			throw new BadRequestException(
-				'Document subtype is required and cannot be empty.',
-			);
+			throw new BadRequestException('VC_DOCUMENT_SUBTYPE_REQUIRED');
 		}
 	}
 
@@ -3452,8 +3469,11 @@ export class UserService {
 			Logger.debug(`vcFields structure: ${JSON.stringify(vcFields, null, 2)}`);
 
 			if (!vcFields || !vcMapping) {
-				throw new BadRequestException(
-					'Cannot validate required fields: missing vcFields configuration or mapping data',
+				throw new ErrorResponse(
+					{
+						statusCode: HttpStatus.BAD_REQUEST,
+						errorMessage: 'VC_MISSING_VC_FIELDS_CONFIG',
+					},
 				);
 			}
 
@@ -3589,13 +3609,19 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 	): void {
 		const fieldList = allMissingRequired.join(', ');
-		const errorMessage =
-			`Missing required field(s): ${fieldList}. ` +
-			`Document Type: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}. ` +
-			`Please ensure these fields are clearly visible and readable in the document.`;
+		const errorMessage = this.i18n.t('validation.MISSING_REQUIRED_FIELDS_IN_DOCUMENT', {
+			args: {
+				fields: fieldList,
+				docType: uploadDocumentDto.docType,
+				docSubType: uploadDocumentDto.docSubType
+			}
+		});
 
 		Logger.error(`Document validation failed: ${errorMessage}`);
-		throw new BadRequestException(errorMessage);
+		throw new BadRequestException({
+			message: errorMessage,
+			statusCode: HttpStatus.BAD_REQUEST,
+		});
 	}
 
 	// Helper to validate file type when QR processing is required
@@ -3605,7 +3631,7 @@ export class UserService {
 	) {
 		if (requiresQRProcessing && mimetype === 'application/pdf') {
 			throw new BadRequestException(
-				'QR processing failed: PDF QR code extraction is not supported. Please upload an image with a QR code.',
+				'QR_PDF_NOT_SUPPORTED'
 			);
 		}
 	}
@@ -3744,7 +3770,7 @@ export class UserService {
 		if (extractedData.fullText.length === 0) {
 			Logger.error(`OCR validation failed: No text extracted from document`);
 			throw new BadRequestException(
-				'Document validation failed: No readable text found in the uploaded document. Please ensure the document contains clear, readable text and try again.',
+				'OCR_TEXT_EXTRACTION_FAILED'
 			);
 		}
 
@@ -3752,9 +3778,7 @@ export class UserService {
 			Logger.error(
 				`OCR validation failed: Very low confidence (${extractedData.confidence}%)`,
 			);
-			throw new BadRequestException(
-				'Document validation failed: The document quality is too poor for reliable text extraction. Please upload a clearer, higher-quality image or document.',
-			);
+
 		}
 	}
 
@@ -3766,7 +3790,7 @@ export class UserService {
 		}
 
 		throw new InternalServerErrorException(
-			`Document processing failed: ${ocrError.message}`,
+			'OCR_PROCESSING_FAILED'
 		);
 	}
 

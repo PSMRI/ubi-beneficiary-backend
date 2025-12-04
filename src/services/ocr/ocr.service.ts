@@ -49,7 +49,7 @@ export class OcrService {
     try {
       // Validate file buffer
       if (!fileBuffer || fileBuffer.length === 0) {
-        throw new BadRequestException('File buffer is empty or invalid');
+        throw new BadRequestException('OCR_FILE_BUFFER_EMPTY');
       }
 
       // Check if file type is supported
@@ -73,7 +73,7 @@ export class OcrService {
       // If QR processing found a document, extract text from the downloaded document
       if (qrProcessingResult?.downloadedDocument) {
         this.logger.log('QR code found with document URL - processing downloaded document');
-        
+
         const qrResult = await this.textExtractor.extractText(
           qrProcessingResult.downloadedDocument.buffer,
           qrProcessingResult.downloadedDocument.mimeType,
@@ -89,7 +89,7 @@ export class OcrService {
       // Return the QR content as text without trying to OCR the image
       if (qrProcessingResult?.qrCodeDetected && qrProcessingResult?.qrCodeContent) {
         this.logger.log('QR code detected with data content (no document URL) - returning QR content');
-        
+
         return {
           fullText: qrProcessingResult.qrCodeContent,
           confidence: 100, // QR detection is certain
@@ -105,7 +105,7 @@ export class OcrService {
       // Check if QR processing was required but failed
       if (qrProcessingResult?.error && qrProcessingResult?.isRequired) {
         this.logger.error(`QR processing failed for required document: ${qrProcessingResult.error}`);
-        
+
         // Provide user-friendly error messages based on error type
         let userMessage = '';
         if (qrProcessingResult.errorType === 'QR_NOT_FOUND') {
@@ -115,8 +115,8 @@ export class OcrService {
         } else {
           userMessage = 'This document requires a valid QR code for processing';
         }
-        
-        throw new BadRequestException(userMessage);
+
+        throw new BadRequestException('OCR_TEXT_EXTRACTION_FAILED');
       }
 
       // Log QR processing issues but don't fail - allow fallback to original document
@@ -160,7 +160,7 @@ export class OcrService {
     try {
       // Validate file buffer
       if (!fileBuffer || fileBuffer.length === 0) {
-        throw new BadRequestException('File buffer is empty or invalid');
+        throw new BadRequestException('OCR_FILE_BUFFER_EMPTY');
       }
 
       // Check if file type is supported

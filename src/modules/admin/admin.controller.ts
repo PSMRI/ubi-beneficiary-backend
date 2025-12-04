@@ -20,9 +20,9 @@ import {
 	ApiQuery,
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
-import { 
-	ConfigKeyDto, 
-	CreateOrUpdateConfigDto, 
+import {
+	ConfigKeyDto,
+	CreateOrUpdateConfigDto,
 	ConfigResponseDto,
 	GetIssuersQueryDto,
 	GetIssuersResponseDto,
@@ -40,7 +40,7 @@ import { UserRole } from 'src/common/enums/roles.enum';
 @Controller('admin')
 @ApiBearerAuth('access-token')
 export class AdminController {
-	constructor(private readonly adminService: AdminService) {}
+	constructor(private readonly adminService: AdminService) { }
 
 	/**
 	 * Create or update configuration
@@ -62,12 +62,12 @@ export class AdminController {
 				summary: 'Object Configuration',
 				value: {
 					key: 'documentTypeConfig',
-					value:{
+					value: {
 						"documentType": [
-						  "associationProof",
-						  "bankAccountProof",
-						  "birthProof",
-						  "casteProof",
+							"associationProof",
+							"bankAccountProof",
+							"birthProof",
+							"casteProof",
 						]
 					}
 				}
@@ -101,8 +101,8 @@ export class AdminController {
 			type: 'object',
 			properties: {
 				statusCode: { type: 'number', example: 400 },
-				error: { 
-					type: 'array', 
+				error: {
+					type: 'array',
 					items: { type: 'string' },
 					example: ['key must contain only letters, numbers, and underscores']
 				}
