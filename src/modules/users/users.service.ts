@@ -2510,6 +2510,7 @@ export class UserService {
 		vcMapping: any,
 		uploadDocumentDto: UploadDocumentDto,
 		issuer: string,
+		issueVC: string,
 		req: any,
 	): Promise<{
 		fieldResults: Record<string, {
@@ -2541,7 +2542,7 @@ export class UserService {
 		Logger.log(`User profile fetched with ${Object.keys(userProfile).length} fields`);
 
 		// Step 3: Determine VC data source based on issueVC
-		const vcData = this.getVcDataSource(vcMapping, issuer);
+		const vcData = this.getVcDataSource(vcMapping, issuer, issueVC);
 
 		Logger.log(`Using VC data source for issuer: ${issuer}`);
 
@@ -2759,15 +2760,13 @@ export class UserService {
 	 * @param issuer Issuer name
 	 * @returns VC data to use for matching
 	 */
-	private getVcDataSource(vcMapping: any, issuer: string): any {
+	private getVcDataSource(vcMapping: any, issuer: string, issueVC: string): any {
 		if (!vcMapping?.mapped_data) {
 			throw new BadRequestException('USER_VC_MAPPING_DATA_MISSING');
 		}
 
 		// For issueVC = "no", use credentialSubject
-
-		if (issuer.toLowerCase() === 'dhiway') {
-			console.log("vcMapping.mapped_data", vcMapping.mapped_data);
+		if (issuer.toLowerCase() === 'dhiway' && issueVC === 'no') {
 
 			if (!vcMapping.mapped_data.credentialSubject) {
 				throw new BadRequestException(
@@ -2862,6 +2861,7 @@ export class UserService {
 				vcMapping,
 				uploadDocumentDto,
 				issuer,
+				issueVC,
 				req,
 			);
 
@@ -2945,6 +2945,7 @@ export class UserService {
 		vcMapping: any,
 		uploadDocumentDto: UploadDocumentDto,
 		issuer: string,
+		issueVC: string,
 		req: any,
 	): Promise<any> {
 		try {
@@ -2953,6 +2954,7 @@ export class UserService {
 				vcMapping,
 				uploadDocumentDto,
 				issuer,
+				issueVC,
 				req,
 			);
 
