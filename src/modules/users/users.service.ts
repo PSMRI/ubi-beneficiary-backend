@@ -2831,6 +2831,7 @@ export class UserService {
 					vcFields,
 					vcMapping,
 					uploadDocumentDto,
+					issueVC,
 				);
 			} else {
 				Logger.warn(
@@ -3473,6 +3474,7 @@ export class UserService {
 		vcFields: VcFields,
 		vcMapping: any,
 		uploadDocumentDto: UploadDocumentDto,
+		issueVC?: string,
 	) {
 		try {
 			Logger.log(
@@ -3490,6 +3492,7 @@ export class UserService {
 				vcFields,
 				vcMapping,
 				uploadDocumentDto,
+				issueVC,
 			);
 			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
@@ -3516,6 +3519,7 @@ export class UserService {
 		vcFields: VcFields,
 		vcMapping: any,
 		uploadDocumentDto?: UploadDocumentDto,
+		issueVC?: string,
 	): string[] {
 		const missingFields = vcMapping.missing_fields || [];
 		Logger.log(
@@ -3532,6 +3536,7 @@ export class UserService {
 				vcMapping,
 				missingRequiredFields,
 				uploadDocumentDto,
+				issueVC,
 			);
 
 		return [...missingRequiredFields, ...additionalMissingRequired];
@@ -3556,6 +3561,7 @@ export class UserService {
 		vcMapping: any,
 		missingRequiredFields: string[],
 		uploadDocumentDto?: UploadDocumentDto,
+		issueVC?: string,
 	): string[] {
 		const additionalMissingRequired: string[] = [];
 		const issuer = uploadDocumentDto?.issuer?.toLowerCase();
@@ -3563,15 +3569,15 @@ export class UserService {
 		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
 			// Only check required document fields (exclude fields with document_field: false)
 			if (fieldConfig?.required === true && fieldConfig?.document_field !== false) {
-				// Handle Dhiway case where data is in credentialSubject
+				// Get field value from mapped_data
 				let fieldValue = vcMapping.mapped_data?.[fieldName];
 
-				// Check if this is Dhiway issuer and data might be in credentialSubject
-				if (issuer === 'dhiway' && this.isFieldValueEmpty(fieldValue)) {
-					// Try to get value from credentialSubject
+				// Only check credentialSubject for Dhiway when issueVC is 'no' (existing VC verification case)
+				if (issuer === 'dhiway' && issueVC === 'no' && this.isFieldValueEmpty(fieldValue)) {
+					// Try to get value from credentialSubject (only for issueVC='no' case)
 					fieldValue = vcMapping.mapped_data?.credentialSubject?.[fieldName];
 					Logger.debug(
-						`Dhiway issuer: Checking field '${fieldName}' in credentialSubject - found: ${!this.isFieldValueEmpty(fieldValue)}`,
+						`Dhiway issuer (issueVC='no'): Checking field '${fieldName}' in credentialSubject - found: ${!this.isFieldValueEmpty(fieldValue)}`,
 					);
 				}
 

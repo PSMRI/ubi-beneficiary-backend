@@ -261,8 +261,20 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 		const { originalDocFieldName, beneficiaryUserIdFieldName } = this.extractFieldNames(vcFields);
 
 		this.appendMappedData(formData, mappedData);
-		this.attachOriginalFile(formData, originalFile, originalDocFieldName);
-		this.attachUserId(formData, userId, beneficiaryUserIdFieldName);
+		
+		// Only attach original file if original_document field exists in vcFields with proper configuration
+		if (originalDocFieldName && this.hasValidOriginalDocumentConfig(vcFields, originalDocFieldName)) {
+			this.attachOriginalFile(formData, originalFile, originalDocFieldName);
+		} else if (originalFile) {
+			this.logger.debug(`Original file not attached - original_document field not present or not properly configured in vcFields`);
+		}
+		
+		// Only attach userId if beneficiary_user_id field exists in vcFields with proper configuration
+		if (beneficiaryUserIdFieldName && this.hasValidBeneficiaryUserIdConfig(vcFields, beneficiaryUserIdFieldName)) {
+			this.attachUserId(formData, userId, beneficiaryUserIdFieldName);
+		} else if (userId) {
+			this.logger.debug(`User ID not attached - beneficiary_user_id field not present or not properly configured in vcFields`);
+		}
 
 		return formData;
 	}
@@ -311,8 +323,6 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 		originalFile?: Express.Multer.File,
 		originalDocFieldName?: string | null,
 	): void {
-		this.logger.debug(`Checking file attachment - originalFile present: ${!!originalFile}, fieldName: '${originalDocFieldName}'`);
-		
 		if (originalFile && originalDocFieldName) {
 			formData.append(originalDocFieldName, originalFile.buffer, {
 				filename: originalFile.originalname,
@@ -321,31 +331,81 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			this.logger.log(
 				`✓ Original file attached to '${originalDocFieldName}' field: ${originalFile.originalname} (${originalFile.mimetype}, ${originalFile.size} bytes)`,
 			);
-		} else if (originalFile && !originalDocFieldName) {
-			this.logger.error(
-				`✗ Original file provided but no field with role 'original_document' found in vcFields config - FILE WILL NOT BE ATTACHED!`,
-			);
-		} else if (!originalFile && originalDocFieldName) {
-			this.logger.warn(
-				`Field '${originalDocFieldName}' configured for original document but no file provided`,
-			);
 		}
+	}
+
+	/**
+	 * Check if vcFields contains valid original_document configuration
+	 * @param vcFields - VcFields configuration
+	 * @param originalDocFieldName - Field name with original_document role
+	 * @returns True if field has type="file", required=true, and role="original_document"
+	 */
+	private hasValidOriginalDocumentConfig(
+		vcFields?: Record<string, any>,
+		originalDocFieldName?: string | null,
+	): boolean {
+		if (!vcFields || !originalDocFieldName) {
+			return false;
+		}
+
+		const fieldConfig = vcFields[originalDocFieldName];
+		
+		if (!fieldConfig) {
+			this.logger.debug(`Field '${originalDocFieldName}' not found in vcFields`);
+			return false;
+		}
+
+		const hasValidType = fieldConfig.type === 'file';
+		const hasValidRequired = fieldConfig.required === true;
+		const hasValidRole = fieldConfig.role === 'original_document';
+
+		this.logger.debug(
+			`Validating original_document field '${originalDocFieldName}': type='${fieldConfig.type}' (valid: ${hasValidType}), required=${fieldConfig.required} (valid: ${hasValidRequired}), role='${fieldConfig.role}' (valid: ${hasValidRole})`,
+		);
+
+		return hasValidType && hasValidRequired && hasValidRole;
+	}
+
+	/**
+	 * Check if vcFields contains valid beneficiary_user_id configuration
+	 * @param vcFields - VcFields configuration
+	 * @param beneficiaryUserIdFieldName - Field name with beneficiary_user_id role
+	 * @returns True if field has type="string", required=true, and role="beneficiary_user_id"
+	 */
+	private hasValidBeneficiaryUserIdConfig(
+		vcFields?: Record<string, any>,
+		beneficiaryUserIdFieldName?: string | null,
+	): boolean {
+		if (!vcFields || !beneficiaryUserIdFieldName) {
+			return false;
+		}
+
+		const fieldConfig = vcFields[beneficiaryUserIdFieldName];
+		
+		if (!fieldConfig) {
+			this.logger.debug(`Field '${beneficiaryUserIdFieldName}' not found in vcFields`);
+			return false;
+		}
+
+		const hasValidType = fieldConfig.type === 'string';
+		const hasValidRequired = fieldConfig.required === true;
+		const hasValidRole = fieldConfig.role === 'beneficiary_user_id';
+
+		this.logger.debug(
+			`Validating beneficiary_user_id field '${beneficiaryUserIdFieldName}': type='${fieldConfig.type}' (valid: ${hasValidType}), required=${fieldConfig.required} (valid: ${hasValidRequired}), role='${fieldConfig.role}' (valid: ${hasValidRole})`,
+		);
+
+		return hasValidType && hasValidRequired && hasValidRole;
 	}
 
 	private attachUserId(
 		formData: FormData,
 		userId?: string,
-		beneficiaryUserIdFieldName?: string | null,
+		beneficiaryUserIdFieldName?: string,
 	): void {
-		this.logger.debug(`Checking user ID - userId present: ${!!userId}, fieldName: '${beneficiaryUserIdFieldName}'`);
-		
 		if (userId && beneficiaryUserIdFieldName) {
 			formData.append(beneficiaryUserIdFieldName, userId);
 			this.logger.log(`✓ Beneficiary user ID attached to '${beneficiaryUserIdFieldName}' field: ${userId}`);
-		} else if (userId && !beneficiaryUserIdFieldName) {
-			this.logger.error(
-				`✗ User ID provided but no field with role 'beneficiary_user_id' found in vcFields config - USER ID WILL NOT BE ATTACHED!`,
-			);
 		}
 	}
 
