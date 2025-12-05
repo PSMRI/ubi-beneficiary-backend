@@ -41,6 +41,7 @@ import { VcFieldsService, VcFields } from '../../common/helper/vcFieldService';
 import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
 import * as stringSimilarity from 'string-similarity';
 import { I18nService } from 'src/common/services/i18n.service';
+import { VcProcessingService } from './services/vc-processing.service';
 
 type StatusUpdateInfo = {
 	attempted: boolean;
@@ -117,6 +118,7 @@ export class UserService {
 		private readonly vcFieldsService: VcFieldsService,
 		private readonly vcAdapterFactory: VcAdapterFactory,
 		private readonly i18n: I18nService,
+		private readonly vcProcessingService: VcProcessingService,
 	) { }
 
 	/*  async create(createUserDto: CreateUserDto) {
@@ -4026,113 +4028,54 @@ export class UserService {
 	}
 
 	/**
-	* Process VC event using adapter approach
-	* Common logic for all issuers - delegates complex processing to adapter
-	* @param publicId - The public ID (UUID) from the event payload
-	* @param status - The status from event (issued, revoked, deleted)
-	* @param timestamp - Optional timestamp from event
-	* @returns Success response with updated document details
-	*/
+	 * Process VC event - API endpoint wrapper
+	 * Uses shared VcProcessingService to avoid code duplication
+	 * @param publicId - The public ID (UUID) from the event payload
+	 * @param status - The status from event (issued, revoked, deleted)
+	 * @param timestamp - Optional timestamp from event
+	 * @returns HTTP response (SuccessResponse or ErrorResponse)
+	 */
 	async processVcEvent(
 		publicId: string,
 		status: 'issued' | 'revoked' | 'deleted',
 		timestamp?: string,
 	): Promise<SuccessResponse | ErrorResponse> {
 		try {
-			Logger.log(`Processing VC event for public ID: ${publicId}, status: ${status}`);
+			Logger.log(`Processing VC event via API for public ID: ${publicId}, status: ${status}`);
 
-			// Find document by vc_public_id (exact match for faster lookup)
-			const userDoc = await this.userDocsRepository.findOne({
-				where: {
-					vc_public_id: publicId,
-					issuance_callback_registered: true,
-				},
-			});
-
-			if (!userDoc) {
-				Logger.warn(`No VC found for public ID: ${publicId}`);
-				return new ErrorResponse({
-					statusCode: HttpStatus.NOT_FOUND,
-					errorMessage: `No VC found for public ID: ${publicId}`,
-				});
-			}
-
-			Logger.log(`Found document ${userDoc.doc_id} for public ID ${publicId}`);
-
-			// Get issuer from document record (automatically determined)
-			const documentIssuer = userDoc.issuer;
-			if (!documentIssuer) {
-				Logger.error(`No issuer found in document ${userDoc.doc_id}`);
-				return new ErrorResponse({
-					statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-					errorMessage: `No issuer found for document ${userDoc.doc_id}`,
-				});
-			}
-
-			// Process event using adapter (handles all status-specific logic)
-			const callbackResult = await this.vcAdapterFactory.processCallback(
-				documentIssuer,
+			// Use shared service to process VC event
+			const result = await this.vcProcessingService.processVcEventInternal(
 				publicId,
 				status,
-				userDoc.doc_data_link,
+				timestamp,
 			);
 
-			if (!callbackResult.success) {
-				Logger.error(`Callback processing failed: ${callbackResult.message}`);
+			if (!result.success) {
+				// Determine appropriate HTTP status code based on error
+				const statusCode =
+					result.error?.includes('No VC found') ||
+					result.error?.includes('not found')
+						? HttpStatus.NOT_FOUND
+						: HttpStatus.INTERNAL_SERVER_ERROR;
+
 				return new ErrorResponse({
-					statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-					errorMessage: callbackResult.message || 'Callback processing failed',
+					statusCode,
+					errorMessage: result.error || 'Failed to process VC event',
 				});
 			}
 
-			// Update document based on callback result (common logic for all issuers)
-			if (callbackResult.status === 'issued') {
-				userDoc.doc_data = JSON.stringify(callbackResult.vcData) as any;
-				userDoc.doc_verified = null; // Will be set to true after verification API
-				userDoc.vc_status = 'issued';
-			} else if (callbackResult.status === 'revoked') {
-				// Keep the data but mark as revoked
-				userDoc.doc_verified = false;
-				userDoc.verified_at = null;
-				userDoc.vc_status = 'revoked';
-			} else if (callbackResult.status === 'deleted') {
-				// Remove data for deleted VCs
-				userDoc.doc_data = null;
-				userDoc.doc_verified = null;
-				userDoc.verified_at = null;
-				userDoc.vc_status = 'deleted';
-			}
-
-			userDoc.issuance_callback_registered = false;
-			userDoc.vc_status_updated_at = new Date(timestamp || new Date().toISOString());
-
-			const updatedDoc = await this.userDocsRepository.save(userDoc);
-			Logger.log(`Document ${updatedDoc.doc_id} updated with status: ${callbackResult.status}`);
-
-			// Verify document before profile update for issued status (issueVC: yes case)
-			// Verification API will set doc_verified = true and verified_at timestamp
-			if (callbackResult.status === 'issued') {
-				const verificationError = await this.verifyPublishedVc(updatedDoc, documentIssuer);
-				if (verificationError) {
-					return verificationError;
-				}
-			}
-
-			// Update profile for all successful callbacks (common logic)
-			// Profile needs to be updated regardless of status to reflect document changes
-			await this.updateUserProfileAfterCallback(updatedDoc, callbackResult.status);
-
+			// Convert internal result to HTTP response
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
-				message: `VC ${callbackResult.status} successfully`,
+				message: `VC ${result.data.status} successfully`,
 				data: {
-					doc_id: updatedDoc.doc_id,
-					user_id: updatedDoc.user_id,
-					public_id: publicId,
-					status: callbackResult.status,
-					issuer: documentIssuer,
-					verified: updatedDoc.doc_verified,
-					verified_at: updatedDoc.verified_at,
+					doc_id: result.data.doc_id,
+					user_id: result.data.user_id,
+					public_id: result.data.public_id,
+					status: result.data.status,
+					issuer: result.data.issuer,
+					verified: result.data.verified,
+					verified_at: result.data.verified_at,
 				},
 			});
 		} catch (error) {

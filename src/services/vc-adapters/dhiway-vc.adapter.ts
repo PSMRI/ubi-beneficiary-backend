@@ -44,20 +44,21 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 		try {
 			this.logger.log(`Processing ${status} callback for Dhiway public ID: ${publicId}`);
 
-			if (status === 'issued') {
+			// Fetch VC data from doc_data_link for issued and revoked (to get updated doc_data)
+			if (status === 'issued' || status === 'revoked') {
 				// Fetch VC data from Dhiway .vc URL
 				const vcData = await this.fetchVcDataAfterPublish(publicId, docDataLink);
 				
-				this.logSuccess('Issue callback processing', { publicId });
+				this.logSuccess(`${status} callback processing`, { publicId });
 				
 				return {
 					success: true,
-					status: 'issued',
+					status: status,
 					vcData: vcData,
-					message: 'VC issued successfully',
+					message: `VC ${status} successfully`,
 				};
 			} else {
-				// For revoked, deleted - no need to fetch VC data
+				// For deleted - no need to fetch VC data
 				this.logSuccess(`${status} callback processing`, { publicId });
 				
 				return {
