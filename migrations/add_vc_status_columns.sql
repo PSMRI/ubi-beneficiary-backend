@@ -43,7 +43,7 @@ UPDATE user_docs
 SET vc_status = 'pending', 
     vc_status_updated_at = uploaded_at
 WHERE vc_public_id IS NOT NULL 
-  AND issuance_callback_registered = true
+  AND issuance_callback_registered
   AND vc_status IS NULL;
 
 -- Update existing verified VC documents to 'issued' and set verification timestamp
@@ -52,11 +52,11 @@ SET vc_status = 'issued',
     vc_status_updated_at = uploaded_at,
     verified_at = COALESCE(verified_at, uploaded_at)
 WHERE vc_public_id IS NOT NULL 
-  AND doc_verified = true
+  AND doc_verified
   AND vc_status IS NULL;
 
 -- Set verified_at for already verified documents without VC (if not already set)
 UPDATE user_docs 
 SET verified_at = uploaded_at
-WHERE doc_verified = true
+WHERE doc_verified
   AND verified_at IS NULL;

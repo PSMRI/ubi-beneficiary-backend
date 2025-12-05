@@ -105,36 +105,15 @@ export class VcProcessingService {
 				`Adapter callback result: success=${callbackResult.success}, status=${callbackResult.status}, inputStatus=${status}`,
 			);
 
-			// Update document first - fetch doc_data from doc_data_link for issued and revoked
-			if (callbackResult.status === 'issued') {
-				// Update doc_data from fetched VC data
-				if (callbackResult.vcData) {
-					userDoc.doc_data = JSON.stringify(callbackResult.vcData) as any;
-				}
-				userDoc.vc_status = 'issued';
-				this.logger.log(`Setting vc_status to 'issued' for ${publicId}`);
-			} else if (callbackResult.status === 'revoked') {
-				// Update doc_data from fetched VC data (revoked VC still has data)
-				if (callbackResult.vcData) {
-					userDoc.doc_data = JSON.stringify(callbackResult.vcData) as any;
-				}
-				userDoc.vc_status = 'revoked';
-				this.logger.log(`Setting vc_status to 'revoked' for ${publicId}`);
-			} else if (callbackResult.status === 'deleted') {
-				// Remove data for deleted VCs
-				userDoc.doc_data = null;
-				userDoc.doc_verified = null;
-				userDoc.verified_at = null;
-				userDoc.vc_status = 'deleted';
-				this.logger.log(`Setting vc_status to 'deleted' for ${publicId}`);
-			} else {
-				this.logger.error(
-					`Unexpected callback status: ${callbackResult.status} for ${publicId}. Expected: issued, revoked, or deleted`,
-				);
-				return {
-					success: false,
-					error: `Unexpected callback status: ${callbackResult.status}`,
-				};
+			// Update document status based on callback result
+			const statusUpdateResult = this.updateDocumentStatus(
+				userDoc,
+				callbackResult.status,
+				callbackResult.vcData,
+				publicId,
+			);
+			if (!statusUpdateResult.success) {
+				return statusUpdateResult;
 			}
 
 			userDoc.vc_status_updated_at = new Date(
@@ -149,35 +128,15 @@ export class VcProcessingService {
 			// Save document first (before verification)
 			const updatedDoc = await this.userDocsRepository.save(userDoc);
 
-			// Reload document from database to verify status was persisted
-			const reloadedDoc = await this.userDocsRepository.findOne({
-				where: { doc_id: updatedDoc.doc_id },
-			});
-
-			// Verify status was saved correctly
-			if (reloadedDoc && reloadedDoc.vc_status !== callbackResult.status) {
-				this.logger.error(
-					`Status mismatch after save! Expected: ${callbackResult.status}, Saved: ${updatedDoc.vc_status}, Reloaded: ${reloadedDoc.vc_status} for ${publicId}`,
-				);
-			}
-
-			this.logger.log(
-				`Document ${updatedDoc.doc_id} updated with status: ${callbackResult.status}. Saved vc_status=${updatedDoc.vc_status}, Reloaded vc_status=${reloadedDoc?.vc_status}, vc_status_updated_at=${updatedDoc.vc_status_updated_at?.toISOString()}`,
-			);
+			// Verify and log status persistence
+			this.verifyStatusPersistence(updatedDoc, callbackResult.status, publicId);
 
 			// Verify document after updating doc_data (for issued and revoked)
-			// Verification will update doc_verified based on result
-			if (callbackResult.status === 'issued' || callbackResult.status === 'revoked') {
-				await this.verifyPublishedVc(updatedDoc, documentIssuer);
-				// Reload document to get updated verification status
-				const reloadedAfterVerification = await this.userDocsRepository.findOne({
-					where: { doc_id: updatedDoc.doc_id },
-				});
-				if (reloadedAfterVerification) {
-					updatedDoc.doc_verified = reloadedAfterVerification.doc_verified;
-					updatedDoc.verified_at = reloadedAfterVerification.verified_at;
-				}
-			}
+			await this.handleVerificationIfNeeded(
+				updatedDoc,
+				callbackResult.status,
+				documentIssuer,
+			);
 
 			// Update profile for all successful callbacks (common logic)
 			// Profile needs to be updated regardless of status to reflect document changes
@@ -207,6 +166,102 @@ export class VcProcessingService {
 				success: false,
 				error: error.message || 'Failed to process VC event',
 			};
+		}
+	}
+
+	/**
+	 * Update document status based on callback result
+	 * @param userDoc - The document to update
+	 * @param status - The callback status
+	 * @param vcData - Optional VC data from callback
+	 * @param publicId - The public ID for logging
+	 * @returns Result object indicating success or failure
+	 */
+	private updateDocumentStatus(
+		userDoc: UserDoc,
+		status: string,
+		vcData: any,
+		publicId: string,
+	): VcProcessingResult {
+		if (status === 'issued') {
+			if (vcData) {
+				userDoc.doc_data = JSON.stringify(vcData) as any;
+			}
+			userDoc.vc_status = 'issued';
+			this.logger.log(`Setting vc_status to 'issued' for ${publicId}`);
+		} else if (status === 'revoked') {
+			if (vcData) {
+				userDoc.doc_data = JSON.stringify(vcData) as any;
+			}
+			userDoc.vc_status = 'revoked';
+			this.logger.log(`Setting vc_status to 'revoked' for ${publicId}`);
+		} else if (status === 'deleted') {
+			userDoc.doc_data = null;
+			userDoc.doc_verified = null;
+			userDoc.verified_at = null;
+			userDoc.vc_status = 'deleted';
+			this.logger.log(`Setting vc_status to 'deleted' for ${publicId}`);
+		} else {
+			this.logger.error(
+				`Unexpected callback status: ${status} for ${publicId}. Expected: issued, revoked, or deleted`,
+			);
+			return {
+				success: false,
+				error: `Unexpected callback status: ${status}`,
+			};
+		}
+		return { success: true };
+	}
+
+	/**
+	 * Verify that status was persisted correctly after save
+	 * @param updatedDoc - The saved document
+	 * @param expectedStatus - The expected status
+	 * @param publicId - The public ID for logging
+	 */
+	private async verifyStatusPersistence(
+		updatedDoc: UserDoc,
+		expectedStatus: string,
+		publicId: string,
+	): Promise<void> {
+		const reloadedDoc = await this.userDocsRepository.findOne({
+			where: { doc_id: updatedDoc.doc_id },
+		});
+
+		if (reloadedDoc && reloadedDoc.vc_status !== expectedStatus) {
+			this.logger.error(
+				`Status mismatch after save! Expected: ${expectedStatus}, Saved: ${updatedDoc.vc_status}, Reloaded: ${reloadedDoc.vc_status} for ${publicId}`,
+			);
+		}
+
+		this.logger.log(
+			`Document ${updatedDoc.doc_id} updated with status: ${expectedStatus}. Saved vc_status=${updatedDoc.vc_status}, Reloaded vc_status=${reloadedDoc?.vc_status}, vc_status_updated_at=${updatedDoc.vc_status_updated_at?.toISOString()}`,
+		);
+	}
+
+	/**
+	 * Handle verification for issued or revoked statuses
+	 * @param updatedDoc - The updated document
+	 * @param status - The callback status
+	 * @param documentIssuer - The issuer of the document
+	 */
+	private async handleVerificationIfNeeded(
+		updatedDoc: UserDoc,
+		status: string,
+		documentIssuer: string,
+	): Promise<void> {
+		const needsVerification = status === 'issued' || status === 'revoked';
+		if (!needsVerification) {
+			return;
+		}
+
+		await this.verifyPublishedVc(updatedDoc, documentIssuer);
+		const reloadedAfterVerification = await this.userDocsRepository.findOne({
+			where: { doc_id: updatedDoc.doc_id },
+		});
+		if (reloadedAfterVerification) {
+			updatedDoc.doc_verified = reloadedAfterVerification.doc_verified;
+			updatedDoc.verified_at = reloadedAfterVerification.verified_at;
 		}
 	}
 
