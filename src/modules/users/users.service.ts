@@ -41,6 +41,7 @@ import { VcFieldsService, VcFields } from '../../common/helper/vcFieldService';
 import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
 import * as stringSimilarity from 'string-similarity';
 import { I18nService } from 'src/common/services/i18n.service';
+import { VcProcessingService } from './services/vc-processing.service';
 
 type StatusUpdateInfo = {
 	attempted: boolean;
@@ -117,6 +118,7 @@ export class UserService {
 		private readonly vcFieldsService: VcFieldsService,
 		private readonly vcAdapterFactory: VcAdapterFactory,
 		private readonly i18n: I18nService,
+		private readonly vcProcessingService: VcProcessingService,
 	) { }
 
 	/*  async create(createUserDto: CreateUserDto) {
@@ -2317,6 +2319,7 @@ export class UserService {
 		for (const userDoc of userDocs) {
 			userDoc.doc_data = JSON.stringify(updatedDocData) as any;
 			userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
+			userDoc.verified_at = new Date(); // Set verification timestamp
 
 			// Save the updated document
 			const updatedUserDoc = await this.userDocsRepository.save(userDoc);
@@ -2768,17 +2771,19 @@ export class UserService {
 		// For issueVC = "no", use credentialSubject
 		if (issuer.toLowerCase() === 'dhiway' && issueVC === 'no') {
 
-			if (!vcMapping.mapped_data.credentialSubject) {
-				throw new BadRequestException(
-					'credentialSubject not found in VC data for issueVC: no case',
-				);
+			// Only use credentialSubject if it exists (issueVC = "no" case)
+			if (vcMapping.mapped_data.credentialSubject) {
+				Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
+				return vcMapping.mapped_data.credentialSubject;
 			}
-			Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
-			return vcMapping.mapped_data.credentialSubject;
+			
+			// If credentialSubject doesn't exist, use mapped_data directly (issueVC = "yes" case)
+			Logger.log('Using vcMapping.mapped_data directly for issueVC: yes (no credentialSubject)');
+			return vcMapping.mapped_data;
 		}
 
-		// For issueVC = "yes", use mapped_data directly
-		Logger.log('Using vcMapping.mapped_data for issueVC: yes');
+		// For non-Dhiway issuers, use mapped_data directly
+		Logger.log('Using vcMapping.mapped_data for non-Dhiway issuer');
 		return vcMapping.mapped_data;
 	}
 
@@ -2847,6 +2852,7 @@ export class UserService {
 					vcFields,
 					vcMapping,
 					uploadDocumentDto,
+					issueVC,
 				);
 			} else {
 				Logger.warn(
@@ -2897,7 +2903,31 @@ export class UserService {
 				uploadDocumentDto,
 				vcMapping,
 				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
-			);		// Update profile based on documents
+			);
+
+			// Verify document before profile update for issueVC: "no" cases
+			// (Verification for issueVC: "yes" happens after VC callback when published)
+			if (issueVC === 'no' && vcMapping?.mapped_data) {
+				try {
+					Logger.log(`Verifying document before profile update for issueVC: no`);
+					await this.verifyDocumentData(vcMapping.mapped_data, issuer);
+					Logger.log(`Document verification successful before profile update`);
+					
+					// Update doc_verified and verified_at after successful verification
+					savedDoc.doc_verified = true;
+					savedDoc.verified_at = new Date();
+					await this.userDocsRepository.save(savedDoc);
+					Logger.log(`Document marked as verified: doc_id=${savedDoc.doc_id}`);
+				} catch (verifyError) {
+					Logger.error(`Document verification failed before profile update: ${verifyError.message}`);
+					return new ErrorResponse({
+						statusCode: HttpStatus.BAD_REQUEST,
+						errorMessage: verifyError.message || 'Document verification failed',
+					});
+				}
+			}
+
+			// Update profile based on documents
 			try {
 				await this.updateProfile(userDetails);
 				Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
@@ -3463,6 +3493,7 @@ export class UserService {
 		vcFields: VcFields,
 		vcMapping: any,
 		uploadDocumentDto: UploadDocumentDto,
+		issueVC?: string,
 	) {
 		try {
 			Logger.log(
@@ -3483,6 +3514,7 @@ export class UserService {
 				vcFields,
 				vcMapping,
 				uploadDocumentDto,
+				issueVC,
 			);
 			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
@@ -3509,6 +3541,7 @@ export class UserService {
 		vcFields: VcFields,
 		vcMapping: any,
 		uploadDocumentDto?: UploadDocumentDto,
+		issueVC?: string,
 	): string[] {
 		const missingFields = vcMapping.missing_fields || [];
 		Logger.log(
@@ -3525,6 +3558,7 @@ export class UserService {
 				vcMapping,
 				missingRequiredFields,
 				uploadDocumentDto,
+				issueVC,
 			);
 
 		return [...missingRequiredFields, ...additionalMissingRequired];
@@ -3549,6 +3583,7 @@ export class UserService {
 		vcMapping: any,
 		missingRequiredFields: string[],
 		uploadDocumentDto?: UploadDocumentDto,
+		issueVC?: string,
 	): string[] {
 		const additionalMissingRequired: string[] = [];
 		const issuer = uploadDocumentDto?.issuer?.toLowerCase();
@@ -3556,15 +3591,15 @@ export class UserService {
 		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
 			// Only check required document fields (exclude fields with document_field: false)
 			if (fieldConfig?.required === true && fieldConfig?.document_field !== false) {
-				// Handle Dhiway case where data is in credentialSubject
+				// Get field value from mapped_data
 				let fieldValue = vcMapping.mapped_data?.[fieldName];
 
-				// Check if this is Dhiway issuer and data might be in credentialSubject
-				if (issuer === 'dhiway' && this.isFieldValueEmpty(fieldValue)) {
-					// Try to get value from credentialSubject
+				// Only check credentialSubject for Dhiway when issueVC is 'no' (existing VC verification case)
+				if (issuer === 'dhiway' && issueVC === 'no' && this.isFieldValueEmpty(fieldValue)) {
+					// Try to get value from credentialSubject (only for issueVC='no' case)
 					fieldValue = vcMapping.mapped_data?.credentialSubject?.[fieldName];
 					Logger.debug(
-						`Dhiway issuer: Checking field '${fieldName}' in credentialSubject - found: ${!this.isFieldValueEmpty(fieldValue)}`,
+						`Dhiway issuer (issueVC='no'): Checking field '${fieldName}' in credentialSubject - found: ${!this.isFieldValueEmpty(fieldValue)}`,
 					);
 				}
 
@@ -3824,8 +3859,26 @@ export class UserService {
 		existingDoc.uploaded_at = uploadResult.uploadedAt;
 		existingDoc.doc_data = metadata.docData;
 		existingDoc.doc_verified = false;
+		existingDoc.verified_at = null; // Reset verification timestamp on document update
 		existingDoc.doc_data_link = metadata.docDataLink;
-
+		existingDoc.issuance_callback_registered = issueVC === 'yes'; // true for VC creation, false for direct upload
+		existingDoc.vc_status = issueVC === 'yes' ? 'pending' : null; // Reset to 'pending' for VC, null for non-VC
+		existingDoc.vc_status_updated_at = issueVC === 'yes' ? new Date() : null;
+		
+		// Extract and store vc_public_id from verification URL using adapter
+		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
+			const adapter = this.vcAdapterFactory.getAdapter(issuer);
+			if (adapter) {
+				const publicId = adapter.extractPublicId(metadata.docDataLink);
+				if (publicId) {
+					existingDoc.vc_public_id = publicId;
+					Logger.log(`Extracted and stored vc_public_id: ${publicId} using ${issuer} adapter`);
+				} else {
+					Logger.warn(`Could not extract public ID from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				}
+			}
+		}
+		
 		if (issuer) {
 			existingDoc.issuer = issuer;
 		}
@@ -3858,6 +3911,20 @@ export class UserService {
 			docDataLink,
 		);
 
+		// Extract vc_public_id from verification URL if VC creation using adapter
+		let vcPublicId: string | null = null;
+		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
+			const adapter = this.vcAdapterFactory.getAdapter(issuer);
+			if (adapter) {
+				vcPublicId = adapter.extractPublicId(metadata.docDataLink);
+				if (vcPublicId) {
+					Logger.log(`Extracted vc_public_id: ${vcPublicId} from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				} else {
+					Logger.warn(`Could not extract public ID from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				}
+			}
+		}
+
 		const newUserDoc = this.userDocsRepository.create({
 			user_id: userId,
 			doc_type: uploadDocumentDto.docType,
@@ -3868,15 +3935,81 @@ export class UserService {
 			doc_data: metadata.docData,
 			doc_datatype: metadata.docDatatype,
 			doc_verified: false,
+			verified_at: null,
 			watcher_registered: false,
 			watcher_email: null,
 			watcher_callback_url: null,
 			doc_data_link: metadata.docDataLink,
+			vc_public_id: vcPublicId,
 			issuer: issuer || null,
+			issuance_callback_registered: issueVC === 'yes', // true for VC creation, false for direct upload
+			vc_status: issueVC === 'yes' ? 'pending' : null, // Set to 'pending' for VC documents, null for non-VC
+			vc_status_updated_at: issueVC === 'yes' ? new Date() : null,
 		});
 
 		const savedDoc = await this.userDocsRepository.save(newUserDoc);
 		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
 		return { savedDoc, isUpdate: false };
 	}
+
+	/**
+	 * Process VC event - API endpoint wrapper
+	 * Uses shared VcProcessingService to avoid code duplication
+	 * @param publicId - The public ID (UUID) from the event payload
+	 * @param status - The status from event (issued, revoked, deleted)
+	 * @param timestamp - Optional timestamp from event
+	 * @returns HTTP response (SuccessResponse or ErrorResponse)
+	 */
+	async processVcEvent(
+		publicId: string,
+		status: 'issued' | 'revoked' | 'deleted',
+		timestamp?: string,
+	): Promise<SuccessResponse | ErrorResponse> {
+		try {
+			Logger.log(`Processing VC event via API for public ID: ${publicId}, status: ${status}`);
+
+			// Use shared service to process VC event
+			const result = await this.vcProcessingService.processVcEventInternal(
+				publicId,
+				status,
+				timestamp,
+			);
+
+			if (!result.success) {
+				// Determine appropriate HTTP status code based on error
+				const statusCode =
+					result.error?.includes('No VC found') ||
+					result.error?.includes('not found')
+						? HttpStatus.NOT_FOUND
+						: HttpStatus.INTERNAL_SERVER_ERROR;
+
+				return new ErrorResponse({
+					statusCode,
+					errorMessage: result.error || 'Failed to process VC event',
+				});
+			}
+
+			// Convert internal result to HTTP response
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: `VC ${result.data.status} successfully`,
+				data: {
+					doc_id: result.data.doc_id,
+					user_id: result.data.user_id,
+					public_id: result.data.public_id,
+					status: result.data.status,
+					issuer: result.data.issuer,
+					verified: result.data.verified,
+					verified_at: result.data.verified_at,
+				},
+			});
+		} catch (error) {
+			Logger.error(`Error processing VC event: ${error.message}`, error.stack);
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message || 'Failed to process VC event',
+			});
+		}
+	}
 }
+

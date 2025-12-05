@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { MulterModule } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UserController } from '@modules/users/users.controller';
@@ -24,9 +25,15 @@ import { ConfigModule } from '@nestjs/config';
 import { UPLOAD_CONFIG } from '../../config/upload.config';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
 import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
+import { CronState } from './entities/cron-state.entity';
+import { VcEventProcessingLog } from './entities/vc-event-processing-log.entity';
+import { VcProcessingService } from './services/vc-processing.service';
+import { DhiwayAnalyticsService } from '@services/dhiway-analytics/dhiway-analytics.service';
+import { DhiwayVcProcessingCron } from './crons/dhiway-vc-processing.cron';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([
       User,
       UserDoc,
@@ -34,6 +41,8 @@ import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
       UserApplication,
       Field,
       FieldValue,
+      CronState,
+      VcEventProcessingLog,
     ]),
     MulterModule.register({
       // Memory storage is secure here because:
@@ -76,7 +85,10 @@ import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
     ProxyService,
     ConfigModule,
     VcFieldsService,
+    VcProcessingService,
+    DhiwayAnalyticsService,
+    DhiwayVcProcessingCron,
   ],
-   exports: [UserService],
+   exports: [UserService, VcProcessingService],
 })
 export class UserModule {}

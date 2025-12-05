@@ -41,6 +41,7 @@ import { WalletCallbackDto } from './dto/wallet-callback.dto';
 import { UploadDocDTO } from './dto/upload-doc.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
+import { VcCallbackDto } from './dto/vc-callback.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -449,4 +450,49 @@ export class UserController {
       );
     }
   }
+
+  @Post('/vc/process-event')
+  @ApiOperation({ 
+    summary: 'Handle VC event',
+    description: 'Processes VC status change events (issued, revoked, deleted) and updates document data. Issuer is automatically determined from the document record using adapter approach.'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'VC callback processed successfully',
+    schema: {
+      example: {
+        success: true,
+        statusCode: 200,
+        message: 'VC issued successfully',
+        data: {
+          doc_id: '0bf1e149-1dd0-4899-b42a-f77255a86fde',
+          user_id: '82192ec3-6897-4288-ab8e-f8a191b0445c',
+          public_id: 'ff8f29d1-8ba5-49a3-bcc2-0e277f7c1790',
+          status: 'issued',
+          issuer: 'dhiway',
+          verified: true,
+          verified_at: '2025-12-01T10:30:00Z'
+        }
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 'No VC found for the given public ID' 
+  })
+  @ApiResponse({ 
+    status: 500, 
+    description: 'Internal server error' 
+  })
+  async handleVcEvent(@Body() callbackDto: VcCallbackDto) {
+    Logger.log(`Received VC event: ${JSON.stringify(callbackDto)}`);
+    
+    // Process event - issuer will be determined from document record using adapter approach
+    return await this.userService.processVcEvent(
+      callbackDto.publicId,
+      callbackDto.status,
+      callbackDto.timestamp
+    );
+  }
+
 }

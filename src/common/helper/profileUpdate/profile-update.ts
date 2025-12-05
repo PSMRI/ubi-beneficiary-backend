@@ -299,7 +299,7 @@ export default class ProfilePopulator {
       middleName: profile?.middleName,
       phoneNumber: profile?.phoneNumber,
       email: profile?.email,
-      dob: profile?.dob,
+      dob: profile?.dob ? new Date(this.formatDateToISO(profile.dob)) : null,
     };
     // update added fields
     const fieldList = await this.customFieldsService.findFields({
