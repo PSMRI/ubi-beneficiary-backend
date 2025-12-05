@@ -137,7 +137,7 @@ export class I18nExceptionFilter implements ExceptionFilter {
         response.status(status).json({
             statusCode: status,
             message: translatedMessage,
-            error: translatedMessage,
+            error: message,
         });
     }
 }
