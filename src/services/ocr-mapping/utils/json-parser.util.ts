@@ -120,6 +120,11 @@ export class JsonParserUtil {
    * Extract JSON from various Bedrock model response formats
    */
   private static extractFromBedrockFormats(parsed: any): Record<string, any> | null {
+    // OpenAI format: { choices: [{ message: { content: "..." } }] }
+    if (parsed.choices && Array.isArray(parsed.choices) && parsed.choices[0]?.message?.content) {
+      return this.extractJsonFromText(parsed.choices[0].message.content);
+    }
+    
     // Meta Llama format: { generation: "..." }
     if (parsed.generation && typeof parsed.generation === 'string') {
       return this.extractJsonFromText(parsed.generation);
@@ -146,7 +151,7 @@ export class JsonParserUtil {
     }
     
     // Some models return the JSON directly
-    const knownFields = ['generated_text', 'completion', 'generation', 'content', 'results'];
+    const knownFields = ['choices', 'generated_text', 'completion', 'generation', 'content', 'results'];
     const hasKnownFields = knownFields.some(field => field in parsed);
     
     if (hasKnownFields) {

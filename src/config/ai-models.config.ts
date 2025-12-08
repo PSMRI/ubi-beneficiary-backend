@@ -16,13 +16,59 @@ export interface AIModelConfig {
   validationMaxTokens?: number;     // Max tokens for validation
 }
 
+export type BedrockModelType = 'claude' | 'openai' | 'llama';
+
 export interface BedrockModelConfig {
   modelId: string;                  // AWS Bedrock model identifier
+  modelType: BedrockModelType;      // Detected model family
   temperature: number;              // Randomness control (0.0-1.0)
   maxTokens: number;                // Maximum response tokens
   maxGenLen: number;                // Maximum generation length (Llama-specific)
   topP: number;                     // Nucleus sampling parameter
   timeout: number;                  // Request timeout in milliseconds
+  anthropicVersion?: string;        // Optional: Only required for Claude models
+}
+
+/**
+ * Detect model family from model ID using prefix matching
+ * New versions automatically work (e.g., claude-5, gpt-6, llama4)
+ */
+function detectModelFamily(modelId: string): BedrockModelType {
+  const id = modelId.toLowerCase();
+  
+  if (id.startsWith('anthropic.claude')) return 'claude';
+  if (id.startsWith('openai.gpt')) return 'openai';
+  if (id.startsWith('meta.llama')) return 'llama';
+  
+  // Default fallback to llama format
+  return 'llama';
+}
+
+/**
+ * Get optimal defaults based on model family
+ * To support new model family: add case here + buildRequest() in adapter
+ */
+function getModelDefaults(modelFamily: BedrockModelType) {
+  const defaults: Record<BedrockModelType, { maxTokens: number; temperature: number; topP: number; anthropicVersion?: string }> = {
+    claude: {
+      maxTokens: 4096,
+      temperature: 0.1,
+      topP: 0.9,
+      anthropicVersion: 'bedrock-2023-05-31',
+    },
+    openai: {
+      maxTokens: 4096, //change to 2048 or 4096 or 8,192  as needed
+      temperature: 0.1,
+      topP: 0.9,
+    },
+    llama: {
+      maxTokens: 2048,
+      temperature: 0.1,
+      topP: 0.9,
+    },
+  };
+  
+  return defaults[modelFamily];
 }
 
 
@@ -49,26 +95,43 @@ export const GEMINI_CONFIG = {
   },
 } as const;
 
-// AWS Bedrock (Llama) configurations for OCR and mapping
-// NOTE: Llama 3 8B has a maximum of 2048 tokens for max_gen_len
+// AWS Bedrock configurations for OCR and mapping
+// Supports multiple models: Claude, OpenAI, Llama - just change OCR_MAPPING_BEDROCK_MODEL_ID
+// Model-specific parameters are automatically configured
 export const BEDROCK_CONFIG = {
-  ocr: {
-    modelId: process.env.OCR_BEDROCK_MODEL_ID || 'meta.llama3-8b-instruct-v1:0',
-    temperature: 0.1,        // Low randomness for consistent extraction
-    maxTokens: 2048,
-    maxGenLen: 2048,
-    topP: 1,                 // Full sampling for complete text
-    timeout: 60000,
-  },
+  ocr: (() => {
+    const modelId = process.env.OCR_BEDROCK_MODEL_ID || 'meta.llama3-8b-instruct-v1:0';
+    const modelType = detectModelFamily(modelId);
+    const defaults = getModelDefaults(modelType);
+    
+    return {
+      modelId,
+      modelType,
+      temperature: 0.1,
+      maxTokens: 2048,
+      maxGenLen: 2048,
+      topP: 1,
+      timeout: 60000,
+      ...(defaults.anthropicVersion && { anthropicVersion: defaults.anthropicVersion }),
+    };
+  })(),
   
-  mapping: {
-    modelId: process.env.OCR_MAPPING_BEDROCK_MODEL_ID || 'meta.llama3-8b-instruct-v1:0',
-    temperature: 0.1,        // Low randomness for consistent JSON
-    maxTokens: 2048,        // Llama 3 8B maximum limit
-    maxGenLen: 2048,        // Llama 3 8B maximum limit
-    topP: 1,                // Full sampling for complete text
-    timeout: 30000,
-  },
+  mapping: (() => {
+    const modelId = process.env.OCR_MAPPING_BEDROCK_MODEL_ID || 'meta.llama3-8b-instruct-v1:0';
+    const modelType = detectModelFamily(modelId);
+    const defaults = getModelDefaults(modelType);
+    
+    return {
+      modelId,
+      modelType,
+      temperature: defaults.temperature,
+      maxTokens: defaults.maxTokens,
+      maxGenLen: defaults.maxTokens, // Use same value for Llama compatibility
+      topP: defaults.topP,
+      timeout: 30000,
+      ...(defaults.anthropicVersion && { anthropicVersion: defaults.anthropicVersion }),
+    };
+  })(),
 } as const;
 
 // Configuration getter functions
