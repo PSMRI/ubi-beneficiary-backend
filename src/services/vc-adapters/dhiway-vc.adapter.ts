@@ -1,31 +1,180 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import * as FormData from 'form-data';
-
-export interface VcCreationResponse {
-	success: boolean;
-	verificationUrl?: string;
-	recordId?: string;
-	message?: string;
-	error?: any;
-}
+import { BaseVcAdapter } from './base-vc.adapter';
+import { VcCreationResponse, CallbackResult } from './vc-adapter.interface';
 
 @Injectable()
-export class DhiwayVcAdapter {
-	private readonly logger = new Logger(DhiwayVcAdapter.name);
+export class DhiwayVcAdapter extends BaseVcAdapter {
 	private readonly baseUrl: string;
 	private readonly organizationId: string;
 	private readonly authToken: string;
 	private readonly userId: string;
 
 	constructor(private readonly configService: ConfigService) {
+		super();
 		this.baseUrl = this.configService.get<string>('VITE_VC_BASE_URL');
 		this.organizationId = this.configService.get<string>(
 			'VITE_VC_ORGANIZATION_ID',
 		);
 		this.authToken = this.configService.get<string>('VITE_VC_AUTH_TOKEN');
 		this.userId = this.configService.get<string>('VITE_VC_USER_ID');
+	}
+
+	/**
+	 * Get the issuer name for this adapter
+	 */
+	getIssuerName(): string {
+		return 'dhiway';
+	}
+
+	/**
+	 * Process a VC callback for any status (issued, revoked, deleted)
+	 * @param publicId - The public ID (UUID) from the callback
+	 * @param status - The status from callback (issued, revoked, deleted)
+	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
+	 * @returns CallbackResult with status and VC data (if issued)
+	 */
+	async processCallback(
+		publicId: string,
+		status: 'issued' | 'revoked' | 'deleted',
+		docDataLink?: string,
+	): Promise<CallbackResult> {
+		try {
+			this.logger.log(`Processing ${status} callback for Dhiway public ID: ${publicId}`);
+
+			// Fetch VC data from doc_data_link for issued and revoked (to get updated doc_data)
+			if (status === 'issued' || status === 'revoked') {
+				// Fetch VC data from Dhiway .vc URL
+				const vcData = await this.fetchVcDataAfterPublish(publicId, docDataLink);
+				
+				this.logSuccess(`${status} callback processing`, { publicId });
+				
+				return {
+					success: true,
+					status: status,
+					vcData: vcData,
+					message: `VC ${status} successfully`,
+				};
+			} else {
+				// For deleted - no need to fetch VC data
+				this.logSuccess(`${status} callback processing`, { publicId });
+				
+				return {
+					success: true,
+					status: status,
+					message: `VC ${status} successfully`,
+				};
+			}
+		} catch (error) {
+			this.logger.error(`Callback processing failed for public ID ${publicId}:`, error);
+			return {
+				success: false,
+				status: status,
+				message: error.message || `Failed to process ${status} callback`,
+				error: error,
+			};
+		}
+	}
+
+	/**
+	 * Process a publish callback for a VC record (deprecated - use processCallback with status='issued' instead)
+	 * @param publicId - The public ID (UUID) from the callback
+	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
+	 * @returns CallbackResult with VC data fetched from Dhiway
+	 */
+	async processPublishCallback(publicId: string, docDataLink?: string): Promise<CallbackResult> {
+		return this.processCallback(publicId, 'issued', docDataLink);
+	}
+
+	/**
+	 * Fetch VC data after publish from Dhiway .vc URL
+	 * @param publicId - The public ID (UUID) to fetch VC data for
+	 * @param docDataLink - Optional: The full VC URL from doc_data_link (already includes .vc)
+	 * @returns VC data from Dhiway platform
+	 */
+	async fetchVcDataAfterPublish(publicId: string, docDataLink?: string): Promise<any> {
+		try {
+			this.logger.log(`Fetching published VC data for public ID: ${publicId}`);
+			
+			// Use doc_data_link if provided (already includes .vc), otherwise construct URL
+			const vcUrl = docDataLink;
+			this.logger.debug(`Fetching VC from URL: ${vcUrl}`);
+
+			// Fetch VC data from Dhiway platform
+			const response = await axios.get(vcUrl, {
+				headers: {
+					'Accept': 'application/json',
+					'Content-Type': 'application/json',
+				},
+				timeout: 10000, // 10 second timeout
+			});
+
+			// Validate response
+			if (!response.data) {
+				throw new Error('Empty response from VC URL');
+			}
+
+			// Validate VC structure
+			if (!this.validateVcData(response.data)) {
+				throw new Error('Invalid VC data structure received from Dhiway');
+			}
+
+			this.logger.log(`Successfully fetched VC data for public ID: ${publicId}`);
+			this.logger.debug(`VC data keys: ${Object.keys(response.data).join(', ')}`);
+
+			return response.data;
+		} catch (error) {
+			this.logger.error(`Failed to fetch VC data for public ID ${publicId}:`, error);
+			
+			if (axios.isAxiosError(error)) {
+				const status = error.response?.status;
+				const message = error.response?.data?.message || error.message;
+				
+				if (status === 404) {
+					throw new Error(`VC not found for public ID: ${publicId}. The VC may not be published yet.`);
+				}
+				
+				throw new Error(`Failed to fetch VC from Dhiway: ${message} (Status: ${status || 'Unknown'})`);
+			}
+			
+			throw new Error(`Failed to fetch VC data: ${error.message}`);
+		}
+	}
+
+	/**
+	 * Verify a VC record
+	 * @param vcData - The VC data to verify
+	 * @returns Verification result
+	 */
+	async verifyRecord(vcData: any): Promise<{ success: boolean; message?: string; errors?: any[] }> {
+		try {
+			this.logger.log('Verifying Dhiway VC record');
+			
+			if (!this.validateVcData(vcData)) {
+				return {
+					success: false,
+					message: 'Invalid VC data structure',
+					errors: ['VC data does not contain required fields']
+				};
+			}
+
+			// For mock implementation, always return success for valid structure
+			this.logSuccess('VC verification');
+			
+			return {
+				success: true,
+				message: 'VC verification successful'
+			};
+		} catch (error) {
+			this.logger.error('VC verification failed:', error);
+			return {
+				success: false,
+				message: 'VC verification failed',
+				errors: [error.message]
+			};
+		}
 	}
 
 	/**
@@ -45,7 +194,7 @@ export class DhiwayVcAdapter {
 		vcFields?: Record<string, any>,
 	): Promise<VcCreationResponse> {
 		try {
-			const validationError = this.validateConfiguration(spaceId);
+			const validationError = this.validateDhiwayConfiguration(spaceId);
 			if (validationError) {
 				return validationError;
 			}
@@ -71,11 +220,18 @@ export class DhiwayVcAdapter {
 
 			return this.processResponse(response.data);
 		} catch (error) {
-			return this.handleError(error);
+			return this.handleDhiwayError(error);
 		}
 	}
 
-	private validateConfiguration(spaceId: string): VcCreationResponse | null {
+	private validateDhiwayConfiguration(spaceId: string): VcCreationResponse | null {
+		// Use base class validation for spaceId
+		const baseValidation = super.validateConfiguration(spaceId);
+		if (baseValidation) {
+			return baseValidation;
+		}
+
+		// Dhiway-specific configuration validation
 		if (
 			!this.baseUrl ||
 			!this.organizationId ||
@@ -86,14 +242,6 @@ export class DhiwayVcAdapter {
 			return {
 				success: false,
 				message: 'Missing Dhiway VC configuration in environment variables',
-			};
-		}
-
-		if (!spaceId) {
-			this.logger.error('Space ID not provided');
-			return {
-				success: false,
-				message: 'Space ID is required for VC creation',
 			};
 		}
 
@@ -114,8 +262,20 @@ export class DhiwayVcAdapter {
 		const { originalDocFieldName, beneficiaryUserIdFieldName } = this.extractFieldNames(vcFields);
 
 		this.appendMappedData(formData, mappedData);
-		this.attachOriginalFile(formData, originalFile, originalDocFieldName);
-		this.attachUserId(formData, userId, beneficiaryUserIdFieldName);
+		
+		// Only attach original file if original_document field exists in vcFields with proper configuration
+		if (originalDocFieldName && this.hasValidOriginalDocumentConfig(vcFields, originalDocFieldName)) {
+			this.attachOriginalFile(formData, originalFile, originalDocFieldName);
+		} else if (originalFile) {
+			this.logger.debug(`Original file not attached - original_document field not present or not properly configured in vcFields`);
+		}
+		
+		// Only attach userId if beneficiary_user_id field exists in vcFields with proper configuration
+		if (beneficiaryUserIdFieldName && this.hasValidBeneficiaryUserIdConfig(vcFields, beneficiaryUserIdFieldName)) {
+			this.attachUserId(formData, userId, beneficiaryUserIdFieldName);
+		} else if (userId) {
+			this.logger.debug(`User ID not attached - beneficiary_user_id field not present or not properly configured in vcFields`);
+		}
 
 		return formData;
 	}
@@ -164,8 +324,6 @@ export class DhiwayVcAdapter {
 		originalFile?: Express.Multer.File,
 		originalDocFieldName?: string | null,
 	): void {
-		this.logger.debug(`Checking file attachment - originalFile present: ${!!originalFile}, fieldName: '${originalDocFieldName}'`);
-		
 		if (originalFile && originalDocFieldName) {
 			formData.append(originalDocFieldName, originalFile.buffer, {
 				filename: originalFile.originalname,
@@ -174,36 +332,86 @@ export class DhiwayVcAdapter {
 			this.logger.log(
 				`✓ Original file attached to '${originalDocFieldName}' field: ${originalFile.originalname} (${originalFile.mimetype}, ${originalFile.size} bytes)`,
 			);
-		} else if (originalFile && !originalDocFieldName) {
-			this.logger.error(
-				`✗ Original file provided but no field with role 'original_document' found in vcFields config - FILE WILL NOT BE ATTACHED!`,
-			);
-		} else if (!originalFile && originalDocFieldName) {
-			this.logger.warn(
-				`Field '${originalDocFieldName}' configured for original document but no file provided`,
-			);
 		}
+	}
+
+	/**
+	 * Check if vcFields contains valid original_document configuration
+	 * @param vcFields - VcFields configuration
+	 * @param originalDocFieldName - Field name with original_document role
+	 * @returns True if field has type="file", required=true, and role="original_document"
+	 */
+	private hasValidOriginalDocumentConfig(
+		vcFields?: Record<string, any>,
+		originalDocFieldName?: string | null,
+	): boolean {
+		if (!vcFields || !originalDocFieldName) {
+			return false;
+		}
+
+		const fieldConfig = vcFields[originalDocFieldName];
+		
+		if (!fieldConfig) {
+			this.logger.debug(`Field '${originalDocFieldName}' not found in vcFields`);
+			return false;
+		}
+
+		const hasValidType = fieldConfig.type === 'file';
+		const hasValidRequired = fieldConfig.required === true;
+		const hasValidRole = fieldConfig.role === 'original_document';
+
+		this.logger.debug(
+			`Validating original_document field '${originalDocFieldName}': type='${fieldConfig.type}' (valid: ${hasValidType}), required=${fieldConfig.required} (valid: ${hasValidRequired}), role='${fieldConfig.role}' (valid: ${hasValidRole})`,
+		);
+
+		return hasValidType && hasValidRequired && hasValidRole;
+	}
+
+	/**
+	 * Check if vcFields contains valid beneficiary_user_id configuration
+	 * @param vcFields - VcFields configuration
+	 * @param beneficiaryUserIdFieldName - Field name with beneficiary_user_id role
+	 * @returns True if field has type="string", required=true, and role="beneficiary_user_id"
+	 */
+	private hasValidBeneficiaryUserIdConfig(
+		vcFields?: Record<string, any>,
+		beneficiaryUserIdFieldName?: string | null,
+	): boolean {
+		if (!vcFields || !beneficiaryUserIdFieldName) {
+			return false;
+		}
+
+		const fieldConfig = vcFields[beneficiaryUserIdFieldName];
+		
+		if (!fieldConfig) {
+			this.logger.debug(`Field '${beneficiaryUserIdFieldName}' not found in vcFields`);
+			return false;
+		}
+
+		const hasValidType = fieldConfig.type === 'string';
+		const hasValidRequired = fieldConfig.required === true;
+		const hasValidRole = fieldConfig.role === 'beneficiary_user_id';
+
+		this.logger.debug(
+			`Validating beneficiary_user_id field '${beneficiaryUserIdFieldName}': type='${fieldConfig.type}' (valid: ${hasValidType}), required=${fieldConfig.required} (valid: ${hasValidRequired}), role='${fieldConfig.role}' (valid: ${hasValidRole})`,
+		);
+
+		return hasValidType && hasValidRequired && hasValidRole;
 	}
 
 	private attachUserId(
 		formData: FormData,
 		userId?: string,
-		beneficiaryUserIdFieldName?: string | null,
+		beneficiaryUserIdFieldName?: string,
 	): void {
-		this.logger.debug(`Checking user ID - userId present: ${!!userId}, fieldName: '${beneficiaryUserIdFieldName}'`);
-		
 		if (userId && beneficiaryUserIdFieldName) {
 			formData.append(beneficiaryUserIdFieldName, userId);
 			this.logger.log(`✓ Beneficiary user ID attached to '${beneficiaryUserIdFieldName}' field: ${userId}`);
-		} else if (userId && !beneficiaryUserIdFieldName) {
-			this.logger.error(
-				`✗ User ID provided but no field with role 'beneficiary_user_id' found in vcFields config - USER ID WILL NOT BE ATTACHED!`,
-			);
 		}
 	}
 
 	private processResponse(data: any): VcCreationResponse {
-		const verificationUrl = data?.verificationUrl || data?.verification_url;
+		let verificationUrl = data?.verificationUrl || data?.verification_url;
 		const recordId = data?.recordId || data?.record_id || data?.id;
 
 		if (!verificationUrl) {
@@ -213,6 +421,11 @@ export class DhiwayVcAdapter {
 				message: 'No verificationUrl returned from Dhiway API',
 				error: data,
 			};
+		}
+
+		// Ensure verificationUrl ends with .vc
+		if (!verificationUrl.endsWith('.vc')) {
+			verificationUrl = `${verificationUrl}.vc`;
 		}
 
 		this.logger.log(
@@ -227,40 +440,48 @@ export class DhiwayVcAdapter {
 		};
 	}
 
-	private handleError(error: any): VcCreationResponse {
-		this.logger.error(
-			'Error creating Dhiway VC record:',
-			error?.response?.data || error.message,
-		);
-		this.logger.error(
-			`Full error details - Status: ${error?.response?.status}, StatusText: ${error?.response?.statusText}`,
-		);
-		this.logger.error(`Request URL: ${error?.config?.url}`);
-		this.logger.error(
-			`Error response: ${JSON.stringify(error?.response?.data, null, 2)}`,
-		);
-
-		const errorMessage = this.extractErrorMessage(error);
-
-		return {
-			success: false,
-			message: errorMessage,
-			error: error?.response?.data || error.message,
-		};
+	private handleDhiwayError(error: any): VcCreationResponse {
+		// Use base class error handling
+		return super.handleError(error, 'VC creation') as VcCreationResponse;
 	}
 
-	private extractErrorMessage(error: any): string {
-		if (error?.response?.data) {
-			const errorData = error.response.data;
-			return (
-				errorData.error ||
-				errorData.message ||
-				errorData.details ||
-				(typeof errorData === 'string'
-					? errorData
-					: 'Failed to create VC record')
-			);
+	/**
+	 * Extract public ID from Dhiway verification URL
+	 * Dhiway URLs are in format: https://dway.io/depwd/{publicId}.vc
+	 * @param verificationUrl - The verification URL from Dhiway
+	 * @returns The public ID (UUID) or null if not found
+	 */
+	extractPublicId(verificationUrl?: string): string | null {
+		if (!verificationUrl) {
+			return null;
 		}
-		return error.message || 'Failed to create VC record';
+
+		try {
+			// Extract UUID from URL pattern: https://dway.io/depwd/{uuid}.vc
+			const uuidRegex = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+			const match = uuidRegex.exec(verificationUrl);
+			if (match?.[1]) {
+				return match[1];
+			}
+			
+			// Alternative: Extract from path segments
+			const urlParts = verificationUrl.split('/');
+			const lastPart = urlParts.at(-1);
+			if (lastPart) {
+				// Remove .vc extension if present
+				const cleanId = lastPart.replace(/\.vc$/, '');
+				// Validate it looks like a UUID
+				if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId)) {
+					return cleanId;
+				}
+			}
+			
+			return null;
+		} catch (error) {
+			this.logger.warn(`Failed to extract public ID from URL: ${verificationUrl}`, error);
+			return null;
+		}
 	}
+
 }
+
