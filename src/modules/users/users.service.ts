@@ -161,11 +161,21 @@ export class UserService {
 		try {
 			const updatedUser: User = await this.userRepository.save(existingUser);
 
-			const existingUserInfo = await this.customFieldsService.saveCustomFields(
-				updatedUser.user_id,
-				FieldContext.USERS,
-				userInfo,
-			);
+			// Only update custom fields if userInfo is provided and not empty
+			let existingUserInfo = null;
+			if (userInfo && Array.isArray(userInfo) && userInfo.length > 0) {
+				existingUserInfo = await this.customFieldsService.saveCustomFields(
+					updatedUser.user_id,
+					FieldContext.USERS,
+					userInfo,
+				);
+			} else {
+				// If userInfo is not provided, fetch existing custom fields instead of deleting them
+				existingUserInfo = await this.customFieldsService.getCustomFields(
+					updatedUser.user_id,
+					FieldContext.USERS
+				);
+			}
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
@@ -795,10 +805,11 @@ export class UserService {
 			};
 			Logger.log(`Custom field payload: ${JSON.stringify(customFieldPayload)}`);
 
-			const savedValues = await this.customFieldsService.saveCustomFields(
+			// Use updateCustomFields to preserve other custom fields when updating whosePhoneNumber
+			const savedValues = await this.customFieldsService.updateCustomFields(
 				userId,
 				FieldContext.USERS,
-				[customFieldPayload],
+				[customFieldPayload]
 			);
 
 			this.logSavedCustomFieldValues(savedValues);

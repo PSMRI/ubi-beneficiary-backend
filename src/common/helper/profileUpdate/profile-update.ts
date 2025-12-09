@@ -326,7 +326,13 @@ export default class ProfilePopulator {
   // Handle rows from 'user_info' table in database
   private async handleUserInfo(user: any, userInfo: any): Promise<FieldValue[]> {
     try {
-      return await this.customFieldsService.saveCustomFields(user.user_id, FieldContext.USERS, userInfo);
+      // Use updateCustomFields to preserve existing fields not in documents
+      // This only updates the provided fields without deleting others
+      return await this.customFieldsService.updateCustomFields(
+        user.user_id,
+        FieldContext.USERS,
+        userInfo || []
+      );
     } catch (error) {
       Logger.error(`Error while saving user info: ${error}`);
       return [];
