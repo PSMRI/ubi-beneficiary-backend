@@ -2676,8 +2676,19 @@ export class UserService {
 		// Calculate similarity percentage
 		const calculatedMatch = this.getMatchPercentage(certValueStr, userValueStr);
 
-		// Get required threshold from configuration (default 80%)
-		const threshold = matchingConfig.matchPercentage || 80;
+		let passed = false;
+		let threshold = 0;
+
+		if (matchingConfig.matchPercentage === 0) {
+			passed = true;
+			threshold = 0;
+		}
+		else {
+			threshold = matchingConfig.matchPercentage || 80;
+			passed = calculatedMatch >= threshold
+		}
+
+
 
 		Logger.log(
 			`Field: ${fieldName} | Certificate: "${certValueStr}" | User: "${userValueStr}" | Calculated: ${calculatedMatch}% | Required: ${threshold}%`,
@@ -2689,7 +2700,7 @@ export class UserService {
 			userValue: userValueStr,
 			calculatedMatch,
 			threshold,
-			passed: calculatedMatch >= threshold,
+			passed,
 		};
 
 		return { passed: result.passed, result };
@@ -2776,7 +2787,7 @@ export class UserService {
 				Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
 				return vcMapping.mapped_data.credentialSubject;
 			}
-			
+
 			// If credentialSubject doesn't exist, use mapped_data directly (issueVC = "yes" case)
 			Logger.log('Using vcMapping.mapped_data directly for issueVC: yes (no credentialSubject)');
 			return vcMapping.mapped_data;
@@ -2912,7 +2923,7 @@ export class UserService {
 					Logger.log(`Verifying document before profile update for issueVC: no`);
 					await this.verifyDocumentData(vcMapping.mapped_data, issuer);
 					Logger.log(`Document verification successful before profile update`);
-					
+
 					// Update doc_verified and verified_at after successful verification
 					savedDoc.doc_verified = true;
 					savedDoc.verified_at = new Date();
@@ -3864,7 +3875,7 @@ export class UserService {
 		existingDoc.issuance_callback_registered = issueVC === 'yes'; // true for VC creation, false for direct upload
 		existingDoc.vc_status = issueVC === 'yes' ? 'pending' : null; // Reset to 'pending' for VC, null for non-VC
 		existingDoc.vc_status_updated_at = issueVC === 'yes' ? new Date() : null;
-		
+
 		// Extract and store vc_public_id from verification URL using adapter
 		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
 			const adapter = this.vcAdapterFactory.getAdapter(issuer);
@@ -3878,7 +3889,7 @@ export class UserService {
 				}
 			}
 		}
-		
+
 		if (issuer) {
 			existingDoc.issuer = issuer;
 		}
@@ -3979,7 +3990,7 @@ export class UserService {
 				// Determine appropriate HTTP status code based on error
 				const statusCode =
 					result.error?.includes('No VC found') ||
-					result.error?.includes('not found')
+						result.error?.includes('not found')
 						? HttpStatus.NOT_FOUND
 						: HttpStatus.INTERNAL_SERVER_ERROR;
 
