@@ -27,7 +27,9 @@ export class BedrockAdapter implements IAiMappingAdapter {
       },
     });
     
-    this.logger.log(`Bedrock mapping adapter initialized - model: ${this.config.modelId}, region: ${region}`);
+    this.logger.log(
+      `Bedrock initialized: ${this.config.modelId} (${this.config.modelType}) | Region: ${region}`
+    );
   }
 
   /**
@@ -71,33 +73,60 @@ export class BedrockAdapter implements IAiMappingAdapter {
 
 
   /**
-   * Invoke the Bedrock Llama model
-   * Reference: AWS Bedrock Llama 3 requires specific parameter format
-   * https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-meta.html
+   * Build request payload based on detected model type
+   * To add new model family: add case here + update detectModelFamily() in config
+   */
+  private buildRequest(prompt: string): any {
+    switch (this.config.modelType) {
+      case 'claude':
+        return {
+          anthropic_version: this.config.anthropicVersion || 'bedrock-2023-05-31',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+          top_p: this.config.topP,
+        };
+
+      case 'openai':
+        return {
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+          top_p: this.config.topP,
+        };
+
+      case 'llama':
+      default:
+        return {
+          prompt,
+          max_gen_len: this.config.maxGenLen,
+          temperature: this.config.temperature,
+          top_p: this.config.topP,
+        };
+    }
+  }
+
+  /**
+   * Invoke the Bedrock model
    */
   private async invokeModel(prompt: string): Promise<string> {
-    // AWS Bedrock Llama 3 request format - all parameters are required
-    const input = {
-      prompt,
-      max_gen_len: this.config.maxGenLen,
-      temperature: this.config.temperature,
-      top_p: this.config.topP,
-    };
-
-    const command = new InvokeModelCommand({
-      modelId: this.config.modelId,
-      body: JSON.stringify(input),
-    });
-
     try {
-      const response = await this.client.send(command);
-      const responseBody = new TextDecoder().decode(response.body);
-      return responseBody;
-    } catch (error: any) {
-      this.logger.error(`Bedrock API error: ${error?.message}`, {
-        name: error?.name,
-        statusCode: error?.$metadata?.httpStatusCode,
+      const command = new InvokeModelCommand({
+        modelId: this.config.modelId,
+        body: JSON.stringify(this.buildRequest(prompt)),
       });
+      
+      const response = await this.client.send(command);
+      return new TextDecoder().decode(response.body);
+    } catch (error: any) {
+      this.logger.error(
+        `Bedrock API error: ${error?.message}`,
+        {
+          model: this.config.modelId,
+          type: this.config.modelType,
+          status: error?.$metadata?.httpStatusCode,
+        }
+      );
       throw error;
     }
   }

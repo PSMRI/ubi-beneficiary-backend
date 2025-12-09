@@ -3,10 +3,56 @@
 This document explains all AI model configuration parameters used in the OCR and mapping services.
 
 ## Table of Contents
+- [Supported Bedrock Models](#supported-bedrock-models)
 - [Critical Parameters](#critical-parameters)
 - [Optional Parameters](#optional-parameters)
 - [Model-Specific Limits](#model-specific-limits)
 - [Troubleshooting Guide](#troubleshooting-guide)
+
+---
+
+## Supported Bedrock Models
+
+The system supports **3 AWS Bedrock models** for OCR mapping. Simply change `OCR_MAPPING_BEDROCK_MODEL_ID` in your `.env` file:
+
+### 1. **Anthropic Claude Sonnet 4** (Recommended for Accuracy)
+```bash
+OCR_MAPPING_BEDROCK_MODEL_ID=anthropic.claude-sonnet-4-20250514-v1:0
+```
+- **Best for**: Maximum accuracy on complex documents
+- **Max tokens**: 4096 (auto-configured)
+- **Speed**: Moderate
+- **Cost**: Higher
+- **Request format**: Messages API with `anthropic_version`
+- **Use when**: You need highest accuracy and have complex/multi-page documents
+
+### 2. **OpenAI GPT OSS Safeguard** (Balanced)
+```bash
+OCR_MAPPING_BEDROCK_MODEL_ID=openai.gpt-oss-safeguard-120b
+```
+- **Best for**: Good balance of accuracy and speed
+- **Max tokens**: 4096 (auto-configured)
+- **Speed**: Fast
+- **Cost**: Moderate
+- **Request format**: Messages API (OpenAI-style)
+- **Use when**: You need reliable performance with reasonable costs (Current default)
+
+### 3. **Meta Llama 3 8B** (Fast & Cost-Effective)
+```bash
+OCR_MAPPING_BEDROCK_MODEL_ID=meta.llama3-8b-instruct-v1:0
+```
+- **Best for**: High-volume processing with budget constraints
+- **Max tokens**: 2048 (auto-configured)
+- **Speed**: Fastest
+- **Cost**: Lowest
+- **Request format**: Prompt-based with `max_gen_len`
+- **Use when**: Processing many simple documents with fewer fields
+
+### Auto-Configuration
+
+All model-specific parameters (max tokens, temperature, topP, etc.) are **automatically configured** based on the model you select. No additional environment variables needed!
+
+**Configuration happens in**: `src/config/ai-models.config.ts`
 
 ---
 
@@ -104,10 +150,27 @@ This document explains all AI model configuration parameters used in the OCR and
 
 ## Model-Specific Limits
 
+### AWS Bedrock - Anthropic Claude Sonnet 4
+- **Model ID**: `anthropic.claude-sonnet-4-20250514-v1:0`
+- **Maximum max_tokens**: `4096 tokens` (auto-configured)
+- **Request format**: Requires `anthropic_version` field
+- **Response format**: `{ content: [{ text: "..." }] }`
+- **Best use**: Complex documents with many fields
+
+### AWS Bedrock - OpenAI GPT OSS Safeguard
+- **Model ID**: `openai.gpt-oss-safeguard-120b`
+- **Maximum max_tokens**: `4096 tokens` (auto-configured)
+- **Request format**: Messages API (OpenAI-style)
+- **Response format**: `{ choices: [{ message: { content: "..." } }] }`
+- **Best use**: General-purpose document processing
+
 ### AWS Bedrock - Meta Llama 3 8B Instruct
 - **Model ID**: `meta.llama3-8b-instruct-v1:0`
-- **Maximum max_gen_len**: `2048 tokens`
+- **Maximum max_gen_len**: `2048 tokens` (auto-configured)
+- **Request format**: Prompt-based (different from others!)
+- **Response format**: `{ generation: "..." }`
 - **Exceeding limit**: Causes `ValidationException`
+- **Best use**: High-volume, simple documents
 
 ### Google Gemini 1.5 Flash
 - **Model ID**: `gemini-1.5-flash`
@@ -121,33 +184,45 @@ This document explains all AI model configuration parameters used in the OCR and
 
 ## Troubleshooting Guide
 
+### Issue: Want to switch Bedrock models
+**Solution**: Just change one line in `.env`:
+```bash
+# For best accuracy
+OCR_MAPPING_BEDROCK_MODEL_ID=anthropic.claude-sonnet-4-20250514-v1:0
+
+# For balanced performance (current default)
+OCR_MAPPING_BEDROCK_MODEL_ID=openai.gpt-oss-safeguard-120b
+
+# For fastest/cheapest
+OCR_MAPPING_BEDROCK_MODEL_ID=meta.llama3-8b-instruct-v1:0
+```
+All parameters automatically adjust!
+
 ### Issue: JSON responses are incomplete/truncated
-**Solution**: Increase `maxOutputTokens`/`maxTokens`
-- For Gemini: Try `12288` or `16384`
-- For Bedrock Llama 3 8B: Maximum is `2048`, consider switching to Gemini or Llama 3 70B
+**Solution**: Switch to a model with higher token limit
+- **Current model**: Llama 3 (2048 tokens) → Switch to OpenAI or Claude (4096 tokens)
+- **Already using Claude/OpenAI**: Check document complexity, may need custom prompts
 
 ### Issue: Getting timeout errors on complex documents
-**Solution**: Increase timeout values
-- Mapping: Try `45000ms` (45 seconds)
-- OCR: Try `90000ms` (90 seconds)
+**Solution**: 
+1. Try Claude Sonnet 4 (best for complex docs)
+2. If still timing out, increase timeout in `ai-models.config.ts`
+
+### Issue: Costs are too high
+**Solution**: Switch to Llama 3 8B for cost savings
+```bash
+OCR_MAPPING_BEDROCK_MODEL_ID=meta.llama3-8b-instruct-v1:0
+```
+Note: Llama has 2048 token limit, suitable for simpler documents
 
 ### Issue: Field names are inconsistent between requests
-**Solution**: Lower temperature
-- Current: `0.1`
-- Try: `0.05` for even more consistency
+**Solution**: Already optimized (temperature = 0.1 for all models)
+- If still inconsistent, check prompt configuration in `prompts.config.ts`
 
-### Issue: AI responses are too creative/wrong format
-**Solution**: 
-1. Lower temperature to `0.05`
-2. Simplify and clarify prompts
-
-### Issue: Responses seem limited in vocabulary
-**Solution**: 
-- Remove `topK` parameter entirely
-- Or increase to `64` or `128`
-
-### Issue: Cost optimization needed
-**Solution**:
+### Issue: Model returns errors about max_tokens
+**Solution**: Model-specific issue
+- **Llama**: Hardcoded at 2048, cannot increase
+- **Claude/OpenAI**: Auto-configured to 4096, if you modified config, check `ai-models.config.ts`
 - Reduce `maxOutputTokens` to `4096` (test for truncation first)
 - Reduce timeouts to `15000ms` for mapping (test for failures first)
 
