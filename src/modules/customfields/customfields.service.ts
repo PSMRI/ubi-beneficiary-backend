@@ -404,7 +404,103 @@ export class CustomFieldsService {
 		);
 		return savedValues;
 
-	} 
+	}
+
+	/**
+	 * Update specific custom fields without deleting others (merge mode)
+	 * @param itemId Entity ID (UUID)
+	 * @param context Entity context
+	 * @param customFields Array of custom field data to update
+	 * @returns Array of updated field values
+	 * @description Only updates the provided fields, preserves all other existing fields. More efficient than saveCustomFields for partial updates.
+	 */
+	async updateCustomFields(
+		itemId: string,
+		context: FieldContext,
+		customFields: CustomFieldDto[]
+	): Promise<FieldValue[]> {
+		this.logger.debug(
+			`Updating custom fields (merge mode) for item: ${itemId}, context: ${context}`
+		);
+
+		if (!customFields || customFields.length === 0) {
+			// In merge mode, empty array means no updates
+			return [];
+		}
+
+		// Validate that all fields exist and belong to the correct context
+		const fieldIds = customFields.map((cf) => cf.fieldId);
+		const fields = await this.fieldRepository.find({
+			where: {
+				fieldId: In(fieldIds),
+				context,
+			},
+		});
+
+		if (fields.length !== fieldIds.length) {
+			const foundIds = fields.map((f) => f.fieldId);
+			const missingIds = fieldIds.filter((id) => !foundIds.includes(id));
+			throw new BadRequestException(
+				`Invalid field IDs: ${missingIds.join(', ')}`
+			);
+		}
+
+		// Only fetch existing values for the fields being updated (not all fields)
+		const existingValues = await this.fieldValueRepository.find({
+			where: { 
+				itemId,
+				fieldId: In(fieldIds) // Only fetch fields we're updating
+			},
+		});
+
+		const savedValues: FieldValue[] = [];
+
+		// Process only the incoming fields (no deletion of other fields)
+		for (const customField of customFields) {
+			const field = fields.find((f) => f.fieldId === customField.fieldId);
+			if (!field) continue;
+
+			// If exists, update; If not, insert
+			let fieldValue = existingValues.find(
+				(fv) => fv.fieldId === customField.fieldId && fv.itemId === itemId
+			);
+
+			if (!fieldValue) {
+				fieldValue = this.fieldValueRepository.create({
+					fieldId: customField.fieldId,
+					itemId,
+				});
+			}
+
+			fieldValue.field = field;
+			fieldValue.metadata = customField.metadata;
+
+			// Always validate first using centralized validation service
+			this.fieldValidationHelper.validateFieldValue(
+				customField.value,
+				field,
+				true // Throw exception on validation error
+			);
+
+			// Handle value setting using centralized serialization
+			if (field.isEncrypted()) {
+				const encryptedValue = this.fieldEncryptionHelper.encryptFieldValue(customField.value, field);
+				fieldValue.setEncryptedValue(encryptedValue);
+			} else {
+				// Use centralized serialization for consistency
+				const serializedValue = this.fieldValidationHelper.serializeValue(customField.value, field.type);
+				fieldValue.value = serializedValue;
+			}
+
+			const savedValue = await this.fieldValueRepository.save(fieldValue);
+			savedValues.push(savedValue);
+		}
+
+		this.logger.log(
+			`Updated ${savedValues.length} custom field values for item: ${itemId} (merge mode)`
+		);
+		return savedValues;
+	}
 
 	/**
 	 * Get custom fields for an entity
