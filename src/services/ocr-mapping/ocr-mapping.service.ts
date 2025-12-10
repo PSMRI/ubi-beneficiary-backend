@@ -188,7 +188,16 @@ export class OcrMappingService {
     switch (type) {
       case 'number':
       case 'integer': {
-        const numericValue = trimmedValue.replaceAll(/[^\d.-]/g, '');
+        // Remove all non-numeric characters except dots and hyphens
+        let numericValue = trimmedValue.replaceAll(/[^\d.-]/g, '');
+        
+        // Strip leading hyphens - identifiers like OTR numbers should never be negative
+        // This handles cases where OCR extracts "-223414178889127" as a negative number
+        numericValue = numericValue.replace(/^-+/, '');
+        
+        // If only hyphens/dots remain after stripping, return null
+        if (!numericValue || /^[\s.-]+$/.test(numericValue)) return null;
+        
         const parsed = Number.parseFloat(numericValue);
         if (!Number.isFinite(parsed)) return null;
         return type === 'integer' ? Math.round(parsed) : parsed;
@@ -216,6 +225,12 @@ export class OcrMappingService {
       const value = data[fieldName];
       
       if (value !== null && value !== undefined) {
+        // Check if value is meaningless (only punctuation/whitespace)
+        if (this.isMeaninglessValue(value, fieldConfig.type)) {
+          warnings.push(`Rejected meaningless value "${value}" for field "${fieldName}"`);
+          continue; // Skip this field, treat as missing
+        }
+
         // Handle object types directly (like original_vc)
         if (fieldConfig.type === 'object' && typeof value === 'object') {
           normalizedData[fieldName] = value;
@@ -232,6 +247,42 @@ export class OcrMappingService {
     }
 
     return { data: normalizedData, warnings };
+  }
+
+  /**
+   * Check if a value is meaningless (only punctuation, whitespace, or special characters)
+   */
+  private isMeaninglessValue(value: any, fieldType?: string): boolean {
+    if (value === null || value === undefined) return true;
+    
+    const stringValue = String(value).trim();
+    
+    // Empty strings are meaningless
+    if (stringValue === '') return true;
+    
+    // For string fields: must contain at least one alphanumeric character
+    if (fieldType === 'string' || !fieldType) {
+      // Check if value contains only punctuation, whitespace, or special characters
+      // Allow hyphens only if they're part of a larger alphanumeric string (e.g., "A-123")
+      const hasAlphanumeric = /[a-zA-Z0-9]/.test(stringValue);
+      if (!hasAlphanumeric) {
+        return true; // Only punctuation/whitespace
+      }
+      
+      // Reject standalone hyphens or values that are only hyphens with whitespace
+      if (/^[\s-]+$/.test(stringValue)) {
+        return true;
+      }
+    }
+    
+    // For number fields: standalone hyphens are meaningless
+    if (fieldType === 'number' || fieldType === 'integer') {
+      if (/^[\s.-]+$/.test(stringValue)) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   /**

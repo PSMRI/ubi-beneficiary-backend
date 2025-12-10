@@ -27,7 +27,10 @@ STRICT EXTRACTION RULES:
 7. If a date exists but its purpose is unclear, set the field to null rather than guessing
 8. Match field names to document labels - "Date:" near signature is likely issue date, not exam date
 9. For address fields: Extract complete addresses but separate individual components when the schema requires specific parts
-10. For numerical fields: Extract only the numbers relevant to the field, excluding any accompanying text or currency symbols unless specifically required
+10. For numerical fields: Extract only the numbers relevant to the field, excluding any accompanying text or currency symbols unless specifically required. IMPORTANT: Ignore leading hyphens "-" in number fields (e.g., if document shows "-223414178889127", extract "223414178889127" without the hyphen)
+11. REJECT meaningless values: Never extract standalone punctuation marks (e.g., "-", ".", "/", "|") as field values. If only punctuation or whitespace is found, set the field to null
+12. REJECT invalid values: For text fields (names, addresses, IDs), reject values that are ONLY punctuation, whitespace, or special characters. The value must contain at least one alphanumeric character
+13. For number fields: If the extracted value is only a hyphen or other non-numeric character, set it to null. Always strip leading hyphens from number values before extraction (numbers like OTR numbers, IDs should never be negative)
 
 Return pure JSON starting with { and ending with }. No text before or after.`,
 
