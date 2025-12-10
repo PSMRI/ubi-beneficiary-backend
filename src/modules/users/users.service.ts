@@ -2851,6 +2851,24 @@ export class UserService {
 			);
 			Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
+			// Document type validation - validates extracted text contains document name/label
+			let isValidDocument: boolean | undefined = undefined;
+			if (documentConfig && (documentConfig.name || documentConfig.label)) {
+				const documentName = documentConfig.name || documentConfig.label;
+				const extractedText = ocrResult?.extractedText || '';
+				isValidDocument = this.validateDocumentTypeFromText(extractedText, documentName);
+
+				if (!isValidDocument) {
+					Logger.warn(`Document type validation failed: Expected "${documentName}" but document text does not contain it`);
+					return new ErrorResponse({
+						statusCode: HttpStatus.BAD_REQUEST,
+						errorMessage: `Document is not of type ${documentName}`,
+					});
+				}
+
+				Logger.log(`Document type validation passed: Document contains "${documentName}"`);
+			}
+
 			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
 			const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
 
@@ -3494,6 +3512,27 @@ export class UserService {
 		}
 
 		return { requiresQRProcessing, documentConfig };
+	}
+
+	/**
+	 * Validates that the extracted text contains the document name or label
+	 * This is a simple case-insensitive text search
+	 * To disable this validation, comment out the call to this method in uploadDocument
+	 * @param extractedText - The OCR extracted text from the document
+	 * @param documentNameOrLabel - The expected document name or label from vcConfiguration
+	 * @returns true if document name/label is found in extracted text, false otherwise
+	 */
+	private validateDocumentTypeFromText(extractedText: string, documentNameOrLabel: string): boolean {
+		if (!extractedText || !documentNameOrLabel) {
+			return false;
+		}
+
+		// Normalize both strings for case-insensitive comparison
+		const normalizedText = extractedText.toLowerCase().trim();
+		const normalizedName = documentNameOrLabel.toLowerCase().trim();
+
+		// Check if the document name/label exists in the extracted text
+		return normalizedText.includes(normalizedName);
 	}
 
 	// Helper to validate document type and subtype
