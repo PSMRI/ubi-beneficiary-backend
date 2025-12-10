@@ -609,6 +609,14 @@ export class AuthService {
       const savedDoc = await this.userService.createNewDoc(registeredUser.user_id, uploadResult, uploadDocumentDto, vcMapping);
       this.loggerService.log(`⏱️ Document Upload & Save took: ${Date.now() - uploadStartTime}ms`, 'AuthService');
 
+      // 🟩 Step 5.1: Update user profile based on OTR certificate data (including dob)
+      try {
+        await this.userService.updateProfile(registeredUser);
+        this.loggerService.log(`Profile updated successfully for user: ${registeredUser.user_id} after OTR document upload`);
+      } catch (profileError) {
+        this.loggerService.error('Profile update failed after OTR document upload:', profileError);
+        // Don't fail the entire registration if profile update fails
+      }
 
       this.loggerService.log(`⏱️ Total OTR Registration Flow took: ${Date.now() - flowStartTime}ms`, 'AuthService');
       // 🟩 Step 6: Return success response
