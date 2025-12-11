@@ -178,9 +178,9 @@ export class OcrMappingService {
 
 
   /**
-   * Coerce value to the specified type
+   * Convert value to the specified type
    */
-  private coerceValue(value: string, type?: string): any {
+  private convertValueToType(value: string, type?: string): any {
     if (!value?.trim()) return null;
     
     const trimmedValue = value.trim();
@@ -225,28 +225,48 @@ export class OcrMappingService {
       const value = data[fieldName];
       
       if (value !== null && value !== undefined) {
-        // Check if value is meaningless (only punctuation/whitespace)
-        if (this.isMeaninglessValue(value, fieldConfig.type)) {
-          warnings.push(`Rejected meaningless value "${value}" for field "${fieldName}"`);
-          continue; // Skip this field, treat as missing
+        const validationResult = this.validateAndConvertField(value, fieldName, fieldConfig);
+        
+        if (validationResult.warning) {
+          warnings.push(validationResult.warning);
         }
-
-        // Handle object types directly (like original_vc)
-        if (fieldConfig.type === 'object' && typeof value === 'object') {
-          normalizedData[fieldName] = value;
-        } else {
-          // Type validation and coercion for primitive types
-          const coercedValue = this.coerceValue(String(value), fieldConfig.type);
-          if (coercedValue === null) {
-            warnings.push(`Failed to coerce value "${value}" for field "${fieldName}" to type "${fieldConfig.type}"`);
-          } else {
-            normalizedData[fieldName] = coercedValue;
-          }
+        
+        if (validationResult.value !== null) {
+          normalizedData[fieldName] = validationResult.value;
         }
       }
     }
 
     return { data: normalizedData, warnings };
+  }
+
+  /**
+   * Validate and convert a single field value to its correct type
+   */
+  private validateAndConvertField(value: any, fieldName: string, fieldConfig: any): { value: any; warning?: string } {
+    // Check if value is meaningless (only punctuation/whitespace)
+    if (this.isMeaninglessValue(value, fieldConfig.type)) {
+      return {
+        value: null,
+        warning: `Rejected meaningless value "${value}" for field "${fieldName}"`
+      };
+    }
+
+    // Handle object types directly (like original_vc)
+    if (fieldConfig.type === 'object' && typeof value === 'object') {
+      return { value };
+    }
+
+    // Type validation and coercion for primitive types
+    const convertedValue = this.convertValueToType(String(value), fieldConfig.type);
+    if (convertedValue === null) {
+      return {
+        value: null,
+        warning: `Failed to convert value "${value}" for field "${fieldName}" to type "${fieldConfig.type}"`
+      };
+    }
+
+    return { value: convertedValue };
   }
 
   /**

@@ -2840,68 +2840,41 @@ export class UserService {
 				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
 			const issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
 
-			// Process document
-			this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
-			const ocrStartTime = Date.now();
-			const ocrResult = await this.performOcr(
-				file,
-				uploadDocumentDto,
-				requiresQRProcessing,
-				documentConfig,
-			);
-			Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+		// Process document
+		this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+		const ocrStartTime = Date.now();
+		const ocrResult = await this.performOcr(
+			file,
+			uploadDocumentDto,
+			requiresQRProcessing,
+			documentConfig,
+		);
+		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
-			// Document type validation - validates extracted text contains document name/label
-			let isValidDocument: boolean | undefined = undefined;
-			if (documentConfig && (documentConfig.name || documentConfig.label)) {
-				const documentName = documentConfig.name || documentConfig.label;
-				const extractedText = ocrResult?.extractedText || '';
-				isValidDocument = this.validateDocumentTypeFromText(extractedText, documentName);
+		// Validate document type from OCR text and VC fields
+		const isValidDocument = await this.validateDocumentAndFields(
+			documentConfig,
+			ocrResult,
+			uploadDocumentDto,
+			issueVC,
+		);
 
-				if (!isValidDocument) {
-					Logger.warn(`Document type validation failed: Expected "${documentName}" but document text does not contain it`);
-					return new ErrorResponse({
-						statusCode: HttpStatus.BAD_REQUEST,
-						errorMessage: `Document is not of type ${documentName}`,
-					});
-				}
+		if (isValidDocument === false) {
+			const documentName = documentConfig.name || documentConfig.label;
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage: `The uploaded document does not match the required type: ${documentName}. Please upload the correct document.`,
+			});
+		}
 
-				Logger.log(`Document type validation passed: Document contains "${documentName}"`);
-			}
+		// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
+		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
 
-			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
-			const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
-
-			const mappingStartTime = Date.now();
-			const vcMapping = isDhiwayVcUrl
-				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-				: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
-			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
-
-			// Validate required fields for ALL documents before storage
-			const validationStartTime = Date.now();
-			Logger.log(`Validating required fields for document`);
-			const vcFields = await this.vcFieldsService.getVcFields(
-				uploadDocumentDto.docType,
-				uploadDocumentDto.docSubType,
-			);
-
-			// Validate required fields for both issueVC="yes" and issueVC="no" cases
-			if (vcFields && Object.keys(vcFields).length > 0) {
-				await this.validateRequiredFieldsFromOcrMapping(
-					vcFields,
-					vcMapping,
-					uploadDocumentDto,
-					issueVC,
-				);
-			} else {
-				Logger.warn(
-					`No vcFields configuration found for ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType} - skipping required field validation`,
-				);
-			}
-			Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
-
-			// Step: Perform VC field validation and matching against user profile
+		const mappingStartTime = Date.now();
+		const vcMapping = isDhiwayVcUrl
+			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
+		Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');			// Step: Perform VC field validation and matching against user profile
 			const matchingResult = await this.performFieldMatching(
 				userDetails.user_id,
 				vcMapping,
@@ -2945,39 +2918,9 @@ export class UserService {
 				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
 			);
 
-			// Verify document before profile update for issueVC: "no" cases
-			// (Verification for issueVC: "yes" happens after VC callback when published)
-			if (issueVC === 'no' && vcMapping?.mapped_data) {
-				try {
-					Logger.log(`Verifying document before profile update for issueVC: no`);
-					await this.verifyDocumentData(vcMapping.mapped_data, issuer);
-					Logger.log(`Document verification successful before profile update`);
-
-					// Update doc_verified and verified_at after successful verification
-					savedDoc.doc_verified = true;
-					savedDoc.verified_at = new Date();
-					await this.userDocsRepository.save(savedDoc);
-					Logger.log(`Document marked as verified: doc_id=${savedDoc.doc_id}`);
-				} catch (verifyError) {
-					Logger.error(`Document verification failed before profile update: ${verifyError.message}`);
-					return new ErrorResponse({
-						statusCode: HttpStatus.BAD_REQUEST,
-						errorMessage: verifyError.message || 'Document verification failed',
-					});
-				}
-			}
-
-			// Update profile based on documents
-			try {
-				await this.updateProfile(userDetails);
-				Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
-			} catch (error) {
-				Logger.error('Profile update failed after document upload:', error);
-				// Don't fail the entire operation if profile update fails
-			}
-			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
-
-			// Build and return response
+		// Verify and update profile
+		await this.verifyAndUpdateProfile(issueVC, vcMapping, issuer, savedDoc, userDetails);
+		Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');			// Build and return response
 			const responseData = this.buildResponseData(
 				savedDoc,
 				isUpdate,
@@ -2999,6 +2942,104 @@ export class UserService {
 			});
 		} catch (error) {
 			return this.handleUploadError(error);
+		}
+	}
+
+	/**
+	 * Validates document type from OCR text and required VC fields
+	 * @returns boolean | undefined - true if valid, false if invalid, undefined if validation not configured
+	 */
+	private async validateDocumentAndFields(
+		documentConfig: any,
+		ocrResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+		issueVC: string,
+	): Promise<boolean | undefined> {
+		// Document type validation
+		let isValidDocument: boolean | undefined = undefined;
+		if (documentConfig && (documentConfig.name || documentConfig.label)) {
+			const documentName = documentConfig.name || documentConfig.label;
+			const extractedText = ocrResult?.extractedText || '';
+			isValidDocument = this.validateDocumentTypeFromText(extractedText, documentName);
+
+			if (!isValidDocument) {
+				Logger.warn(`Document type validation failed: Expected "${documentName}" but document text does not contain it`);
+				return false;
+			}
+
+			Logger.log(`Document type validation passed: Document contains "${documentName}"`);
+		}
+
+		// Required field validation
+		const validationStartTime = Date.now();
+		Logger.log(`Validating required fields for document`);
+		const vcFields = await this.vcFieldsService.getVcFields(
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
+
+		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+		const vcMapping = isDhiwayVcUrl
+			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
+
+		if (vcFields && Object.keys(vcFields).length > 0) {
+			await this.validateRequiredFieldsFromOcrMapping(
+				vcFields,
+				vcMapping,
+				uploadDocumentDto,
+				issueVC,
+			);
+		} else {
+			Logger.warn(
+				`No vcFields configuration found for ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType} - skipping required field validation`,
+			);
+		}
+		
+		Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
+		
+		return isValidDocument;
+	}
+
+	/**
+	 * Verifies document and updates user profile
+	 */
+	private async verifyAndUpdateProfile(
+		issueVC: string,
+		vcMapping: any,
+		issuer: string,
+		savedDoc: UserDoc,
+		userDetails: any,
+	): Promise<void> {
+		// Verify document before profile update for issueVC: "no" cases
+		// (Verification for issueVC: "yes" happens after VC callback when published)
+		if (issueVC === 'no' && vcMapping?.mapped_data) {
+			try {
+				Logger.log(`Verifying document before profile update for issueVC: no`);
+				await this.verifyDocumentData(vcMapping.mapped_data, issuer);
+				Logger.log(`Document verification successful before profile update`);
+
+				// Update doc_verified and verified_at after successful verification
+				savedDoc.doc_verified = true;
+				savedDoc.verified_at = new Date();
+				await this.userDocsRepository.save(savedDoc);
+				Logger.log(`Document marked as verified: doc_id=${savedDoc.doc_id}`);
+			} catch (verifyError) {
+				Logger.error(`Document verification failed before profile update: ${verifyError.message}`);
+				throw new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage: verifyError.message || 'Document verification failed',
+				});
+			}
+		}
+
+		// Update profile based on documents
+		try {
+			await this.updateProfile(userDetails);
+			Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
+		} catch (error) {
+			Logger.error('Profile update failed after document upload:', error);
+			// Don't fail the entire operation if profile update fails
 		}
 	}
 
