@@ -26,10 +26,17 @@ export class OcrMappingService {
    * Map OCR text to structured data after OCR processing
    * @param input - OCR mapping input containing text and document info
    * @param vcFields - VcFields configuration for the document type
+   * @param expectedDocumentName - Expected document type name for validation
    */
-  async mapAfterOcr(input: OcrMappingInput, vcFields: VcFields): Promise<OcrMappingResult> {
+  async mapAfterOcr(input: OcrMappingInput, vcFields: VcFields, expectedDocumentName: string): Promise<OcrMappingResult> {
     try {
-      this.logger.log(`OCR mapping started: ${input.docType}/${input.docSubType}`);
+      // Validate expectedDocumentName is provided
+      if (!expectedDocumentName || expectedDocumentName.trim() === '') {
+        this.logger.error('expectedDocumentName is required for OCR mapping');
+        throw new Error('EXPECTED_DOCUMENT_NAME_REQUIRED');
+      }
+      
+      this.logger.log(`OCR mapping started: ${input.docType}/${input.docSubType}, expectedDocumentName: ${expectedDocumentName}`);
       if (!vcFields || Object.keys(vcFields).length === 0) {
         this.logger.warn(`No vcFields provided for mapping`);
         return {
@@ -46,11 +53,25 @@ export class OcrMappingService {
 
       // Use AI mapping
       const startTime = Date.now();
-      const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema);
+      const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema, expectedDocumentName);
       this.logger.log(`⏱️ AI Mapping Logic took: ${Date.now() - startTime}ms`);
       const processingMethod: 'ai' | 'keyword' | 'hybrid' = mappedData && Object.keys(mappedData).length > 0 ? 'ai' : 'keyword';
 
-      return this.computeResultFromMappedData(mappedData, vcFields, processingMethod);
+      // Extract isValidDocument from mappedData if present
+      let isValidDocument: boolean | undefined = undefined;
+      if (mappedData && 'isValidDocument' in mappedData) {
+        isValidDocument = mappedData.isValidDocument;
+        this.logger.log(`Document type validation result from LLM: isValidDocument=${isValidDocument}, expectedDocumentName=${expectedDocumentName}`);
+        
+        // Remove isValidDocument from mappedData to avoid including it in the data fields
+        const { isValidDocument: _, ...dataWithoutValidation } = mappedData;
+        return this.computeResultFromMappedData(dataWithoutValidation, vcFields, processingMethod, isValidDocument);
+      } else if (mappedData) {
+        // If isValidDocument is missing from response, log warning (but still proceed)
+        this.logger.warn(`Expected document type "${expectedDocumentName}" was provided but LLM response does not contain isValidDocument field. Response keys: ${Object.keys(mappedData).join(', ')}`);
+      }
+
+      return this.computeResultFromMappedData(mappedData, vcFields, processingMethod, isValidDocument);
 
     } catch (error: any) {
       this.logger.error(`OCR mapping failed: ${error?.message || error}`);
@@ -67,13 +88,13 @@ export class OcrMappingService {
   /**
    * Attempt to map using AI adapter, returns null on any failure or unexpected response
    */
-  private async tryAiMapping(adapterType: string, text: string, schema: Record<string, any>): Promise<Record<string, any> | null> {
+  private async tryAiMapping(adapterType: string, text: string, schema: Record<string, any>, expectedDocumentName: string): Promise<Record<string, any> | null> {
     if (!((adapterType === 'bedrock' || adapterType === 'google-gemini') && this.aiAdapter.isConfigured())) {
       return null;
     }
 
     try {
-      const mappedData = await this.aiAdapter.mapTextToSchema(text, schema);
+      const mappedData = await this.aiAdapter.mapTextToSchema(text, schema, expectedDocumentName);
 
       // Check if the response is the full AI response object instead of parsed JSON
       if (mappedData && typeof mappedData === 'object' && ('generation' in mappedData || 'content' in mappedData)) {
@@ -83,7 +104,7 @@ export class OcrMappingService {
 
       if (mappedData && Object.keys(mappedData).length > 0) {
         const fieldCount = Object.keys(schema.properties || {}).length;
-        this.logger.log(`AI mapping successful: ${Object.keys(mappedData).length}/${fieldCount} fields extracted`);
+        this.logger.log(`AI mapping successful: ${Object.keys(mappedData).length}/${fieldCount} fields extracted, isValidDocument: ${mappedData.isValidDocument}`);
         return mappedData;
       }
 
@@ -101,7 +122,8 @@ export class OcrMappingService {
   private computeResultFromMappedData(
     mappedData: Record<string, any> | null,
     vcFields: VcFields,
-    processingMethod: 'ai' | 'keyword' | 'hybrid'
+    processingMethod: 'ai' | 'keyword' | 'hybrid',
+    isValidDocument?: boolean
   ): OcrMappingResult {
     mappedData = mappedData || {};
 
@@ -135,12 +157,16 @@ export class OcrMappingService {
       this.logger.warn(`Missing ${missingRequiredFields.length} required field(s): [${missingRequiredFields.join(', ')}]`);
     }
 
+    // Ensure isValidDocument is not included in mapped_data (it's a metadata field, not a data field)
+    const { isValidDocument: _, ...finalMappedData } = validationResult.data;
+
     return {
-      mapped_data: validationResult.data,
+      mapped_data: finalMappedData,
       missing_fields: missingFields,
       confidence,
       processing_method: processingMethod,
       warnings: validationResult.warnings,
+      isValidDocument,
     };
   }
 
@@ -178,9 +204,9 @@ export class OcrMappingService {
 
 
   /**
-   * Coerce value to the specified type
+   * Convert value to the specified type
    */
-  private coerceValue(value: string, type?: string): any {
+  private convertValueToType(value: string, type?: string): any {
     if (!value?.trim()) return null;
     
     const trimmedValue = value.trim();
@@ -188,7 +214,16 @@ export class OcrMappingService {
     switch (type) {
       case 'number':
       case 'integer': {
-        const numericValue = trimmedValue.replaceAll(/[^\d.-]/g, '');
+        // Remove all non-numeric characters except dots and hyphens
+        let numericValue = trimmedValue.replaceAll(/[^\d.-]/g, '');
+        
+        // Strip leading hyphens - identifiers like OTR numbers should never be negative
+        // This handles cases where OCR extracts "-223414178889127" as a negative number
+        numericValue = numericValue.replace(/^-+/, '');
+        
+        // If only hyphens/dots remain after stripping, return null
+        if (!numericValue || /^[\s.-]+$/.test(numericValue)) return null;
+        
         const parsed = Number.parseFloat(numericValue);
         if (!Number.isFinite(parsed)) return null;
         return type === 'integer' ? Math.round(parsed) : parsed;
@@ -216,22 +251,84 @@ export class OcrMappingService {
       const value = data[fieldName];
       
       if (value !== null && value !== undefined) {
-        // Handle object types directly (like original_vc)
-        if (fieldConfig.type === 'object' && typeof value === 'object') {
-          normalizedData[fieldName] = value;
-        } else {
-          // Type validation and coercion for primitive types
-          const coercedValue = this.coerceValue(String(value), fieldConfig.type);
-          if (coercedValue === null) {
-            warnings.push(`Failed to coerce value "${value}" for field "${fieldName}" to type "${fieldConfig.type}"`);
-          } else {
-            normalizedData[fieldName] = coercedValue;
-          }
+        const validationResult = this.validateAndConvertField(value, fieldName, fieldConfig);
+        
+        if (validationResult.warning) {
+          warnings.push(validationResult.warning);
+        }
+        
+        if (validationResult.value !== null) {
+          normalizedData[fieldName] = validationResult.value;
         }
       }
     }
 
     return { data: normalizedData, warnings };
+  }
+
+  /**
+   * Validate and convert a single field value to its correct type
+   */
+  private validateAndConvertField(value: any, fieldName: string, fieldConfig: any): { value: any; warning?: string } {
+    // Check if value is meaningless (only punctuation/whitespace)
+    if (this.isMeaninglessValue(value, fieldConfig.type)) {
+      return {
+        value: null,
+        warning: `Rejected meaningless value "${value}" for field "${fieldName}"`
+      };
+    }
+
+    // Handle object types directly (like original_vc)
+    if (fieldConfig.type === 'object' && typeof value === 'object') {
+      return { value };
+    }
+
+    // Type validation and coercion for primitive types
+    const convertedValue = this.convertValueToType(String(value), fieldConfig.type);
+    if (convertedValue === null) {
+      return {
+        value: null,
+        warning: `Failed to convert value "${value}" for field "${fieldName}" to type "${fieldConfig.type}"`
+      };
+    }
+
+    return { value: convertedValue };
+  }
+
+  /**
+   * Check if a value is meaningless (only punctuation, whitespace, or special characters)
+   */
+  private isMeaninglessValue(value: any, fieldType?: string): boolean {
+    if (value === null || value === undefined) return true;
+    
+    const stringValue = String(value).trim();
+    
+    // Empty strings are meaningless
+    if (stringValue === '') return true;
+    
+    // For string fields: must contain at least one alphanumeric character
+    if (fieldType === 'string' || !fieldType) {
+      // Check if value contains only punctuation, whitespace, or special characters
+      // Allow hyphens only if they're part of a larger alphanumeric string (e.g., "A-123")
+      const hasAlphanumeric = /[a-zA-Z0-9]/.test(stringValue);
+      if (!hasAlphanumeric) {
+        return true; // Only punctuation/whitespace
+      }
+      
+      // Reject standalone hyphens or values that are only hyphens with whitespace
+      if (/^[\s-]+$/.test(stringValue)) {
+        return true;
+      }
+    }
+    
+    // For number fields: standalone hyphens are meaningless
+    if (fieldType === 'number' || fieldType === 'integer') {
+      if (/^[\s.-]+$/.test(stringValue)) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   /**

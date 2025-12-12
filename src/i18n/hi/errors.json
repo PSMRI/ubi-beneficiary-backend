@@ -14,6 +14,7 @@
     "AUTH_INVALID_TOKEN_KEYCLOAK_ID_MISSING": "अमान्य टोकन: keycloak_id अनुपलब्ध है",
     "AUTH_ACCOUNT_NOT_FULLY_SETUP": "खाता सेटअप पूर्ण नहीं है",
     "AUTH_ONLY_OTR_CERTIFICATE_ALLOWED": "इस प्रवाह के लिए केवल OTR प्रमाणपत्र की अनुमति है",
+    "AUTH_DOCUMENT_TYPE_MISMATCH": "अपलोड किया गया दस्तावेज़ अपेक्षित दस्तावेज़ प्रकार से मेल नहीं खाता। कृपया सही दस्तावेज़ अपलोड करें।",
     "AUTH_UNAUTHORIZED": "अनधिकृत पहुंच",
     "AUTH_REGISTRATION_PARTIAL_SUCCESS": "पंजीकरण सफलतापूर्वक पूर्ण हुआ, लेकिन दस्तावेज़ अपलोड विफल रहा। कृपया लॉग इन करने के बाद OTR प्रमाणपत्र अपलोड करें।",
     "ACCOUNT_NOT_FULLY_SETUP": "खाता सेटअप पूर्ण नहीं है",
