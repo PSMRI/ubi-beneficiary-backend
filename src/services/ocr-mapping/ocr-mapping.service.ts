@@ -55,6 +55,17 @@ export class OcrMappingService {
       const startTime = Date.now();
       const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema, expectedDocumentName);
       this.logger.log(`⏱️ AI Mapping Logic took: ${Date.now() - startTime}ms`);
+      
+      // Log raw mapped data from AI
+      if (mappedData && Object.keys(mappedData).length > 0) {
+        this.logger.log(`📋 Raw mapped data from AI (${Object.keys(mappedData).length} fields):`);
+        Object.entries(mappedData).forEach(([field, value]) => {
+          this.logger.log(`  - ${field}: ${JSON.stringify(value)}`);
+        });
+      } else {
+        this.logger.warn('No data mapped by AI - returning empty result');
+      }
+      
       const processingMethod: 'ai' | 'keyword' | 'hybrid' = mappedData && Object.keys(mappedData).length > 0 ? 'ai' : 'keyword';
 
       // Extract isValidDocument from mappedData if present
@@ -108,7 +119,7 @@ export class OcrMappingService {
         return mappedData;
       }
 
-      this.logger.warn('AI mapping returned empty result');
+      this.logger.warn('⚠️ AI mapping returned empty result');
       return null;
     } catch (error: any) {
       this.logger.error(`AI mapping failed: ${error?.message || error}`);
@@ -128,7 +139,7 @@ export class OcrMappingService {
     mappedData = mappedData || {};
 
     // Validate and normalize the mapped data
-    const validationResult = this.validateAndNormalize(mappedData, vcFields);
+    const validationResult = this.validateAndNormalize(mappedData, vcFields, language);
 
     // Filter to only document fields for metrics calculation
     const documentFieldNames = Object.keys(vcFields).filter(
@@ -152,6 +163,22 @@ export class OcrMappingService {
     const confidence = documentFieldNames.length > 0 ? Number((presentFields.length / documentFieldNames.length).toFixed(2)) : 0;
 
     this.logger.log(`Mapping complete: ${presentFields.length}/${documentFieldNames.length} fields (${Math.round(confidence * 100)}% confidence) - Method: ${processingMethod}`);
+    
+    // Log final mapped data with values
+    if (Object.keys(validationResult.data).length > 0) {
+      this.logger.log(`✅ Final mapped data after validation (${Object.keys(validationResult.data).length} fields):`);
+      Object.entries(validationResult.data).forEach(([field, value]) => {
+        const fieldType = typeof value;
+        const displayValue = value === null || value === undefined 
+          ? 'null' 
+          : fieldType === 'object' 
+            ? JSON.stringify(value).substring(0, 100) + (JSON.stringify(value).length > 100 ? '...' : '')
+            : String(value).substring(0, 100) + (String(value).length > 100 ? '...' : '');
+        this.logger.log(`  ✓ ${field} [${fieldType}]: ${displayValue}`);
+      });
+    } else {
+      this.logger.warn('⚠️ No fields successfully mapped after validation');
+    }
     
     if (missingRequiredFields.length > 0) {
       this.logger.warn(`Missing ${missingRequiredFields.length} required field(s): [${missingRequiredFields.join(', ')}]`);
@@ -187,10 +214,29 @@ export class OcrMappingService {
         continue;
       }
 
-      properties[fieldName] = {
+      const propertySchema: Record<string, any> = {
         type: fieldConfig.type || 'string',
         description: fieldConfig.description || fieldName.replaceAll('_', ' '),
       };
+
+      // Add validation constraints to help AI understand requirements
+      if (fieldConfig.maxLength) {
+        propertySchema.maxLength = fieldConfig.maxLength;
+      }
+      if (fieldConfig.minLength) {
+        propertySchema.minLength = fieldConfig.minLength;
+      }
+      if (fieldConfig.pattern) {
+        propertySchema.pattern = fieldConfig.pattern;
+      }
+      if (fieldConfig.format) {
+        propertySchema.format = fieldConfig.format;
+      }
+      if (fieldConfig.enum && fieldConfig.enum.length > 0) {
+        propertySchema.enum = fieldConfig.enum;
+      }
+
+      properties[fieldName] = propertySchema;
     }
 
     return {
@@ -242,8 +288,13 @@ export class OcrMappingService {
   /**
    * Validate and normalize mapped data
    */
-  private validateAndNormalize(data: Record<string, any>, vcFields: VcFields): { data: Record<string, any>; warnings: string[] } {
+  private validateAndNormalize(data: Record<string, any>, vcFields: VcFields, language: string = 'en'): { 
+    data: Record<string, any>; 
+    warnings: string[]; 
+    validationErrors: Array<{ field: string; error: string; constraint: string }>;
+  } {
     const warnings: string[] = [];
+    const validationErrors: Array<{ field: string; error: string; constraint: string }> = [];
     const normalizedData: Record<string, any> = {};
 
     // Validate each field
@@ -251,10 +302,14 @@ export class OcrMappingService {
       const value = data[fieldName];
       
       if (value !== null && value !== undefined) {
-        const validationResult = this.validateAndConvertField(value, fieldName, fieldConfig);
+        const validationResult = this.validateAndConvertField(value, fieldName, fieldConfig, language);
         
         if (validationResult.warning) {
           warnings.push(validationResult.warning);
+        }
+
+        if (validationResult.validationErrors && validationResult.validationErrors.length > 0) {
+          validationErrors.push(...validationResult.validationErrors);
         }
         
         if (validationResult.value !== null) {
@@ -263,13 +318,25 @@ export class OcrMappingService {
       }
     }
 
-    return { data: normalizedData, warnings };
-  }
-
-  /**
+    return { data: normalizedData, warnings, validationErrors };
+  }  /**
    * Validate and convert a single field value to its correct type
    */
-  private validateAndConvertField(value: any, fieldName: string, fieldConfig: any): { value: any; warning?: string } {
+  private validateAndConvertField(
+    value: any, 
+    fieldName: string, 
+    fieldConfig: any,
+    language: string = 'en'
+  ): { 
+    value: any; 
+    warning?: string;
+    validationErrors?: Array<{ field: string; error: string; constraint: string }>;
+  } {
+    const validationErrors: Array<{ field: string; error: string; constraint: string }> = [];
+    
+    // Get validation messages from config
+    const validationMessages = fieldConfig.validationMessages?.[language] || fieldConfig.validationMessages?.['en'] || {};
+
     // Check if value is meaningless (only punctuation/whitespace)
     if (this.isMeaninglessValue(value, fieldConfig.type)) {
       return {
@@ -292,7 +359,70 @@ export class OcrMappingService {
       };
     }
 
-    return { value: convertedValue };
+    // Validate constraints on the converted value
+    const stringValue = String(convertedValue);
+
+    // Check minLength constraint (for strings)
+    if (fieldConfig.minLength && (fieldConfig.type === 'string' || !fieldConfig.type)) {
+      if (stringValue.length < fieldConfig.minLength) {
+        const errorMessage = validationMessages.minLength || 
+          `Field must be at least ${fieldConfig.minLength} characters (found ${stringValue.length})`;
+        validationErrors.push({
+          field: fieldName,
+          error: errorMessage,
+          constraint: 'minLength'
+        });
+      }
+    }
+
+    // Check maxLength constraint (for strings)
+    if (fieldConfig.maxLength && (fieldConfig.type === 'string' || !fieldConfig.type)) {
+      if (stringValue.length > fieldConfig.maxLength) {
+        const errorMessage = validationMessages.maxLength || 
+          `Field exceeds maximum length of ${fieldConfig.maxLength} characters (found ${stringValue.length})`;
+        validationErrors.push({
+          field: fieldName,
+          error: errorMessage,
+          constraint: 'maxLength'
+        });
+      }
+    }
+
+    // Check pattern constraint (regex validation)
+    if (fieldConfig.pattern) {
+      try {
+        const regex = new RegExp(fieldConfig.pattern);
+        if (!regex.test(stringValue)) {
+          const errorMessage = validationMessages.pattern || 
+            `Field does not match required pattern: ${fieldConfig.pattern}`;
+          validationErrors.push({
+            field: fieldName,
+            error: errorMessage,
+            constraint: 'pattern'
+          });
+        }
+      } catch (regexError) {
+        this.logger.warn(`Invalid regex pattern for field "${fieldName}": ${fieldConfig.pattern}`, regexError);
+      }
+    }
+
+    // Check enum constraint
+    if (fieldConfig.enum && fieldConfig.enum.length > 0) {
+      if (!fieldConfig.enum.includes(stringValue)) {
+        const errorMessage = validationMessages.enum || 
+          `Field must be one of: ${fieldConfig.enum.join(', ')}`;
+        validationErrors.push({
+          field: fieldName,
+          error: errorMessage,
+          constraint: 'enum'
+        });
+      }
+    }
+
+    return { 
+      value: convertedValue,
+      validationErrors: validationErrors.length > 0 ? validationErrors : undefined
+    };
   }
 
   /**

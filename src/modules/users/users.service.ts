@@ -2960,6 +2960,7 @@ export class UserService {
 		ocrResult: any,
 		uploadDocumentDto: UploadDocumentDto,
 		issueVC: string,
+		req?: any,
 	): Promise<boolean | undefined> {
 		// Document type validation - now done by LLM during OCR mapping
 		let isValidDocument: boolean | undefined = undefined;
@@ -3614,24 +3615,29 @@ export class UserService {
 				);
 			}
 
-			const allMissingRequired = this.collectMissingRequiredFields(
-				vcFields,
-				vcMapping,
-				uploadDocumentDto,
-				issueVC,
-			);
-			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
+		const allMissingRequired = this.collectMissingRequiredFields(
+			vcFields,
+			vcMapping,
+			uploadDocumentDto,
+			issueVC,
+		);
+		this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
-			if (allMissingRequired.length > 0) {
-				this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto);
-			}
+		if (allMissingRequired.length > 0) {
+			this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto);
+		}
 
-			const requiredFieldsCount = Object.values(vcFields).filter(
-				(config) => config?.required === true,
-			).length;
-			Logger.log(
-				`All ${requiredFieldsCount} required fields are present for document`,
-			);
+		// Check for validation constraint failures
+		if (vcMapping.validation_errors && vcMapping.validation_errors.length > 0) {
+			this.throwValidationConstraintsError(vcMapping.validation_errors, uploadDocumentDto);
+		}
+
+		const requiredFieldsCount = Object.values(vcFields).filter(
+			(config) => config?.required === true,
+		).length;
+		Logger.log(
+			`All ${requiredFieldsCount} required fields are present for document`,
+		);
 		} catch (error) {
 			Logger.error(
 				`Error in validateRequiredFieldsFromOcrMapping: ${error.message}`,
@@ -3762,6 +3768,29 @@ export class UserService {
 		throw new BadRequestException({
 			message: errorMessage,
 			statusCode: HttpStatus.BAD_REQUEST,
+		});
+	}
+
+	private throwValidationConstraintsError(
+		validationErrors: Array<{ field: string; error: string; constraint: string }>,
+		uploadDocumentDto: UploadDocumentDto,
+	): void {
+		// Format validation errors for user-friendly display
+		const errorDetails = validationErrors.map(ve => `${ve.field}: ${ve.error}`).join('; ');
+		
+		const errorMessage = this.i18n.t('validation.VC_VALIDATION_CONSTRAINTS_FAILED', {
+			args: {
+				errors: errorDetails
+			}
+		});
+
+		Logger.error(`Document validation constraints failed: ${errorMessage}`);
+		Logger.debug(`Validation errors: ${JSON.stringify(validationErrors, null, 2)}`);
+		
+		throw new BadRequestException({
+			message: errorMessage,
+			statusCode: HttpStatus.BAD_REQUEST,
+			validationErrors: validationErrors, // Include detailed errors for API consumers
 		});
 	}
 

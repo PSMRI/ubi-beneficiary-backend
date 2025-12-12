@@ -212,5 +212,10 @@
     "VC_SPACE_ID_REQUIRED": "Space ID is required for VC creation. Please configure spaceId in vcConfiguration.",
     "VC_DOCUMENT_TYPE_REQUIRED": "Document type is required and cannot be empty.",
     "VC_DOCUMENT_SUBTYPE_REQUIRED": "Document subtype is required and cannot be empty.",
-    "VC_MISSING_VC_FIELDS_CONFIG": "Cannot validate required fields: missing vcFields configuration or mapping data."
+    "VC_MISSING_VC_FIELDS_CONFIG": "Cannot validate required fields: missing vcFields configuration or mapping data.",
+    "VC_FIELD_MAX_LENGTH_EXCEEDED": "Field '{{fieldName}}' exceeds maximum length of {{maxLength}} characters (found {{actualLength}} characters).",
+    "VC_FIELD_MIN_LENGTH_NOT_MET": "Field '{{fieldName}}' must be at least {{minLength}} characters (found {{actualLength}} characters).",
+    "VC_FIELD_PATTERN_MISMATCH": "Field '{{fieldName}}' does not match required format pattern.",
+    "VC_FIELD_INVALID_ENUM": "Field '{{fieldName}}' must be one of: {{allowedValues}}.",
+    "VC_VALIDATION_CONSTRAINTS_FAILED": "Document validation failed: {{errors}}"
 }
