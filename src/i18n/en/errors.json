@@ -14,6 +14,7 @@
     "AUTH_INVALID_TOKEN_KEYCLOAK_ID_MISSING": "Invalid token: keycloak_id missing",
     "AUTH_ACCOUNT_NOT_FULLY_SETUP": "Account setup is not complete",
     "AUTH_ONLY_OTR_CERTIFICATE_ALLOWED": "Only OTR Certificate is allowed for this flow",
+    "AUTH_DOCUMENT_TYPE_MISMATCH": "The uploaded document does not match the expected document type. Please upload the correct document.",
     "AUTH_UNAUTHORIZED": "Unauthorized access",
     "AUTH_REGISTRATION_PARTIAL_SUCCESS": "Registration successful, but document upload failed. Please upload the OTR Certificate after login.",
     "ACCOUNT_NOT_FULLY_SETUP": "Account setup is not complete",

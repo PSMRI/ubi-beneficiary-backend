@@ -518,6 +518,23 @@ export class AuthService {
         };
       }
       this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
+      this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
+
+      // Step 7: Validate document type - check isValidDocument from LLM mapping result
+      if (vcMapping && 'isValidDocument' in vcMapping && vcMapping.isValidDocument !== undefined) {
+        const isValidDocument = vcMapping.isValidDocument;
+        this.loggerService.log(`Document type validation result from LLM: isValidDocument=${isValidDocument}, expectedDocumentName=${uploadDocumentDto.docName}`);
+        
+        if (!isValidDocument) {
+          const documentName = uploadDocumentDto.docName || 'Unknown';
+          this.loggerService.warn(`Document type validation FAILED: LLM determined document does not match expected type "${documentName}". Stopping processing.`);
+          throw new BadRequestException('The uploaded document does not match the expected document type. Please upload the correct document');
+        }
+        this.loggerService.log(`Document type validation PASSED: LLM confirmed document matches expected type "${uploadDocumentDto.docName}".`);
+      } else if (vcFields) {
+        // If vcFields exist but isValidDocument is missing, log warning but proceed (shouldn't happen with required expectedDocumentName)
+        this.loggerService.warn(`Document type validation: isValidDocument field missing from LLM response. Expected document type: ${uploadDocumentDto.docName}`);
+      }
 
       this.loggerService.log('OTR Certificate processed successfully (OCR + mapping done)');
 

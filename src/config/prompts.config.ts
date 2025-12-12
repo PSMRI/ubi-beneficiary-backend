@@ -5,7 +5,130 @@
 const DEFAULT_PROMPTS = {
   ocrExtraction: `Extract all text from this document. Return only the extracted text, preserving layout as much as possible. No explanations or formatting.`,
 
-  ocrMapping: `STEP 1 - DOCUMENT TYPE VALIDATION (MANDATORY FIRST STEP - MUST BE PERFORMED BEFORE DATA EXTRACTION): You MUST analyze the entire document text to determine if it matches the expected document type "{expectedDocumentName}". This is CRITICAL - incorrect validation will cause serious errors. VALIDATION APPROACH: 1. Read the ENTIRE document text carefully. 2. Identify the document's PRIMARY PURPOSE and TYPE based on: - Document title/heading (e.g., "Marksheet", "Certificate", "Receipt", "Resident Certificate", "Domicile Certificate") - Key phrases and terminology used (e.g., "marks", "grades", "percentage" for marksheets vs "resident", "domicile", "local person" for certificates) - Document structure and layout - Types of data fields present - Institutional context (school/college for marksheets vs government office for certificates) 3. Compare the identified document type with the expected type "{expectedDocumentName}". 4. Check if the schema fields match what would be found in the actual document type. CRITICAL VALIDATION RULES: Set "isValidDocument" to true ONLY IF ALL of the following are true: - The document's PRIMARY TYPE clearly matches "{expectedDocumentName}" - The document contains the characteristic fields/data expected for "{expectedDocumentName}" (e.g., marksheets MUST have marks/grades/percentages, certificates MUST have certificate-specific fields) - The document structure aligns with "{expectedDocumentName}" - There is NO indication the document is a different type Set "isValidDocument" to false IF ANY of the following are true: - The document title/heading indicates a different document type (e.g., document says "Resident Certificate" or "Domicile Certificate" but expecting "Marksheet") - The document contains fields/patterns typical of a different document type - The schema expects fields that are NOT present in this type of document (e.g., schema expects marks/grades/percentages but document has no academic performance data) - The document structure does not match the expected type - There is ANY doubt or ambiguity about the document type EXAMPLES OF INVALID MATCHES (set isValidDocument=false): - Expecting "Marksheet" but document is "Resident Certificate", "Domicile Certificate", "Income Certificate", "Birth Certificate", "Bonafide Certificate", etc. - Expecting "Bonafide Certificate" but document is "Marksheet", "Transfer Certificate", "Resident Certificate", etc. - Expecting "Income Certificate" but document is "Marksheet", "Resident Certificate", etc. - Any certificate type when expecting a different certificate type IMPORTANT: - Do NOT validate based on partial matches or extracted field values alone - Do NOT set isValidDocument=true just because some fields can be extracted - The document TYPE must be EXACTLY "{expectedDocumentName}" - When in doubt, ALWAYS set isValidDocument=false - Be EXTREMELY STRICT - false positives are worse than false negatives STEP 2 - DATA EXTRACTION: Only proceed with extraction if isValidDocument=true. Extract data from the document text below according to the schema. Return ONLY a JSON object with "isValidDocument" as the first field (MANDATORY - MUST be boolean true or false), followed by all the extracted data fields from the schema. DOCUMENT TEXT: {extractedText} EXPECTED DOCUMENT TYPE: {expectedDocumentName} SCHEMA TO FILL: {schema} STRICT EXTRACTION RULES: 1. Use ONLY text that exists verbatim in the DOCUMENT TEXT above 2. If a field's value is NOT found in the document, set it to null 3. Never guess, infer, or create values 4. Never use a value from one field to fill a different field (e.g., issue date is NOT exam date) 5. For name fields: Extract only the individual's name, excluding relationship descriptors (S/O, D/O, W/O, etc.), Stop at relationship indicators or descriptive phrases, Include titles (Mr., Miss, Mrs., Dr.) only if part of the actual name, For compound names, extract the complete name but exclude any following relational information 6. For date fields: Only extract if the document explicitly labels that specific date type (e.g., Exam Date:, DOB:) 7. If a date exists but its purpose is unclear, set the field to null rather than guessing 8. Match field names to document labels - Date: near signature is likely issue date, not exam date 9. For address fields: Extract complete addresses but separate individual components when the schema requires specific parts 10. For numerical fields: Extract only the numbers relevant to the field, excluding any accompanying text or currency symbols unless specifically required. IMPORTANT: Ignore leading hyphens - in number fields (e.g., if document shows -223414178889127, extract 223414178889127 without the hyphen) 11. REJECT meaningless values: Never extract standalone punctuation marks (e.g., -, ., /, |) as field values. If only punctuation or whitespace is found, set the field to null 12. REJECT invalid values: For text fields (names, addresses, IDs), reject values that are ONLY punctuation, whitespace, or special characters. The value must contain at least one alphanumeric character 13. For number fields: If the extracted value is only a hyphen or other non-numeric character, set it to null. Always strip leading hyphens from number values before extraction (numbers like OTR numbers, IDs should never be negative). RETURN FORMAT: Return pure JSON starting with { and ending with }. Include "isValidDocument" as the first field (MANDATORY - MUST be boolean true or false), followed by all schema fields. No text before or after. Example format: {"isValidDocument": false, "field1": null, "field2": null, ...}`,
+  ocrMapping: `CRITICAL INSTRUCTION: YOU MUST COMPLETE DOCUMENT VALIDATION FIRST BEFORE ANY DATA EXTRACTION
+
+PHASE 1: DOCUMENT TYPE VALIDATION (MANDATORY - DO NOT SKIP)
+
+STOP! Read this entire section before proceeding to extraction.
+
+Your PRIMARY TASK is to determine if the uploaded document is actually a "{expectedDocumentName}".
+Many documents are uploaded incorrectly. You MUST catch mismatches BEFORE attempting extraction.
+
+DOCUMENT TEXT TO ANALYZE:
+{extractedText}
+
+EXPECTED DOCUMENT TYPE:
+"{expectedDocumentName}"
+
+VALIDATION PROCESS (Follow in order):
+
+STEP 1: READ THE DOCUMENT TITLE/HEADING
+   - What does the document call itself?
+   - Look for the main title at the top of the document
+   - This is the STRONGEST indicator of document type
+
+STEP 2: IDENTIFY DOCUMENT CATEGORY
+   - What is this document's purpose?
+   - Is it an academic document (marksheet, certificate, transcript)?
+   - Is it a government certificate (birth, caste, income, domicile)?
+   - Is it an identity document (Aadhaar, PAN, etc.)?
+   - Is it something else entirely?
+
+STEP 3: EXAMINE THE SCHEMA FIELDS
+   Schema provided: {schema}
+   
+   - What type of data does this schema expect?
+   - Do these fields make sense for the document you're analyzing?
+   - Example: If schema has "marks", "grades", "subjects" then it expects academic document
+   - Example: If schema has "income", "annual salary" then it expects income certificate
+   - Example: If schema has "caste", "category" then it expects caste certificate
+
+STEP 4: COMPARE DOCUMENT CONTENT VS SCHEMA EXPECTATIONS
+   Ask yourself:
+   - Does the document contain the types of fields the schema expects?
+   - Is the document structure compatible with what "{expectedDocumentName}" should be?
+   - Are key identifying fields from the schema present in the document?
+
+STEP 5: MAKE YOUR VALIDATION DECISION
+
+   Set "isValidDocument": true ONLY IF ALL OF THESE ARE TRUE:
+   - Document title/heading matches or clearly indicates "{expectedDocumentName}"
+   - Document category aligns with "{expectedDocumentName}" type
+   - Document contains the characteristic fields expected in the schema
+   - Document structure is appropriate for "{expectedDocumentName}"
+   - You have HIGH CONFIDENCE this is the correct document type
+
+   Set "isValidDocument": false IF ANY OF THESE ARE TRUE:
+   - Document title/heading indicates a DIFFERENT document type
+   - Document category does not match "{expectedDocumentName}" category
+   - Document is missing most/all of the key fields from schema
+   - Document structure does not fit "{expectedDocumentName}" format
+   - You have ANY doubt or uncertainty about the document type
+   - Document appears to be completely unrelated content
+
+CRITICAL RULES:
+- DO NOT proceed to extraction if document type doesn't match
+- DO NOT set isValidDocument=true just because you can extract SOME fields
+- DO NOT ignore mismatches between document title and expected type
+- DO NOT assume partial matches mean valid document
+- DO be extremely strict - false rejection is better than false acceptance
+- DO trust the document's own title/heading as primary indicator
+- DO set isValidDocument=false when uncertain
+
+PHASE 2: DATA EXTRACTION (ONLY IF isValidDocument=true from Phase 1)
+
+IF YOU SET isValidDocument=false IN PHASE 1:
+   - Return immediately with {"isValidDocument": false, ...all fields as null}
+   - DO NOT attempt to extract any data
+   - DO NOT try to fill schema fields
+
+IF YOU SET isValidDocument=true IN PHASE 1:
+   - Proceed with careful data extraction following the rules below
+
+EXTRACTION RULES:
+1. Use ONLY text that exists verbatim in the DOCUMENT TEXT
+2. If a field's value is NOT found in the document, set it to null
+3. Never guess, infer, or create values not present in the source text
+4. Never use a value from one field to fill a different field
+5. For name fields:
+   - Extract only the individual's name
+   - Exclude relationship descriptors (S/O, D/O, W/O, etc.)
+   - Include titles (Mr., Miss, Mrs., Dr.) only if part of the actual name
+6. For date fields:
+   - Only extract if the document explicitly labels that specific date type
+   - If a date's purpose is unclear, set to null rather than guessing
+7. For address fields:
+   - Extract complete addresses but separate components per schema requirements
+8. For numerical fields:
+   - Extract only numbers relevant to the field
+   - Strip leading hyphens from numbers (e.g., "-12345" becomes "12345")
+   - Exclude text or currency symbols unless specifically required
+9. REJECT meaningless values:
+   - Never extract standalone punctuation (-, ., /, |)
+   - If only punctuation or whitespace found, set to null
+10. REJECT invalid values:
+    - For text fields, values must contain at least one alphanumeric character
+    - Reject values that are ONLY punctuation, whitespace, or special characters
+11. For number fields:
+    - If extracted value is only hyphen or non-numeric character, set to null
+
+OUTPUT FORMAT (MANDATORY)
+
+Return ONLY pure JSON. No markdown. No explanations. No code blocks.
+
+Structure:
+{
+  "isValidDocument": true/false,
+  "field1": "value" or null,
+  "field2": "value" or null,
+  ...all other schema fields...
+}
+
+REMEMBER:
+- If isValidDocument=false, set ALL other fields to null
+- Start JSON with { and end with }
+- No text before or after the JSON
+- No comments or explanations`,
 
   validation: 'Test'
 } as const;
