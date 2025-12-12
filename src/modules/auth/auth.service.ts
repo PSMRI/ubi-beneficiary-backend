@@ -494,6 +494,11 @@ export class AuthService {
       let vcMapping = null;
       const mappingStartTime = Date.now();
       if (vcFields) {
+        // Pass docName from uploadDocumentDto for document type validation
+        const expectedDocumentName = uploadDocumentDto.docName;
+        if (!expectedDocumentName || expectedDocumentName.trim() === '') {
+          throw new BadRequestException('DOCUMENT_NAME_REQUIRED_FOR_VALIDATION');
+        }
         vcMapping = await this.userService.ocrMapping.mapAfterOcr(
           {
             text: ocrResult.extractedText,
@@ -501,6 +506,7 @@ export class AuthService {
             docSubType: uploadDocumentDto.docSubType,
           },
           vcFields,
+          expectedDocumentName,
         );
       } else {
         vcMapping = {

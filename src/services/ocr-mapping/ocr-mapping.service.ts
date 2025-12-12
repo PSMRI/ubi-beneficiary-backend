@@ -26,10 +26,17 @@ export class OcrMappingService {
    * Map OCR text to structured data after OCR processing
    * @param input - OCR mapping input containing text and document info
    * @param vcFields - VcFields configuration for the document type
+   * @param expectedDocumentName - Expected document type name for validation
    */
-  async mapAfterOcr(input: OcrMappingInput, vcFields: VcFields): Promise<OcrMappingResult> {
+  async mapAfterOcr(input: OcrMappingInput, vcFields: VcFields, expectedDocumentName: string): Promise<OcrMappingResult> {
     try {
-      this.logger.log(`OCR mapping started: ${input.docType}/${input.docSubType}`);
+      // Validate expectedDocumentName is provided
+      if (!expectedDocumentName || expectedDocumentName.trim() === '') {
+        this.logger.error('expectedDocumentName is required for OCR mapping');
+        throw new Error('EXPECTED_DOCUMENT_NAME_REQUIRED');
+      }
+      
+      this.logger.log(`OCR mapping started: ${input.docType}/${input.docSubType}, expectedDocumentName: ${expectedDocumentName}`);
       if (!vcFields || Object.keys(vcFields).length === 0) {
         this.logger.warn(`No vcFields provided for mapping`);
         return {
@@ -46,11 +53,25 @@ export class OcrMappingService {
 
       // Use AI mapping
       const startTime = Date.now();
-      const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema);
+      const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema, expectedDocumentName);
       this.logger.log(`⏱️ AI Mapping Logic took: ${Date.now() - startTime}ms`);
       const processingMethod: 'ai' | 'keyword' | 'hybrid' = mappedData && Object.keys(mappedData).length > 0 ? 'ai' : 'keyword';
 
-      return this.computeResultFromMappedData(mappedData, vcFields, processingMethod);
+      // Extract isValidDocument from mappedData if present
+      let isValidDocument: boolean | undefined = undefined;
+      if (mappedData && 'isValidDocument' in mappedData) {
+        isValidDocument = mappedData.isValidDocument;
+        this.logger.log(`Document type validation result from LLM: isValidDocument=${isValidDocument}, expectedDocumentName=${expectedDocumentName}`);
+        
+        // Remove isValidDocument from mappedData to avoid including it in the data fields
+        const { isValidDocument: _, ...dataWithoutValidation } = mappedData;
+        return this.computeResultFromMappedData(dataWithoutValidation, vcFields, processingMethod, isValidDocument);
+      } else if (mappedData) {
+        // If isValidDocument is missing from response, log warning (but still proceed)
+        this.logger.warn(`Expected document type "${expectedDocumentName}" was provided but LLM response does not contain isValidDocument field. Response keys: ${Object.keys(mappedData).join(', ')}`);
+      }
+
+      return this.computeResultFromMappedData(mappedData, vcFields, processingMethod, isValidDocument);
 
     } catch (error: any) {
       this.logger.error(`OCR mapping failed: ${error?.message || error}`);
@@ -67,13 +88,13 @@ export class OcrMappingService {
   /**
    * Attempt to map using AI adapter, returns null on any failure or unexpected response
    */
-  private async tryAiMapping(adapterType: string, text: string, schema: Record<string, any>): Promise<Record<string, any> | null> {
+  private async tryAiMapping(adapterType: string, text: string, schema: Record<string, any>, expectedDocumentName: string): Promise<Record<string, any> | null> {
     if (!((adapterType === 'bedrock' || adapterType === 'google-gemini') && this.aiAdapter.isConfigured())) {
       return null;
     }
 
     try {
-      const mappedData = await this.aiAdapter.mapTextToSchema(text, schema);
+      const mappedData = await this.aiAdapter.mapTextToSchema(text, schema, expectedDocumentName);
 
       // Check if the response is the full AI response object instead of parsed JSON
       if (mappedData && typeof mappedData === 'object' && ('generation' in mappedData || 'content' in mappedData)) {
@@ -83,7 +104,7 @@ export class OcrMappingService {
 
       if (mappedData && Object.keys(mappedData).length > 0) {
         const fieldCount = Object.keys(schema.properties || {}).length;
-        this.logger.log(`AI mapping successful: ${Object.keys(mappedData).length}/${fieldCount} fields extracted`);
+        this.logger.log(`AI mapping successful: ${Object.keys(mappedData).length}/${fieldCount} fields extracted, isValidDocument: ${mappedData.isValidDocument}`);
         return mappedData;
       }
 
@@ -101,7 +122,8 @@ export class OcrMappingService {
   private computeResultFromMappedData(
     mappedData: Record<string, any> | null,
     vcFields: VcFields,
-    processingMethod: 'ai' | 'keyword' | 'hybrid'
+    processingMethod: 'ai' | 'keyword' | 'hybrid',
+    isValidDocument?: boolean
   ): OcrMappingResult {
     mappedData = mappedData || {};
 
@@ -135,12 +157,16 @@ export class OcrMappingService {
       this.logger.warn(`Missing ${missingRequiredFields.length} required field(s): [${missingRequiredFields.join(', ')}]`);
     }
 
+    // Ensure isValidDocument is not included in mapped_data (it's a metadata field, not a data field)
+    const { isValidDocument: _, ...finalMappedData } = validationResult.data;
+
     return {
-      mapped_data: validationResult.data,
+      mapped_data: finalMappedData,
       missing_fields: missingFields,
       confidence,
       processing_method: processingMethod,
       warnings: validationResult.warnings,
+      isValidDocument,
     };
   }
 

@@ -2852,6 +2852,7 @@ export class UserService {
 		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
 		// Validate document type from OCR text and VC fields
+		Logger.log(`Starting document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
 		const isValidDocument = await this.validateDocumentAndFields(
 			documentConfig,
 			ocrResult,
@@ -2860,21 +2861,26 @@ export class UserService {
 		);
 
 		if (isValidDocument === false) {
-			const documentName = documentConfig.name || documentConfig.label;
+			const documentName = uploadDocumentDto.docName || 'Unknown';
+			Logger.warn(`Document validation failed - returning error. Expected document type: ${documentName}`);
 			return new ErrorResponse({
 				statusCode: HttpStatus.BAD_REQUEST,
 				errorMessage: `The uploaded document does not match the required type: ${documentName}. Please upload the correct document.`,
 			});
 		}
+		
+		Logger.log(`Document validation passed or skipped. isValidDocument=${isValidDocument}, proceeding with document processing.`);
 
 		// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
 		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
 
 		const mappingStartTime = Date.now();
+		const expectedDocumentName = uploadDocumentDto.docName;
 		const vcMapping = isDhiwayVcUrl
 			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
-		Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');			// Step: Perform VC field validation and matching against user profile
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName);
+			console.log('vcMapping ====>', vcMapping);
+			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');			// Step: Perform VC field validation and matching against user profile
 			const matchingResult = await this.performFieldMatching(
 				userDetails.user_id,
 				vcMapping,
@@ -2955,24 +2961,14 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 		issueVC: string,
 	): Promise<boolean | undefined> {
-		// Document type validation
+		// Document type validation - now done by LLM during OCR mapping
 		let isValidDocument: boolean | undefined = undefined;
-		if (documentConfig && (documentConfig.name || documentConfig.label)) {
-			const documentName = documentConfig.name || documentConfig.label;
-			const extractedText = ocrResult?.extractedText || '';
-			isValidDocument = this.validateDocumentTypeFromText(extractedText, documentName);
-
-			if (!isValidDocument) {
-				Logger.warn(`Document type validation failed: Expected "${documentName}" but document text does not contain it`);
-				return false;
-			}
-
-			Logger.log(`Document type validation passed: Document contains "${documentName}"`);
-		}
+		// Use docName from API payload instead of documentConfig.name
+		const expectedDocumentName = uploadDocumentDto.docName;
 
 		// Required field validation
 		const validationStartTime = Date.now();
-		Logger.log(`Validating required fields for document`);
+		Logger.log(`Validating document type and required fields`);
 		const vcFields = await this.vcFieldsService.getVcFields(
 			uploadDocumentDto.docType,
 			uploadDocumentDto.docSubType,
@@ -2981,7 +2977,27 @@ export class UserService {
 		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
 		const vcMapping = isDhiwayVcUrl
 			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-			: await this.prepareVcMapping(ocrResult, uploadDocumentDto);
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName);
+
+		// Check isValidDocument from LLM mapping result (only for non-Dhiway VC URL cases)
+		// THIS CHECK MUST HAPPEN BEFORE FIELD VALIDATION
+		// Use only LLM's response - no additional logic or validation
+		if (!isDhiwayVcUrl && vcMapping && 'isValidDocument' in vcMapping && vcMapping.isValidDocument !== undefined) {
+			isValidDocument = vcMapping.isValidDocument;
+			Logger.log(`Document type validation result from LLM: isValidDocument=${isValidDocument}`);
+			
+			if (!isValidDocument) {
+				Logger.warn(`Document type validation FAILED: LLM determined document does not match expected type. Stopping validation and returning error.`);
+				return false;
+			}
+			Logger.log(`Document type validation PASSED: LLM confirmed document matches expected type. Proceeding with field validation.`);
+		} else if (isDhiwayVcUrl) {
+			// For Dhiway VC URL cases, skip document type validation as VC data is already validated
+			Logger.log(`Skipping document type validation for Dhiway VC URL case - VC data already validated`);
+		}
+		
+		// Proceed to field validation
+		Logger.log(`Proceeding to field validation. isValidDocument=${isValidDocument}`);
 
 		if (vcFields && Object.keys(vcFields).length > 0) {
 			await this.validateRequiredFieldsFromOcrMapping(
@@ -3196,6 +3212,7 @@ export class UserService {
 	private async prepareVcMapping(
 		ocrResult: any,
 		uploadDocumentDto: UploadDocumentDto,
+		expectedDocumentName: string,
 	) {
 		const vcFields = await this.vcFieldsService.getVcFields(
 			uploadDocumentDto.docType,
@@ -3215,6 +3232,11 @@ export class UserService {
 			};
 		}
 
+		// Ensure expectedDocumentName is provided (docName is required in DTO)
+		if (!expectedDocumentName || expectedDocumentName.trim() === '') {
+			throw new BadRequestException('DOCUMENT_NAME_REQUIRED_FOR_VALIDATION');
+		}
+
 		return await this.ocrMappingService.mapAfterOcr(
 			{
 				text: ocrResult.extractedText,
@@ -3222,6 +3244,7 @@ export class UserService {
 				docSubType: uploadDocumentDto.docSubType,
 			},
 			vcFields,
+			expectedDocumentName,
 		);
 	}
 
@@ -3553,27 +3576,6 @@ export class UserService {
 		}
 
 		return { requiresQRProcessing, documentConfig };
-	}
-
-	/**
-	 * Validates that the extracted text contains the document name or label
-	 * This is a simple case-insensitive text search
-	 * To disable this validation, comment out the call to this method in uploadDocument
-	 * @param extractedText - The OCR extracted text from the document
-	 * @param documentNameOrLabel - The expected document name or label from vcConfiguration
-	 * @returns true if document name/label is found in extracted text, false otherwise
-	 */
-	private validateDocumentTypeFromText(extractedText: string, documentNameOrLabel: string): boolean {
-		if (!extractedText || !documentNameOrLabel) {
-			return false;
-		}
-
-		// Normalize both strings for case-insensitive comparison
-		const normalizedText = extractedText.toLowerCase().trim();
-		const normalizedName = documentNameOrLabel.toLowerCase().trim();
-
-		// Check if the document name/label exists in the extracted text
-		return normalizedText.includes(normalizedName);
 	}
 
 	// Helper to validate document type and subtype
