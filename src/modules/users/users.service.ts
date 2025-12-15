@@ -2815,14 +2815,20 @@ export class UserService {
 	 * @param req The request object containing authenticated user information
 	 * @param file The uploaded file (from multer)
 	 * @param uploadDocumentDto Metadata for the document
+	 * @param acceptLanguage Accept-Language header for i18n support
 	 * @returns Success response with document details
 	 */
 	async uploadDocument(
 		req: any,
 		file: Express.Multer.File,
 		uploadDocumentDto: UploadDocumentDto,
+		acceptLanguage?: string,
 	) {
 		try {
+			// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
+			const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
+			Logger.log(`Processing document upload with locale: ${locale}`);
+			
 			const flowStartTime = Date.now();
 			const userDetails = await this.getUserDetails(req);
 
@@ -2858,14 +2864,16 @@ export class UserService {
 			ocrResult,
 			uploadDocumentDto,
 			issueVC,
+			locale,
 		);
 
 		if (isValidDocument === false) {
 			const documentName = uploadDocumentDto.docName || 'Unknown';
 			Logger.warn(`Document validation failed - returning error. Expected document type: ${documentName}`);
+			const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { documentName });
 			return new ErrorResponse({
 				statusCode: HttpStatus.BAD_REQUEST,
-				errorMessage: `The uploaded document does not match the required type: ${documentName}. Please upload the correct document.`,
+				errorMessage,
 			});
 		}
 		
@@ -2878,9 +2886,19 @@ export class UserService {
 		const expectedDocumentName = uploadDocumentDto.docName;
 		const vcMapping = isDhiwayVcUrl
 			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName);
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
 			console.log('vcMapping ====>', vcMapping);
-			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');			// Step: Perform VC field validation and matching against user profile
+			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
+			
+			// Check for validation errors BEFORE proceeding with storage and VC creation
+			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
+				Logger.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
+				const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
+				const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
+				throw new BadRequestException(translatedError);
+			}
+			
+			// Step: Perform VC field validation and matching against user profile
 			const matchingResult = await this.performFieldMatching(
 				userDetails.user_id,
 				vcMapping,
@@ -2939,11 +2957,14 @@ export class UserService {
 
 			Logger.log(`⏱️ Total Document Upload Flow took: ${Date.now() - flowStartTime}ms`, 'UserService');
 
+			// Get translated success message
+			const successMessage = isUpdate
+				? this.i18n.translateSuccess('DOCUMENT_UPDATE_SUCCESS', locale)
+				: this.i18n.translateSuccess('DOCUMENT_UPLOAD_SUCCESS', locale);
+
 			return new SuccessResponse({
 				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
-				message: isUpdate
-					? 'Document updated successfully'
-					: 'Document uploaded successfully',
+				message: successMessage,
 				data: responseData,
 			});
 		} catch (error) {
@@ -2960,7 +2981,7 @@ export class UserService {
 		ocrResult: any,
 		uploadDocumentDto: UploadDocumentDto,
 		issueVC: string,
-		req?: any,
+		locale: string = 'en',
 	): Promise<boolean | undefined> {
 		// Document type validation - now done by LLM during OCR mapping
 		let isValidDocument: boolean | undefined = undefined;
@@ -2978,7 +2999,15 @@ export class UserService {
 		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
 		const vcMapping = isDhiwayVcUrl
 			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName);
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
+
+		// Check for validation errors BEFORE proceeding
+		if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
+			Logger.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
+			const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
+			const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
+			throw new BadRequestException(translatedError);
+		}
 
 		// Check isValidDocument from LLM mapping result (only for non-Dhiway VC URL cases)
 		// THIS CHECK MUST HAPPEN BEFORE FIELD VALIDATION
@@ -3006,6 +3035,7 @@ export class UserService {
 				vcMapping,
 				uploadDocumentDto,
 				issueVC,
+				locale,
 			);
 		} else {
 			Logger.warn(
@@ -3214,6 +3244,7 @@ export class UserService {
 		ocrResult: any,
 		uploadDocumentDto: UploadDocumentDto,
 		expectedDocumentName: string,
+		locale: string = 'en',
 	) {
 		const vcFields = await this.vcFieldsService.getVcFields(
 			uploadDocumentDto.docType,
@@ -3246,6 +3277,7 @@ export class UserService {
 			},
 			vcFields,
 			expectedDocumentName,
+			locale,
 		);
 	}
 
@@ -3599,6 +3631,7 @@ export class UserService {
 		vcMapping: any,
 		uploadDocumentDto: UploadDocumentDto,
 		issueVC?: string,
+		locale: string = 'en',
 	) {
 		try {
 			Logger.log(
@@ -3624,12 +3657,12 @@ export class UserService {
 		this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
 		if (allMissingRequired.length > 0) {
-			this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto);
+			this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto, locale);
 		}
 
 		// Check for validation constraint failures
 		if (vcMapping.validation_errors && vcMapping.validation_errors.length > 0) {
-			this.throwValidationConstraintsError(vcMapping.validation_errors, uploadDocumentDto);
+			this.throwValidationConstraintsError(vcMapping.validation_errors, uploadDocumentDto, locale);
 		}
 
 		const requiredFieldsCount = Object.values(vcFields).filter(
@@ -3754,14 +3787,13 @@ export class UserService {
 	private throwMissingFieldsError(
 		allMissingRequired: string[],
 		uploadDocumentDto: UploadDocumentDto,
+		locale: string = 'en',
 	): void {
 		const fieldList = allMissingRequired.join(', ');
-		const errorMessage = this.i18n.t('validation.MISSING_REQUIRED_FIELDS_IN_DOCUMENT', {
-			args: {
-				fields: fieldList,
-				docType: uploadDocumentDto.docType,
-				docSubType: uploadDocumentDto.docSubType
-			}
+		const errorMessage = this.i18n.translateError('MISSING_REQUIRED_FIELDS_IN_DOCUMENT', locale, {
+			fields: fieldList,
+			docType: uploadDocumentDto.docType,
+			docSubType: uploadDocumentDto.docSubType
 		});
 
 		Logger.error(`Document validation failed: ${errorMessage}`);
@@ -3774,14 +3806,13 @@ export class UserService {
 	private throwValidationConstraintsError(
 		validationErrors: Array<{ field: string; error: string; constraint: string }>,
 		uploadDocumentDto: UploadDocumentDto,
+		locale: string = 'en',
 	): void {
 		// Format validation errors for user-friendly display
 		const errorDetails = validationErrors.map(ve => `${ve.field}: ${ve.error}`).join('; ');
 		
-		const errorMessage = this.i18n.t('validation.VC_VALIDATION_CONSTRAINTS_FAILED', {
-			args: {
-				errors: errorDetails
-			}
+		const errorMessage = this.i18n.translateError('VC_VALIDATION_CONSTRAINTS_FAILED', locale, {
+			errors: errorDetails
 		});
 
 		Logger.error(`Document validation constraints failed: ${errorMessage}`);

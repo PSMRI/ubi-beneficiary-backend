@@ -118,6 +118,9 @@
     "_comment_19": "Profile & CRON Success Messages",
     "PROFILE_POPULATED": "प्रोफ़ाइल सफलतापूर्वक भरा गया",
     "CRON_JOB_EXECUTED": "Cron कार्य सफलतापूर्वक निष्पादित किया गया",
-    "CACHE_REFRESHED": "कैश सफलतापूर्वक रीफ्रेश किया गया"
+    "CACHE_REFRESHED": "कैश सफलतापूर्वक रीफ्रेश किया गया",
+    "_comment_20": "Document Upload Success Messages",
+    "DOCUMENT_UPLOAD_SUCCESS": "दस्तावेज़ सफलतापूर्वक अपलोड किया गया",
+    "DOCUMENT_UPDATE_SUCCESS": "दस्तावेज़ सफलतापूर्वक अपडेट किया गया"
 }
 

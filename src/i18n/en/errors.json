@@ -217,5 +217,9 @@
     "VC_FIELD_MIN_LENGTH_NOT_MET": "Field '{{fieldName}}' must be at least {{minLength}} characters (found {{actualLength}} characters).",
     "VC_FIELD_PATTERN_MISMATCH": "Field '{{fieldName}}' does not match required format pattern.",
     "VC_FIELD_INVALID_ENUM": "Field '{{fieldName}}' must be one of: {{allowedValues}}.",
-    "VC_VALIDATION_CONSTRAINTS_FAILED": "Document validation failed: {{errors}}"
+    "VC_VALIDATION_CONSTRAINTS_FAILED": "Document validation failed: {{errors}}",
+    "_comment_21": "Document Type Validation Errors",
+    "DOCUMENT_TYPE_MISMATCH": "The uploaded document does not match the required type: {{documentName}}. Please upload the correct document.",
+    "DOCUMENT_VALIDATION_FAILED": "Document validation failed: {{errorMessages}}",
+    "EXPECTED_DOCUMENT_NAME_REQUIRED": "Document name is required for validation"
 }

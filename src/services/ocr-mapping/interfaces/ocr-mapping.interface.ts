@@ -16,6 +16,7 @@ export interface OcrMappingResult {
   confidence: number; // 0 to 1
   processing_method: 'ai' | 'keyword' | 'hybrid';
   warnings?: string[];
+  validationErrors?: Array<{ field: string; error: string; constraint: string }>;
   isValidDocument?: boolean; // Document type validation result from LLM semantic analysis
 }
 

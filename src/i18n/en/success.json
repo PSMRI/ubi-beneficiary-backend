@@ -118,7 +118,10 @@
     "_comment_19": "Profile & CRON Success Messages",
     "PROFILE_POPULATED": "Profile populated successfully",
     "CRON_JOB_EXECUTED": "Cron job executed successfully",
-    "CACHE_REFRESHED": "Cache refreshed successfully"
+    "CACHE_REFRESHED": "Cache refreshed successfully",
+    "_comment_20": "Document Upload Success Messages",
+    "DOCUMENT_UPLOAD_SUCCESS": "Document uploaded successfully",
+    "DOCUMENT_UPDATE_SUCCESS": "Document updated successfully"
 }
 
 

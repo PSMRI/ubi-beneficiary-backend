@@ -520,6 +520,13 @@ export class AuthService {
       this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
       this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
 
+      // Step 6.5: Check for validation errors BEFORE proceeding
+      if (vcMapping?.validationErrors && vcMapping.validationErrors.length > 0) {
+        this.loggerService.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
+        const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
+        throw new BadRequestException(`Document validation failed: ${errorMessages}`);
+      }
+
       // Step 7: Validate document type - check isValidDocument from LLM mapping result
       if (vcMapping && 'isValidDocument' in vcMapping && vcMapping.isValidDocument !== undefined) {
         const isValidDocument = vcMapping.isValidDocument;

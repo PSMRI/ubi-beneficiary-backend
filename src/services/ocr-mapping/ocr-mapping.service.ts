@@ -27,8 +27,9 @@ export class OcrMappingService {
    * @param input - OCR mapping input containing text and document info
    * @param vcFields - VcFields configuration for the document type
    * @param expectedDocumentName - Expected document type name for validation
+   * @param locale - Language locale for validation messages (en, hi)
    */
-  async mapAfterOcr(input: OcrMappingInput, vcFields: VcFields, expectedDocumentName: string): Promise<OcrMappingResult> {
+  async mapAfterOcr(input: OcrMappingInput, vcFields: VcFields, expectedDocumentName: string, locale: string = 'en'): Promise<OcrMappingResult> {
     try {
       // Validate expectedDocumentName is provided
       if (!expectedDocumentName || expectedDocumentName.trim() === '') {
@@ -36,7 +37,7 @@ export class OcrMappingService {
         throw new Error('EXPECTED_DOCUMENT_NAME_REQUIRED');
       }
       
-      this.logger.log(`OCR mapping started: ${input.docType}/${input.docSubType}, expectedDocumentName: ${expectedDocumentName}`);
+      this.logger.log(`OCR mapping started: ${input.docType}/${input.docSubType}, expectedDocumentName: ${expectedDocumentName}, locale: ${locale}`);
       if (!vcFields || Object.keys(vcFields).length === 0) {
         this.logger.warn(`No vcFields provided for mapping`);
         return {
@@ -76,13 +77,13 @@ export class OcrMappingService {
         
         // Remove isValidDocument from mappedData to avoid including it in the data fields
         const { isValidDocument: _, ...dataWithoutValidation } = mappedData;
-        return this.computeResultFromMappedData(dataWithoutValidation, vcFields, processingMethod, isValidDocument);
+        return this.computeResultFromMappedData(dataWithoutValidation, vcFields, processingMethod, isValidDocument, locale);
       } else if (mappedData) {
         // If isValidDocument is missing from response, log warning (but still proceed)
         this.logger.warn(`Expected document type "${expectedDocumentName}" was provided but LLM response does not contain isValidDocument field. Response keys: ${Object.keys(mappedData).join(', ')}`);
       }
 
-      return this.computeResultFromMappedData(mappedData, vcFields, processingMethod, isValidDocument);
+      return this.computeResultFromMappedData(mappedData, vcFields, processingMethod, isValidDocument, locale);
 
     } catch (error: any) {
       this.logger.error(`OCR mapping failed: ${error?.message || error}`);
@@ -134,12 +135,13 @@ export class OcrMappingService {
     mappedData: Record<string, any> | null,
     vcFields: VcFields,
     processingMethod: 'ai' | 'keyword' | 'hybrid',
-    isValidDocument?: boolean
+    isValidDocument?: boolean,
+    locale: string = 'en',
   ): OcrMappingResult {
     mappedData = mappedData || {};
 
     // Validate and normalize the mapped data
-    const validationResult = this.validateAndNormalize(mappedData, vcFields, language);
+    const validationResult = this.validateAndNormalize(mappedData, vcFields, locale);
 
     // Filter to only document fields for metrics calculation
     const documentFieldNames = Object.keys(vcFields).filter(
@@ -184,6 +186,14 @@ export class OcrMappingService {
       this.logger.warn(`Missing ${missingRequiredFields.length} required field(s): [${missingRequiredFields.join(', ')}]`);
     }
 
+    // Log validation errors if any
+    if (validationResult.validationErrors.length > 0) {
+      this.logger.error(`❌ Validation failed for ${validationResult.validationErrors.length} field(s):`);
+      validationResult.validationErrors.forEach(err => {
+        this.logger.error(`  ✗ ${err.field}: ${err.error} [constraint: ${err.constraint}]`);
+      });
+    }
+
     // Ensure isValidDocument is not included in mapped_data (it's a metadata field, not a data field)
     const { isValidDocument: _, ...finalMappedData } = validationResult.data;
 
@@ -193,6 +203,7 @@ export class OcrMappingService {
       confidence,
       processing_method: processingMethod,
       warnings: validationResult.warnings,
+      validationErrors: validationResult.validationErrors.length > 0 ? validationResult.validationErrors : undefined,
       isValidDocument,
     };
   }
