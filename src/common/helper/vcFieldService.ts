@@ -11,6 +11,27 @@ export type VcFields = Record<string, {
     compareWith: string;
     matchPercentage: number;
   };
+  maxLength?: number;
+  minLength?: number;
+  pattern?: string;
+  format?: string;
+  enum?: string[];
+  validationMessages?: {
+    en?: {
+      required?: string;
+      pattern?: string;
+      maxLength?: string;
+      minLength?: string;
+      enum?: string;
+    };
+    hi?: {
+      required?: string;
+      pattern?: string;
+      maxLength?: string;
+      minLength?: string;
+      enum?: string;
+    };
+  };
 }>;
 
 /**

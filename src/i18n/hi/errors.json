@@ -14,6 +14,7 @@
     "AUTH_INVALID_TOKEN_KEYCLOAK_ID_MISSING": "अमान्य टोकन: keycloak_id अनुपलब्ध है",
     "AUTH_ACCOUNT_NOT_FULLY_SETUP": "खाता सेटअप पूर्ण नहीं है",
     "AUTH_ONLY_OTR_CERTIFICATE_ALLOWED": "इस प्रवाह के लिए केवल OTR प्रमाणपत्र की अनुमति है",
+    "AUTH_DOCUMENT_TYPE_MISMATCH": "अपलोड किया गया दस्तावेज़ अपेक्षित दस्तावेज़ प्रकार से मेल नहीं खाता। कृपया सही दस्तावेज़ अपलोड करें।",
     "AUTH_UNAUTHORIZED": "अनधिकृत पहुंच",
     "AUTH_REGISTRATION_PARTIAL_SUCCESS": "पंजीकरण सफलतापूर्वक पूर्ण हुआ, लेकिन दस्तावेज़ अपलोड विफल रहा। कृपया लॉग इन करने के बाद OTR प्रमाणपत्र अपलोड करें।",
     "ACCOUNT_NOT_FULLY_SETUP": "खाता सेटअप पूर्ण नहीं है",
@@ -211,5 +212,14 @@
     "VC_SPACE_ID_REQUIRED": "VC निर्माण के लिए Space ID आवश्यक है। कृपया vcConfiguration में spaceId कॉन्फ़िगर करें।",
     "VC_DOCUMENT_TYPE_REQUIRED": "दस्तावेज़ प्रकार आवश्यक है और खाली नहीं हो सकता।",
     "VC_DOCUMENT_SUBTYPE_REQUIRED": "दस्तावेज़ उप-प्रकार आवश्यक है और खाली नहीं हो सकता।",
-    "VC_MISSING_VC_FIELDS_CONFIG": "आवश्यक फ़ील्ड का सत्यापन नहीं किया जा सकता: vcFields कॉन्फ़िगरेशन या मैपिंग डेटा अनुपलब्ध है।"
+    "VC_MISSING_VC_FIELDS_CONFIG": "आवश्यक फ़ील्ड का सत्यापन नहीं किया जा सकता: vcFields कॉन्फ़िगरेशन या मैपिंग डेटा अनुपलब्ध है।",
+    "VC_FIELD_MAX_LENGTH_EXCEEDED": "फ़ील्ड '{{fieldName}}' अधिकतम लंबाई {{maxLength}} वर्णों से अधिक है ({{actualLength}} वर्ण मिले)।",
+    "VC_FIELD_MIN_LENGTH_NOT_MET": "फ़ील्ड '{{fieldName}}' कम से कम {{minLength}} वर्ण होना चाहिए ({{actualLength}} वर्ण मिले)।",
+    "VC_FIELD_PATTERN_MISMATCH": "फ़ील्ड '{{fieldName}}' आवश्यक प्रारूप पैटर्न से मेल नहीं खाता।",
+    "VC_FIELD_INVALID_ENUM": "फ़ील्ड '{{fieldName}}' इनमें से एक होना चाहिए: {{allowedValues}}।",
+    "VC_VALIDATION_CONSTRAINTS_FAILED": "दस्तावेज़ सत्यापन विफल: {{errors}}",
+    "_comment_21": "Document Type Validation Errors",
+    "DOCUMENT_TYPE_MISMATCH": "अपलोड किया गया दस्तावेज़ आवश्यक प्रकार से मेल नहीं खाता: {{documentName}}। कृपया सही दस्तावेज़ अपलोड करें।",
+    "DOCUMENT_VALIDATION_FAILED": "दस्तावेज़ सत्यापन विफल: {{errorMessages}}",
+    "EXPECTED_DOCUMENT_NAME_REQUIRED": "सत्यापन के लिए दस्तावेज़ का नाम आवश्यक है"
 }

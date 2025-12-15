@@ -46,15 +46,15 @@ export class BedrockAdapter implements IAiMappingAdapter {
   /**
    * Map extracted text to structured data using Bedrock AI
    */
-  async mapTextToSchema(extractedText: string, schema: Record<string, any>, docType?: string): Promise<Record<string, any> | null> {
+  async mapTextToSchema(extractedText: string, schema: Record<string, any>, expectedDocumentName: string, docType?: string): Promise<Record<string, any> | null> {
     if (!this.isConfigured()) {
       this.logger.warn('Bedrock adapter not configured - missing credentials');
       return null;
     }
 
     try {
-      const prompt = buildOcrMappingPrompt(extractedText, schema);
-      this.logger.debug(`Sending request to Bedrock (${Object.keys(schema.properties || {}).length} fields)`);
+      const prompt = buildOcrMappingPrompt(extractedText, schema, expectedDocumentName);
+      this.logger.debug(`Sending request to Bedrock (${Object.keys(schema.properties || {}).length} fields, expectedDocumentName: ${expectedDocumentName})`);
       const response = await this.invokeModel(prompt);
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'bedrock');
       
@@ -63,7 +63,7 @@ export class BedrockAdapter implements IAiMappingAdapter {
         return null;
       }
       
-      this.logger.debug(`Bedrock extracted ${Object.keys(parsedResult).length} fields`);
+      this.logger.debug(`Bedrock extracted ${Object.keys(parsedResult).length} fields, isValidDocument: ${parsedResult.isValidDocument}`);
       return parsedResult;
     } catch (error: any) {
       this.logger.error(`Bedrock mapping failed: ${error?.message || error}`);

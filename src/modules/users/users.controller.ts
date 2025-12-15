@@ -422,7 +422,9 @@ export class UserController {
     @Body() uploadDocumentDto: UploadDocumentDto,
   ) {
     try {
-      return await this.userService.uploadDocument(req, file, uploadDocumentDto);
+      // Extract Accept-Language header for i18n support
+      const acceptLanguage = req.headers['accept-language'] as string | undefined;
+      return await this.userService.uploadDocument(req, file, uploadDocumentDto, acceptLanguage);
     } catch (error) {
       if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
         throw error;
