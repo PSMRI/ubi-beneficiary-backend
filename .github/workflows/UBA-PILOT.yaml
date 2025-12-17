@@ -39,7 +39,7 @@ jobs:
             export CONTAINER_NAME="beneficiary-backend"
             TAG="${{ github.event.inputs.TAG }}"
             # Dynamically get branch at runtime
-            BRANCH="${GITHUB_REF_NAME:-main}"
+            BRANCH="${GITHUB_REF_NAME:-phase-3-ocr}"
 
             echo "Deploying TAG: $TAG on branch: $BRANCH"
 
@@ -49,7 +49,7 @@ jobs:
             echo "${{ secrets.ENV }}" > .env
 
             chmod +x deploy.sh
-            SERVICE_NAME="$SERVICE_NAME" CONTAINER_NAME="$CONTAINER_NAME" TAG="$TAG" BRANCH="$BRANCH" ./deploy.sh
+            SERVICE_NAME="$SERVICE_NAME" CONTAINER_NAME="$CONTAINER_NAME" TAG="$TAG" BRANCH="phase-3-ocr" ./deploy.sh
 
       - name: Notify on Slack channel
         uses: iRoachie/slack-github-actions@v2.3.2
