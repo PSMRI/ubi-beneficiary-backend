@@ -46,14 +46,23 @@ export class BedrockAdapter implements IAiMappingAdapter {
   /**
    * Map extracted text to structured data using Bedrock AI
    */
-  async mapTextToSchema(extractedText: string, schema: Record<string, any>, expectedDocumentName: string, docType?: string): Promise<Record<string, any> | null> {
+  async mapTextToSchema(
+    extractedText: string, 
+    schema: Record<string, any>, 
+    expectedDocumentName: string, 
+    docType?: string,
+    customPromptTemplate?: string | null
+  ): Promise<Record<string, any> | null> {
     if (!this.isConfigured()) {
       this.logger.warn('Bedrock adapter not configured - missing credentials');
       return null;
     }
 
     try {
-      const prompt = buildOcrMappingPrompt(extractedText, schema, expectedDocumentName);
+      const prompt = buildOcrMappingPrompt(extractedText, schema, expectedDocumentName, customPromptTemplate);
+      if (customPromptTemplate) {
+        this.logger.debug(`Using custom prompt from vcConfiguration for Bedrock mapping`);
+      }
       this.logger.debug(`Sending request to Bedrock (${Object.keys(schema.properties || {}).length} fields, expectedDocumentName: ${expectedDocumentName})`);
       const response = await this.invokeModel(prompt);
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'bedrock');

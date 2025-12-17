@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { BedrockAdapter } from './adapters/bedrock.adapter';
 import { GeminiAdapter } from './adapters/gemini.adapter';
 import { OcrMappingInput, OcrMappingResult, IAiMappingAdapter } from './interfaces/ocr-mapping.interface';
-import { VcFields } from '../../common/helper/vcFieldService';
+import { VcFields, VcFieldsService } from '../../common/helper/vcFieldService';
 
 /**
  * Service for mapping OCR extracted text to structured data based on vcFields configuration
@@ -12,7 +12,7 @@ export class OcrMappingService {
   private readonly logger = new Logger(OcrMappingService.name);
   private readonly aiAdapter: IAiMappingAdapter;
 
-  constructor() {
+  constructor(private readonly vcFieldsService: VcFieldsService) {
     // Initialize adapter based on environment configuration
     const adapterType = (process.env.OCR_MAPPING_PROVIDER || 'bedrock').toLowerCase();
     if (adapterType === 'google-gemini') {
@@ -52,9 +52,22 @@ export class OcrMappingService {
       const schema = this.vcFieldsToSchema(vcFields);
       const adapterType = (process.env.OCR_MAPPING_PROVIDER || 'bedrock').toLowerCase();
 
+      // Fetch document-specific OCR mapping prompt from vcConfiguration
+      let customPromptTemplate: string | null = null;
+      try {
+        customPromptTemplate = await this.vcFieldsService.getOcrMappingPrompt(input.docType, input.docSubType);
+        if (customPromptTemplate) {
+          this.logger.log(`✅ Found ocrMappingPrompt in vcConfiguration for ${input.docType}/${input.docSubType} - using document-specific prompt`);
+        } else {
+          this.logger.log(`ℹ️ No ocrMappingPrompt found in vcConfiguration for ${input.docType}/${input.docSubType} - using default template`);
+        }
+      } catch (error: any) {
+        this.logger.warn(`Failed to fetch document-specific prompt: ${error?.message || error}. Using default template.`);
+      }
+
       // Use AI mapping
       const startTime = Date.now();
-      const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema, expectedDocumentName);
+      const mappedData: Record<string, any> | null = await this.tryAiMapping(adapterType, input.text, schema, expectedDocumentName, customPromptTemplate);
       this.logger.log(`⏱️ AI Mapping Logic took: ${Date.now() - startTime}ms`);
       
       // Log raw mapped data from AI
@@ -100,13 +113,19 @@ export class OcrMappingService {
   /**
    * Attempt to map using AI adapter, returns null on any failure or unexpected response
    */
-  private async tryAiMapping(adapterType: string, text: string, schema: Record<string, any>, expectedDocumentName: string): Promise<Record<string, any> | null> {
+  private async tryAiMapping(
+    adapterType: string, 
+    text: string, 
+    schema: Record<string, any>, 
+    expectedDocumentName: string,
+    customPromptTemplate?: string | null
+  ): Promise<Record<string, any> | null> {
     if (!((adapterType === 'bedrock' || adapterType === 'google-gemini') && this.aiAdapter.isConfigured())) {
       return null;
     }
 
     try {
-      const mappedData = await this.aiAdapter.mapTextToSchema(text, schema, expectedDocumentName);
+      const mappedData = await this.aiAdapter.mapTextToSchema(text, schema, expectedDocumentName, undefined, customPromptTemplate);
 
       // Check if the response is the full AI response object instead of parsed JSON
       if (mappedData && typeof mappedData === 'object' && ('generation' in mappedData || 'content' in mappedData)) {

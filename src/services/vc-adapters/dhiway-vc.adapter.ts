@@ -214,9 +214,6 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			});
 
 			this.logger.debug(`Dhiway API response status: ${response.status}`);
-			this.logger.debug(
-				`Dhiway API response data: ${JSON.stringify(response.data, null, 2)}`,
-			);
 
 			return this.processResponse(response.data);
 		} catch (error) {
