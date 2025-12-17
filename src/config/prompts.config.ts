@@ -37,16 +37,26 @@ export function getOcrMappingPromptTemplate(): string {
   return OCR_MAPPING_PROMPT_TEMPLATE;
 }
 
-export function buildOcrMappingPrompt(extractedText: string, schema: Record<string, any>, expectedDocumentName: string): string {
+export function buildOcrMappingPrompt(
+  extractedText: string, 
+  schema: Record<string, any>, 
+  expectedDocumentName: string,
+  customPromptTemplate?: string | null
+): string {
   // Validate expectedDocumentName is provided
   if (!expectedDocumentName || expectedDocumentName.trim() === '') {
     throw new Error('EXPECTED_DOCUMENT_NAME_REQUIRED');
   }
   
+  // Use custom prompt template if provided and not empty, otherwise fall back to default
+  const promptTemplate = (customPromptTemplate && customPromptTemplate.trim() !== '') 
+    ? customPromptTemplate 
+    : OCR_MAPPING_PROMPT_TEMPLATE;
+  
   // Replace placeholders with actual values
   // Using replaceAll for all placeholders to ensure all occurrences are replaced
   // The placeholders are wrapped in curly braces to avoid replacing plain text
-  let prompt = OCR_MAPPING_PROMPT_TEMPLATE
+  let prompt = promptTemplate
     .replaceAll('{extractedText}', extractedText)
     .replaceAll('{schema}', JSON.stringify(schema, null, 2))
     .replaceAll('{expectedDocumentName}', expectedDocumentName.trim());

@@ -30,9 +30,16 @@ export interface IAiMappingAdapter {
    * @param schema - Target JSON schema
    * @param expectedDocumentName - Expected document type name for validation
    * @param docType - Optional document type for context-specific processing
+   * @param customPromptTemplate - Optional custom prompt template from vcConfiguration
    * @returns Mapped data object with isValidDocument field, or null if failed
    */
-  mapTextToSchema(extractedText: string, schema: Record<string, any>, expectedDocumentName: string, docType?: string): Promise<Record<string, any> | null>;
+  mapTextToSchema(
+    extractedText: string, 
+    schema: Record<string, any>, 
+    expectedDocumentName: string, 
+    docType?: string,
+    customPromptTemplate?: string | null
+  ): Promise<Record<string, any> | null>;
   
   /**
    * Check if the adapter is properly configured

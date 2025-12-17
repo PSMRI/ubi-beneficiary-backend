@@ -34,14 +34,23 @@ export class GeminiAdapter implements IAiMappingAdapter {
   /**
    * Map extracted text to structured data using Gemini AI
    */
-  async mapTextToSchema(extractedText: string, schema: Record<string, any>, expectedDocumentName: string, docType?: string): Promise<Record<string, any> | null> {
+  async mapTextToSchema(
+    extractedText: string, 
+    schema: Record<string, any>, 
+    expectedDocumentName: string, 
+    docType?: string,
+    customPromptTemplate?: string | null
+  ): Promise<Record<string, any> | null> {
     if (!this.isConfigured()) {
       this.logger.warn('Gemini adapter not configured - missing API key');
       return null;
     }
 
     try {
-      const prompt = buildOcrMappingPrompt(extractedText, schema, expectedDocumentName);
+      const prompt = buildOcrMappingPrompt(extractedText, schema, expectedDocumentName, customPromptTemplate);
+      if (customPromptTemplate) {
+        this.logger.debug(`Using custom prompt from vcConfiguration for Gemini mapping`);
+      }
       this.logger.debug(`Sending request to Gemini (${Object.keys(schema.properties || {}).length} fields, expectedDocumentName: ${expectedDocumentName})`);
       
       const response = await this.invokeModel(prompt);
