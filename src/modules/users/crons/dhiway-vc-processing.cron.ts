@@ -310,7 +310,8 @@ export class DhiwayVcProcessingCron {
 		const now = new Date();
 		const from = new Date(cronState.last_processed_to);
 		// Process up to current time minus lookback window
-		const to = subMinutes(now, this.lookbackMinutes);
+		// const to = subMinutes(now, this.lookbackMinutes);
+		const to = now;
 
 		// Ensure 'to' is not before 'from' (shouldn't happen, but safety check)
 		const actualTo = Math.max(to.getTime(), from.getTime());
