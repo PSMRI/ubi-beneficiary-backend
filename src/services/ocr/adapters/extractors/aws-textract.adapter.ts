@@ -99,7 +99,11 @@ export class AWSTextractAdapter implements ITextExtractor {
    * @returns true if supported
    */
   supportsFileType(mimeType: string): boolean {
-    return SUPPORTED_OCR_TYPES.includes(mimeType.toLowerCase());
+    // Normalize MIME type by removing charset parameter (defensive check)
+    const normalizedMimeType = mimeType.includes(';') 
+      ? mimeType.split(';')[0].trim().toLowerCase()
+      : mimeType.toLowerCase();
+    return SUPPORTED_OCR_TYPES.includes(normalizedMimeType);
   }
 
   /**

@@ -42,6 +42,8 @@ import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
 import * as stringSimilarity from 'string-similarity';
 import { I18nService } from 'src/common/services/i18n.service';
 import { VcProcessingService } from './services/vc-processing.service';
+import { QRContentProcessorService } from '@services/ocr/services/qr-content-processor.service';
+import { UploadDocumentQrDto } from './dto/upload-document-qr.dto';
 
 type StatusUpdateInfo = {
 	attempted: boolean;
@@ -119,6 +121,7 @@ export class UserService {
 		private readonly vcAdapterFactory: VcAdapterFactory,
 		private readonly i18n: I18nService,
 		private readonly vcProcessingService: VcProcessingService,
+		private readonly qrContentProcessor: QRContentProcessorService,
 	) { }
 
 	/*  async create(createUserDto: CreateUserDto) {
@@ -2973,6 +2976,281 @@ export class UserService {
 	}
 
 	/**
+	 * Upload a document with QR content directly (without extracting from file)
+	 * Follows the same flow as uploadDocument() but processes QR content directly
+	 * @param req The request object containing authenticated user information
+	 * @param file Optional uploaded file
+	 * @param uploadDocumentQrDto Metadata and QR content for the document
+	 * @param acceptLanguage Accept-Language header for i18n support
+	 * @returns Success response with document details
+	 */
+	async uploadDocumentWithQr(
+		req: any,
+		file: Express.Multer.File | undefined,
+		uploadDocumentQrDto: UploadDocumentQrDto,
+		acceptLanguage?: string,
+	) {
+		try {
+			// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
+			const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
+			Logger.log(`Processing document upload with QR content directly, locale: ${locale}`);
+			
+			const flowStartTime = Date.now();
+			const userDetails = await this.getUserDetails(req);
+
+			// Convert UploadDocumentQrDto to UploadDocumentDto format for reuse
+			const uploadDocumentDto: UploadDocumentDto = {
+				docType: uploadDocumentQrDto.docType,
+				docSubType: uploadDocumentQrDto.docSubType,
+				docName: uploadDocumentQrDto.docName,
+				importedFrom: uploadDocumentQrDto.importedFrom,
+				issuer: uploadDocumentQrDto.issuer,
+				file: file as any, // File is optional for QR content endpoint
+			};
+
+			const existingDoc = await this.findExistingDocument(
+				userDetails.user_id,
+				uploadDocumentDto,
+			);
+
+			// Validate and prepare document - uses same vcConfiguration as uploadDocument
+			await this.validateDocumentType(uploadDocumentDto);
+			const { requiresQRProcessing, documentConfig } =
+				await this.getDocumentConfig(uploadDocumentDto);
+
+			const issueVC =
+				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
+			const issuer = uploadDocumentQrDto.issuer || documentConfig?.issuer || 'dhiway';
+
+			// Process QR content directly (instead of extracting from file)
+			// This replaces performOcr() - rest of the flow is identical to uploadDocument
+			const ocrStartTime = Date.now();
+			const ocrResult = await this.processQrContentDirectly(
+				uploadDocumentQrDto.qrContent,
+				documentConfig,
+				issuer,
+				requiresQRProcessing,
+			);
+			Logger.log(`⏱️ QR Content Processing took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+
+			// Validate document type from QR processing result and VC fields
+			Logger.log(`Starting document validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
+			const isValidDocument = await this.validateDocumentAndFields(
+				documentConfig,
+				ocrResult,
+				uploadDocumentDto,
+				issueVC,
+				locale,
+			);
+
+			if (isValidDocument === false) {
+				const documentName = uploadDocumentQrDto.docName || 'Unknown';
+				Logger.warn(`Document validation failed - returning error. Expected document type: ${documentName}`);
+				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { documentName });
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage,
+				});
+			}
+			
+			Logger.log(`Document validation passed or skipped. isValidDocument=${isValidDocument}, proceeding with document processing.`);
+
+			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
+			const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+
+			const mappingStartTime = Date.now();
+			const expectedDocumentName = uploadDocumentQrDto.docName;
+			const vcMapping = isDhiwayVcUrl
+				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
+				: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
+			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
+			
+			// Check for validation errors BEFORE proceeding with storage and VC creation
+			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
+				Logger.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
+				const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
+				const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
+				throw new BadRequestException(translatedError);
+			}
+			
+			// Step: Perform VC field validation and matching against user profile
+			const matchingResult = await this.performFieldMatching(
+				userDetails.user_id,
+				vcMapping,
+				uploadDocumentDto,
+				issuer,
+				issueVC,
+				req,
+			);
+
+			// Verify document only for issueVC: "no" cases with QR code
+			// Skip verification for regular OCR documents without QR code
+			await this.performDocumentVerification(
+				issueVC,
+				requiresQRProcessing,
+				vcMapping,
+				issuer,
+			);
+
+			// Handle VC creation or file upload
+			const storageStartTime = Date.now();
+			const { uploadResult, downloadUrl, vcCreationResult } =
+				await this.handleDocumentStorage(
+					file,
+					uploadDocumentDto,
+					documentConfig,
+					issueVC,
+					vcMapping,
+					userDetails,
+				);
+			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
+
+			// Save document record
+			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
+			const dbSaveStartTime = Date.now();
+			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
+				existingDoc,
+				userDetails.user_id,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
+			);
+
+			// Verify and update profile
+			await this.verifyAndUpdateProfile(issueVC, vcMapping, issuer, savedDoc, userDetails);
+			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
+			
+			// Build and return response
+			const responseData = this.buildResponseData(
+				savedDoc,
+				isUpdate,
+				issueVC,
+				downloadUrl,
+				vcCreationResult,
+				vcMapping,
+				matchingResult,
+			);
+
+			Logger.log(`⏱️ Total Document Upload Flow took: ${Date.now() - flowStartTime}ms`, 'UserService');
+
+			// Get translated success message
+			const successMessage = isUpdate
+				? this.i18n.translateSuccess('DOCUMENT_UPDATE_SUCCESS', locale)
+				: this.i18n.translateSuccess('DOCUMENT_UPLOAD_SUCCESS', locale);
+
+			return new SuccessResponse({
+				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
+				message: successMessage,
+				data: responseData,
+			});
+		} catch (error) {
+			return this.handleUploadError(error);
+		}
+	}
+
+	/**
+	 * Process QR content directly without extracting from file
+	 * @param qrContent Raw QR content string (can be URL, XML, JSON, encoded JSON, etc.)
+	 * @param documentConfig Document configuration from vcConfiguration
+	 * @param issuer Issuer type (optional)
+	 * @param requiresQRProcessing Whether QR processing is required
+	 * @returns OCR result structure compatible with existing flow
+	 */
+	private async processQrContentDirectly(
+		qrContent: string,
+		documentConfig: any,
+		issuer: string,
+		requiresQRProcessing: boolean,
+	) {
+		try {
+			if (!qrContent || qrContent.trim().length === 0) {
+				throw new BadRequestException('QR_CONTENT_REQUIRED');
+			}
+
+		// Get docQRContains from document config - the processor will handle all logic
+		const docQRContains = documentConfig?.docQRContains || 'PLAIN_TEXT';
+
+		// Process QR content using QRContentProcessorService - it handles all logic including:
+		// - Selecting the right processor (Jharseva, eOdisha, Dhiway) based on issuer
+		// - URL detection and download for TEXT_AND_URL format
+		// - All QR content processing
+		const qrProcessingResult = await this.qrContentProcessor.processQRContent(
+			qrContent,
+			docQRContains,
+			issuer,
+			documentConfig,
+		);
+
+		// Check if QR processing failed (only fail if it's marked as required)
+		if (qrProcessingResult?.error && qrProcessingResult?.isRequired) {
+			Logger.error(`QR processing failed: ${qrProcessingResult.error}`);
+			throw new BadRequestException(`QR_PROCESSING_FAILED: ${qrProcessingResult.error}`);
+		}
+
+			// Build OCR result structure similar to extractTextFromBufferWithQR output
+			let extractedText = qrContent;
+			let confidence = 100;
+
+			// If processor downloaded a document, extract text from it using OCR
+			if (qrProcessingResult?.downloadedDocument) {
+				try {
+					const qrResult = await this.ocrService.extractTextFromBuffer(
+						qrProcessingResult.downloadedDocument.buffer,
+						qrProcessingResult.downloadedDocument.mimeType,
+					);
+					extractedText = qrResult.fullText;
+					confidence = qrResult.confidence;
+					
+					// Validate OCR result - must have sufficient text
+					if (!extractedText || extractedText.trim().length === 0) {
+						throw new BadRequestException('OCR_TEXT_EXTRACTION_FAILED: No text could be extracted from the downloaded document. The PDF may be corrupted, password-protected, or contain only images without OCR-able text.');
+					}
+					
+					if (confidence < 10) {
+						throw new BadRequestException(`OCR_LOW_CONFIDENCE: Extracted text has very low confidence (${confidence}%). The document may be of poor quality.`);
+					}
+					
+					// For TEXT_AND_URL format, combine text part from QR with OCR'd text from document
+					// The processor already extracted the text part and stored it in processedData.text
+					if (qrProcessingResult?.processedData?.text) {
+						const textPart = qrProcessingResult.processedData.text.trim();
+						if (textPart && textPart.length > 0) {
+							extractedText = `${textPart}\n\n${extractedText}`;
+						}
+					}
+				} catch (ocrError) {
+					Logger.error(`OCR extraction from downloaded document failed: ${ocrError.message}`, ocrError.stack);
+					if (ocrError instanceof BadRequestException) {
+						throw ocrError;
+					}
+					throw new BadRequestException(`Failed to extract text from downloaded document: ${ocrError.message}`);
+				}
+			} else if (qrProcessingResult?.qrCodeDetected && qrProcessingResult?.qrCodeContent) {
+				// Use processed QR content if available (for formats that don't require document download)
+				extractedText = qrProcessingResult.qrCodeContent;
+			}
+
+			return {
+				extractedText,
+				confidence,
+				metadata: {
+					provider: 'qr-content-direct',
+					processingTime: 0,
+					qrContentType: qrProcessingResult?.contentType || docQRContains,
+				},
+				qrProcessing: qrProcessingResult,
+			};
+		} catch (error) {
+			Logger.error(`QR content processing failed: ${error.message}`, error.stack);
+			if (error instanceof BadRequestException) {
+				throw error;
+			}
+			throw new InternalServerErrorException('QR_CONTENT_PROCESSING_FAILED');
+		}
+	}
+
+	/**
 	 * Validates document type from OCR text and required VC fields
 	 * @returns boolean | undefined - true if valid, false if invalid, undefined if validation not configured
 	 */
@@ -3334,27 +3612,41 @@ export class UserService {
 	}
 
 	private async handleDocumentStorage(
-		file: Express.Multer.File,
+		file: Express.Multer.File | undefined,
 		uploadDocumentDto: UploadDocumentDto,
 		documentConfig: any,
 		issueVC: string,
 		vcMapping: any,
 		userDetails: any,
 	) {
-		// Always upload file to S3 regardless of issueVC configuration
-		Logger.log(`Uploading file to S3 storage (issueVC: ${issueVC})`);
-		const uploadResult = await this.uploadFileToStorage(
-			file,
-			uploadDocumentDto,
-			userDetails.user_id,
-		);
+		let uploadResult = null;
+		let downloadUrl = null;
 
-		// Generate download URL for the uploaded file
-		const downloadUrl = uploadResult?.filePath
-			? await this.documentUploadService.generateDownloadUrl(uploadResult.filePath)
-			: null;
+		// Upload file to S3 if provided
+		if (file) {
+			Logger.log(`Uploading file to S3 storage (issueVC: ${issueVC})`);
+			uploadResult = await this.uploadFileToStorage(
+				file,
+				uploadDocumentDto,
+				userDetails.user_id,
+			);
 
-		// Create VC record if issueVC is 'yes'
+			// Generate download URL for the uploaded file
+			downloadUrl = uploadResult?.filePath
+				? await this.documentUploadService.generateDownloadUrl(uploadResult.filePath)
+				: null;
+		} else {
+			Logger.log(`No file provided - skipping file upload`);
+			// Return minimal upload result structure
+			uploadResult = {
+				filePath: null,
+				fileExtension: null,
+				docDatatype: null,
+				uploadedAt: new Date(),
+			};
+		}
+
+		// Create VC record if issueVC is 'yes' (works based on vcConfiguration.issueVC, same as existing endpoint)
 		let vcCreationResult = null;
 		if (issueVC === 'yes') {
 			Logger.log(`Document configured for VC creation (issueVC: yes) - creating VC record`);
@@ -3368,7 +3660,7 @@ export class UserService {
 				userDetails,
 			);
 		} else {
-			Logger.log(`Document configured for data extraction only (issueVC: no) - file uploaded to S3, no VC creation`);
+			Logger.log(`Document configured for data extraction only (issueVC: no) - ${file ? 'file uploaded to S3' : 'no file provided'}, no VC creation`);
 		}
 
 		return { uploadResult, downloadUrl, vcCreationResult };
@@ -3376,7 +3668,7 @@ export class UserService {
 
 
 	private async createVcRecord(
-		file: Express.Multer.File,
+		file: Express.Multer.File | undefined,
 		uploadDocumentDto: UploadDocumentDto,
 		documentConfig: any,
 		issuer: string,
@@ -3403,7 +3695,7 @@ export class UserService {
 			issuer,
 			spaceId,
 			vcMapping.mapped_data,
-			file,
+			file || undefined, // Pass undefined if file is not provided
 			userDetails.user_id,
 			vcFields,
 		);
