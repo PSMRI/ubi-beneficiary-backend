@@ -249,7 +249,11 @@ export class QRCodeDetectorService implements IQRCodeDetector {
         throw new Error(`Downloaded file exceeds maximum size of ${this.maxDownloadSize} bytes`);
       }
       
-      const mimeType = response.headers['content-type'] || detectMimeTypeFromUrl(url);
+      // Normalize MIME type by removing charset parameter (e.g., "application/pdf;charset=UTF-8" -> "application/pdf")
+      let mimeType = response.headers['content-type'] || detectMimeTypeFromUrl(url);
+      if (mimeType && mimeType.includes(';')) {
+        mimeType = mimeType.split(';')[0].trim();
+      }
 
       this.logger.log(`Downloaded ${buffer.length} bytes, detected type: ${mimeType}`);
 

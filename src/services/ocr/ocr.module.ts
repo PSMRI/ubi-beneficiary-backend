@@ -80,6 +80,6 @@ import { QRScanningService } from '../qr/qr-scanning.service';
     QRScanningService, // Added QRScanningService to providers
     OcrService,
   ],
-  exports: [OcrService, QRScanningService], // Exporting QRScanningService
+  exports: [OcrService, QRScanningService, QRContentProcessorService], // Exporting QRScanningService and QRContentProcessorService
 })
 export class OcrModule {}

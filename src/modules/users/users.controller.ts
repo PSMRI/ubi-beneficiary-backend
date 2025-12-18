@@ -23,6 +23,7 @@ import { UserService } from '../users/users.service';
 import { UPLOAD_CONFIG } from '../../config/upload.config';
 import {
   ApiBasicAuth,
+  ApiBearerAuth,
   ApiBody,
   ApiOperation,
   ApiQuery,
@@ -40,6 +41,7 @@ import { FetchVcUrlDto } from './dto/fetch-vc-url.dto';
 import { WalletCallbackDto } from './dto/wallet-callback.dto';
 import { UploadDocDTO } from './dto/upload-doc.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
+import { UploadDocumentQrDto } from './dto/upload-document-qr.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { VcCallbackDto } from './dto/vc-callback.dto';
 
@@ -449,6 +451,108 @@ export class UserController {
       );
       throw new InternalServerErrorException(
         'FILE_UPLOAD_FAILED',
+      );
+    }
+  }
+
+  @Post('/upload-document-qr')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload a document with QR content directly',
+    description: 'Uploads a document by providing QR content directly (instead of extracting from a file). The QR content can be in any supported format (URL, XML, JSON, encoded JSON, VC_URL, DOC_URL, PLAIN_TEXT, etc.). The flow works exactly the same as /upload-document endpoint - only difference is that QR content is provided directly instead of being extracted from a file. File upload is optional.'
+  })
+  @ApiBody({
+    description: 'Document upload with QR content and metadata',
+    type: UploadDocumentQrDto,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Document uploaded successfully (new document created)',
+    schema: {
+      example: {
+        success: true,
+        statusCode: 201,
+        message: 'Document uploaded successfully',
+        data: {
+          doc_id: '0bf1e149-1dd0-4899-b42a-f77255a86fde',
+          user_id: '82192ec3-6897-4288-ab8e-f8a191b0445c',
+          doc_type: 'casteProof',
+          doc_subtype: 'casteCertificate',
+          doc_name: 'Caste Certificate',
+          imported_from: 'QR Code',
+          doc_datatype: 'Application/JSON',
+          uploaded_at: '2025-11-12T05:42:43.345Z',
+          is_update: false,
+          download_url: null,
+          issue_vc: 'yes',
+          vc_creation: {
+            success: true,
+            record_id: 'vc_67890',
+            verification_url: 'https://verify.example.com/vc/67890'
+          },
+          doc_data_link: 'https://verify.example.com/vc/67890',
+          mapped_data: {
+            firstname: 'Jane Doe',
+            castename: 'OBC',
+            certificateNumber: 'CERT123456',
+            issuedDate: '2024-01-15',
+            issuedBy: 'District Magistrate'
+          }
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Document updated successfully (existing document replaced)',
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request - Invalid QR content or metadata' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async uploadDocumentQr(
+    @Req() req: Request,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: UPLOAD_CONFIG.maxFileSize }),
+        ],
+        errorHttpStatusCode: 400,
+        fileIsRequired: false, // Make file optional
+      })
+    ) file: Express.Multer.File | undefined,
+    @Body() uploadDocumentQrDto: UploadDocumentQrDto,
+  ) {
+    try {
+      // Extract Accept-Language header for i18n support
+      const acceptLanguage = req.headers['accept-language'] as string | undefined;
+      return await this.userService.uploadDocumentWithQr(req, file, uploadDocumentQrDto, acceptLanguage);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
+        throw error;
+      }
+
+      // If it's already an InternalServerErrorException from the service layer,
+      // preserve the original error message instead of overriding it
+      if (error instanceof InternalServerErrorException) {
+        Logger.error(
+          error?.message ?? 'Failed to upload document with QR content',
+          error?.stack,
+          'users.controller:uploadDocumentQr',
+        );
+        throw error; // Re-throw the original exception with its meaningful message
+      }
+
+      // For other unexpected errors, wrap with generic message
+      Logger.error(
+        error?.message ?? 'Failed to upload document with QR content',
+        error?.stack,
+        'users.controller:uploadDocumentQr',
+      );
+      throw new InternalServerErrorException(
+        'QR_DOCUMENT_UPLOAD_FAILED',
       );
     }
   }
