@@ -64,6 +64,7 @@ export function buildOcrMappingPrompt(
   return prompt;
 }
 
+// Validation prompt (customizable via AI_VALIDATION_PROMPT)
 export function getValidationPrompt(): string {
   return VALIDATION_PROMPT;
 }
