@@ -35,6 +35,8 @@ export class DocumentUploadService {
    * @param file The file to upload
    * @param metadata Document metadata (type, subtype, name, etc.)
    * @param ownerId The ID of the entity that owns this document (user_id, org_id, etc.)
+   * @param maxFileSize Maximum file size in bytes
+   * @param isPublic Whether the file should be publicly accessible (default: false)
    * @returns Upload result with file path and metadata
    */
   async uploadFile(
@@ -42,6 +44,7 @@ export class DocumentUploadService {
     metadata: DocumentMetadata,
     ownerId: string,
     maxFileSize?: number,
+    isPublic: boolean = false,
   ): Promise<UploadResult> {
     let uploadedPath: string | null = null;
 
@@ -61,7 +64,7 @@ export class DocumentUploadService {
       uploadedPath = await this.fileStorageService.uploadFile(
         fileKey,
         file.buffer,
-        false,
+        isPublic,
       );
 
       if (!uploadedPath) {
@@ -119,11 +122,23 @@ export class DocumentUploadService {
   }
 
   /**
-   * Generate a temporary download URL (for S3) or return path (for local)
+   * Generate a permanent public download URL (for S3) or return path (for local)
+   * Note: File must be uploaded as public for this URL to work
    * @param filePath Path to the file
-   * @returns Download URL or file path
+   * @returns Public URL or file path
    */
   async generateDownloadUrl(filePath: string): Promise<string | null> {
+    // Use generatePublicUrl for permanent URLs that can be reused
+    return this.generatePublicUrl(filePath);
+  }
+
+  /**
+   * Generate a permanent public URL (for S3) or return path (for local)
+   * Note: File must be uploaded as public for this URL to work
+   * @param filePath Path to the file
+   * @returns Public URL or file path
+   */
+  async generatePublicUrl(filePath: string): Promise<string | null> {
     if (!filePath) {
       return null;
     }
@@ -135,16 +150,50 @@ export class DocumentUploadService {
 
     if (storageProvider === 's3') {
       try {
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-        return (
-          (await this.fileStorageService.generateTemporaryUrl?.(
-            filePath,
-            expiresAt,
-          )) || null
-        );
+        // Type assertion to access generatePublicUrl if it exists
+        const storageService = this.fileStorageService as any;
+        let publicUrl: string | null = null;
+        
+        if (storageService.generatePublicUrl) {
+          publicUrl = await storageService.generatePublicUrl(filePath);
+        } else {
+          this.logger.warn(
+            `generatePublicUrl not available on storage service, falling back to manual URL construction for ${filePath}`,
+          );
+        }
+        
+        // Fallback: manually construct URL if library method didn't return one
+        if (!publicUrl) {
+          const bucketName = process.env.AWS_S3_BUCKET_NAME;
+          const region = process.env.AWS_S3_REGION;
+          
+          if (bucketName && region) {
+            // Construct URL: https://bucket-name.s3.region.amazonaws.com/key
+            // For us-east-1, use s3.amazonaws.com; for other regions use s3.region.amazonaws.com
+            const s3Domain = region === 'us-east-1' 
+              ? 's3.amazonaws.com'
+              : `s3.${region}.amazonaws.com`;
+            
+            // URL encode the key to handle special characters, but preserve slashes
+            const encodedKey = encodeURIComponent(filePath).replaceAll('%2F', '/');
+            
+            publicUrl = `https://${bucketName}.${s3Domain}/${encodedKey}`;
+          }
+        }
+        
+        // Log warning about bucket policy requirement
+        if (publicUrl) {
+          this.logger.log(
+            `Generated public URL: ${publicUrl}. ` +
+            `⚠️ Note: This URL will only work if bucket policies allow public read access (s3:GetObject). ` +
+            `If ACLs are disabled and files are uploaded as private, ensure bucket policies are configured for public access.`,
+          );
+        }
+        
+        return publicUrl;
       } catch (error) {
         this.logger.error(
-          `Failed to generate pre-signed URL for ${filePath}:`,
+          `Failed to generate public URL for ${filePath}:`,
           error,
         );
         return null;
@@ -304,4 +353,5 @@ export class DocumentUploadService {
     }
   }
 }
+
 
