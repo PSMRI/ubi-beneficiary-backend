@@ -633,7 +633,31 @@ export class AuthService {
           importedFrom: uploadDocumentDto.importedFrom,
         },
         registeredUser.user_id,
+        undefined, // maxFileSize is optional
+        true, // Upload as public for permanent URL access
       );
+
+      // Generate permanent public URL for the uploaded file
+      const downloadUrl = uploadResult?.filePath
+        ? await this.documentUploadService.generatePublicUrl(uploadResult.filePath)
+        : null;
+
+      // Add originalDocument URL to mapped_data for OTR registration flow
+      if (vcMapping?.mapped_data) {
+        if (downloadUrl) {
+          vcMapping.mapped_data.originalDocument = downloadUrl;
+          this.loggerService.log(`Added originalDocument URL to mapped_data in registration flow: ${downloadUrl}`);
+        } else if (file) {
+          // File was uploaded but downloadUrl is null - log warning
+          this.loggerService.warn(
+            `File was uploaded but downloadUrl is null in registration flow. ` +
+            `uploadResult.filePath: ${uploadResult?.filePath || 'null'}, ` +
+            `originalDocument will not be added to mapped_data.`
+          );
+        }
+      } else {
+        this.loggerService.warn(`vcMapping.mapped_data is null/undefined in registration flow - cannot add originalDocument`);
+      }
 
       // Save or update the document record
       const savedDoc = await this.userService.createNewDoc(registeredUser.user_id, uploadResult, uploadDocumentDto, vcMapping);

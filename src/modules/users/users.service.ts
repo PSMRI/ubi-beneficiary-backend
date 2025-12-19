@@ -702,7 +702,7 @@ export class UserService {
 				await this.deleteOldPicture(userDetails.image);
 			}
 
-			// Upload new picture
+			// Upload new picture as public to enable permanent URL access
 			const uploadResult = await this.documentUploadService.uploadFile(
 				picture,
 				{
@@ -713,6 +713,7 @@ export class UserService {
 				},
 				userDetails.user_id,
 				UPLOAD_CONFIG.maxProfilePictureSize,
+				true, // Upload as public for permanent URL access
 			);
 
 			userDetails.image = uploadResult.filePath;
@@ -2911,14 +2912,8 @@ export class UserService {
 				req,
 			);
 
-			// Verify document only for issueVC: "no" cases with QR code
-			// Skip verification for regular OCR documents without QR code
-			await this.performDocumentVerification(
-				issueVC,
-				requiresQRProcessing,
-				vcMapping,
-				issuer,
-			);
+			// Note: Verification happens in verifyAndUpdateProfile after originalDocument is added
+			// Skipping early verification here to avoid duplicate calls and ensure originalDocument is included
 
 			// Handle VC creation or file upload
 			const storageStartTime = Date.now();
@@ -2933,6 +2928,25 @@ export class UserService {
 				);
 			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
 
+			// Add originalDocument URL to mapped_data for all cases
+			if (vcMapping?.mapped_data) {
+				if (downloadUrl) {
+					vcMapping.mapped_data.originalDocument = downloadUrl;
+					Logger.log(`Added originalDocument URL to mapped_data: ${downloadUrl}`);
+				} else if (file) {
+					// File was uploaded but downloadUrl is null - log warning
+					Logger.warn(
+						`File was uploaded but downloadUrl is null. ` +
+						`uploadResult.filePath: ${uploadResult?.filePath || 'null'}, ` +
+						`originalDocument will not be added to mapped_data.`
+					);
+				} else {
+					Logger.log(`No file provided - originalDocument not applicable`);
+				}
+			} else {
+				Logger.warn(`vcMapping.mapped_data is null/undefined - cannot add originalDocument`);
+			}
+
 			// Save document record
 			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
 			const dbSaveStartTime = Date.now();
@@ -2945,9 +2959,9 @@ export class UserService {
 				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
 			);
 
-		// Verify and update profile
-		await this.verifyAndUpdateProfile(issueVC, vcMapping, issuer, savedDoc, userDetails);
-		Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');			// Build and return response
+			// Verify and update profile
+			await this.verifyAndUpdateProfile(issueVC, vcMapping, issuer, savedDoc, userDetails);
+			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');			// Build and return response
 			const responseData = this.buildResponseData(
 				savedDoc,
 				isUpdate,
@@ -3083,14 +3097,8 @@ export class UserService {
 				req,
 			);
 
-			// Verify document only for issueVC: "no" cases with QR code
-			// Skip verification for regular OCR documents without QR code
-			await this.performDocumentVerification(
-				issueVC,
-				requiresQRProcessing,
-				vcMapping,
-				issuer,
-			);
+			// Note: Verification happens in verifyAndUpdateProfile after originalDocument is added
+			// Skipping early verification here to avoid duplicate calls and ensure originalDocument is included
 
 			// Handle VC creation or file upload
 			const storageStartTime = Date.now();
@@ -3104,6 +3112,25 @@ export class UserService {
 					userDetails,
 				);
 			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
+
+			// Add originalDocument URL to mapped_data for all cases
+			if (vcMapping?.mapped_data) {
+				if (downloadUrl) {
+					vcMapping.mapped_data.originalDocument = downloadUrl;
+					Logger.log(`Added originalDocument URL to mapped_data: ${downloadUrl}`);
+				} else if (file) {
+					// File was uploaded but downloadUrl is null - log warning
+					Logger.warn(
+						`File was uploaded but downloadUrl is null. ` +
+						`uploadResult.filePath: ${uploadResult?.filePath || 'null'}, ` +
+						`originalDocument will not be added to mapped_data.`
+					);
+				} else {
+					Logger.log(`No file provided - originalDocument not applicable`);
+				}
+			} else {
+				Logger.warn(`vcMapping.mapped_data is null/undefined - cannot add originalDocument`);
+			}
 
 			// Save document record
 			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
@@ -3340,8 +3367,10 @@ export class UserService {
 		// (Verification for issueVC: "yes" happens after VC callback when published)
 		if (issueVC === 'no' && vcMapping?.mapped_data) {
 			try {
+				const mappedData = vcMapping.mapped_data;
+				
 				Logger.log(`Verifying document before profile update for issueVC: no`);
-				await this.verifyDocumentData(vcMapping.mapped_data, issuer);
+				await this.verifyDocumentData(mappedData, issuer);
 				Logger.log(`Document verification successful before profile update`);
 
 				// Update doc_verified and verified_at after successful verification
@@ -3434,12 +3463,19 @@ export class UserService {
 	): Promise<void> {
 		const verifyStartTime = Date.now();
 
-		if (issueVC === 'no' && requiresQRProcessing && vcMapping?.mapped_data) {
-			await this.verifyDocumentData(vcMapping.mapped_data, issuer);
+		// Always verify for issueVC: "no" cases if mapped_data exists and is not empty
+		if (issueVC === 'no' && vcMapping?.mapped_data) {
+			const mappedData = vcMapping.mapped_data;
+			const dataKeys = Object.keys(mappedData || {});
+			
+			// Skip if mapped_data is empty (verification will happen later in verifyAndUpdateProfile after originalDocument is added)
+			if (dataKeys.length === 0) {
+				Logger.log(`Skipping early verification: mapped_data is empty. Verification will happen after file upload and originalDocument is added.`);
+			} else {
+				await this.verifyDocumentData(mappedData, issuer);
+			}
 		} else if (issueVC === 'yes') {
 			Logger.log(`Skipping external verification for document with issueVC: yes`);
-		} else if (issueVC === 'no' && !requiresQRProcessing) {
-			Logger.log(`Skipping external verification for regular OCR document without QR code`);
 		}
 
 		Logger.log(`⏱️ External Verification took: ${Date.now() - verifyStartTime}ms`, 'UserService');
@@ -3565,10 +3601,33 @@ export class UserService {
 	private async verifyDocumentData(mappedData: any, issuer: string): Promise<void> {
 		Logger.log(`Calling verification API for document with issueVC: no`);
 
+		// Validate mappedData exists
+		if (!mappedData) {
+			Logger.error(`Cannot verify: mappedData is null or undefined`);
+			throw new BadRequestException({
+				message: 'Cannot verify document: mapped data is missing',
+				statusCode: 400,
+				error: 'Bad Request',
+			});
+		}
+
+		// Log the data structure for debugging
+		const dataKeys = Object.keys(mappedData || {});
+		Logger.log(
+			`Verifying document data with ${dataKeys.length} fields. ` +
+			`Keys: ${dataKeys.slice(0, 20).join(', ')}${dataKeys.length > 20 ? '...' : ''}. ` +
+			`Data type: ${typeof mappedData}, ` +
+			`Is array: ${Array.isArray(mappedData)}. ` +
+			`Sample data: ${JSON.stringify(mappedData).substring(0, 200)}${JSON.stringify(mappedData).length > 200 ? '...' : ''}`
+		);
+
+		// Send mappedData directly to verification API (including originalDocument)
+		// Let the verification API handle empty data validation
 		const verificationResult = await this.verifyVcWithApi(mappedData, issuer);
 
 		if (!verificationResult.success) {
 			const message = verificationResult.message ?? 'VC Verification failed';
+			Logger.error(`VC Verification failed: ${message}. Errors: ${JSON.stringify(verificationResult.errors || [])}`);
 			throw new BadRequestException({
 				message,
 				errors: verificationResult.errors ?? [],
@@ -3625,15 +3684,19 @@ export class UserService {
 		// Upload file to S3 if provided
 		if (file) {
 			Logger.log(`Uploading file to S3 storage (issueVC: ${issueVC})`);
+			
+			// Upload all files as public to enable permanent URL access (can be reused multiple times)
 			uploadResult = await this.uploadFileToStorage(
 				file,
 				uploadDocumentDto,
 				userDetails.user_id,
+				true, // Upload as public for permanent URL access
 			);
 
-			// Generate download URL for the uploaded file
+			// Generate permanent public URL for the uploaded file
+			// All files are now uploaded as public to enable permanent URLs
 			downloadUrl = uploadResult?.filePath
-				? await this.documentUploadService.generateDownloadUrl(uploadResult.filePath)
+				? await this.documentUploadService.generatePublicUrl(uploadResult.filePath)
 				: null;
 		} else {
 			Logger.log(`No file provided - skipping file upload`);
@@ -3715,6 +3778,7 @@ export class UserService {
 		file: Express.Multer.File,
 		uploadDocumentDto: UploadDocumentDto,
 		userId: string,
+		isPublic: boolean = false,
 	) {
 		return await this.documentUploadService.uploadFile(
 			file,
@@ -3725,6 +3789,8 @@ export class UserService {
 				importedFrom: uploadDocumentDto.importedFrom,
 			},
 			userId,
+			undefined,
+			isPublic,
 		);
 	}
 
