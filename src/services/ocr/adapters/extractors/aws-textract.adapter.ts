@@ -75,7 +75,17 @@ export class AWSTextractAdapter implements ITextExtractor {
       const confidence = this.calculateAverageConfidence(response.Blocks || []);
       const processingTime = Date.now() - startTime;
       
-      this.logger.log(`AWS Textract extracted ${fullText.length} characters in ${processingTime}ms`);
+      // Log extracted text
+      this.logger.debug(`AWS Textract extracted text: ${fullText}`);
+      
+      // Log summary with text preview for info level
+      const textPreview = fullText.length > 500 
+        ? `${fullText.substring(0, 500)}... [truncated]` 
+        : fullText;
+      this.logger.log(
+        `AWS Textract extracted ${fullText.length} characters in ${processingTime}ms`,
+        { textPreview, confidence, blockCount: response.Blocks?.length || 0 },
+      );
 
       return {
         fullText,

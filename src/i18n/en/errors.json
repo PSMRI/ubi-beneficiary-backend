@@ -130,6 +130,9 @@
     "QR_REGION_CROPPING_FAILED": "Region cropping detection failed: {{error}}",
     "QR_DOCUMENT_OPTIMIZATION_FAILED": "Document optimization detection failed: {{error}}",
     "QR_ENHANCED_PREPROCESSING_FAILED": "Enhanced preprocessing detection failed: {{error}}",
+    "QR_TEXT_AND_URL_NO_URL": "QR code is invalid and does not contain a URL.",
+    "QR_TEXT_AND_URL_INVALID_FILE_TYPE": "The URL does not point to a valid PDF file. Please check the URL and try again.",
+    "QR_URL_PROCESSING_FAILED": "Invalid QR code or QR code does not contain a valid URL.",
     "_comment_7": "Custom Fields Errors",
     "FIELD_ALREADY_EXISTS": "Field with name \"{{name}}\" already exists in context \"{{context}}\"",
     "FIELD_NOT_FOUND": "Field with ID {{fieldId}} not found",
@@ -221,5 +224,16 @@
     "_comment_21": "Document Type Validation Errors",
     "DOCUMENT_TYPE_MISMATCH": "The uploaded document does not match the required type: {{documentName}}. Please upload the correct document.",
     "DOCUMENT_VALIDATION_FAILED": "Document validation failed: {{errorMessages}}",
-    "EXPECTED_DOCUMENT_NAME_REQUIRED": "Document name is required for validation"
+    "EXPECTED_DOCUMENT_NAME_REQUIRED": "Document name is required for validation",
+    "_comment_22": "Dhiway VC Adapter Errors",
+    "DHIWAY_VC_CALLBACK_FAILED": "Failed to process VC callback",
+    "DHIWAY_VC_EMPTY_RESPONSE": "Empty response received from VC URL",
+    "DHIWAY_VC_INVALID_STRUCTURE": "Invalid VC data structure received",
+    "DHIWAY_VC_NOT_FOUND": "VC not found. The VC may not be published yet.",
+    "DHIWAY_VC_FETCH_FAILED": "Failed to fetch VC data",
+    "DHIWAY_VC_VERIFICATION_INVALID": "Invalid VC data structure",
+    "DHIWAY_VC_VERIFICATION_FAILED": "VC verification failed",
+    "DHIWAY_VC_CONFIG_MISSING": "Missing Dhiway VC configuration in environment variables",
+    "DHIWAY_VC_NO_VERIFICATION_URL": "No verification URL returned from Dhiway API",
+    "DHIWAY_VC_CREATION_FAILED": "VC creation failed."
 }

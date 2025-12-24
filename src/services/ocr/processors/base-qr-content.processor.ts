@@ -249,32 +249,28 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
 
   protected handleUrlProcessingError(error: any, qrContent: string, contentType: QRContentType): QRProcessingResult {
     let errorType = 'UNKNOWN_ERROR';
-    let userMessage = 'Failed to process document URL';
+    let errorKey = 'QR_URL_PROCESSING_FAILED';
 
     if (error.name === 'TypeError' && error.message.includes('Invalid URL')) {
       errorType = 'INVALID_URL';
-      userMessage = 'QR code does not contain a valid URL';
+      errorKey = 'QR_TEXT_AND_URL_NO_URL';
     } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
       errorType = 'NETWORK_ERROR';
-      userMessage = 'Could not connect to the document URL';
     } else if (error.response?.status === 404) {
       errorType = 'DOCUMENT_NOT_FOUND';
-      userMessage = 'Document not found at the provided URL';
     } else if (error.response?.status === 403) {
       errorType = 'ACCESS_DENIED';
-      userMessage = 'Access denied to the document URL';
     } else if (error.code === 'ECONNABORTED') {
       errorType = 'TIMEOUT';
-      userMessage = 'Document download timed out';
     }
 
-    this.logger.error(`URL processing failed: ${userMessage}`, error.stack);
+    this.logger.error(`URL processing failed: ${errorKey}`, error.stack);
 
     return {
       qrCodeDetected: true,
       qrCodeContent: qrContent,
       contentType,
-      error: userMessage,
+      error: errorKey,
       errorType,
       technicalError: error.message,
     };
@@ -304,24 +300,124 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
     };
   }
 
+  /**
+   * Validate that buffer contains actual PDF content using magic bytes
+   * This prevents HTML or other files masquerading as PDFs
+   */
+  protected validatePdfContent(buffer: Buffer): { isValid: boolean; detectedType?: string } {
+    if (!buffer || buffer.length < 4) {
+      return { isValid: false, detectedType: 'empty_or_too_small' };
+    }
+
+    const firstBytes = buffer.subarray(0, 8);
+
+    // PDF signature: %PDF (hex: 25504446)
+    if (
+      firstBytes[0] === 0x25 &&
+      firstBytes[1] === 0x50 &&
+      firstBytes[2] === 0x44 &&
+      firstBytes[3] === 0x46
+    ) {
+      return { isValid: true };
+    }
+
+    // Check for HTML content (starts with <!DOCTYPE, <html, or <HTML)
+    const bufferStart = buffer.subarray(0, Math.min(100, buffer.length)).toString('utf-8').trim();
+    if (
+      bufferStart.startsWith('<!DOCTYPE') ||
+      bufferStart.startsWith('<!doctype') ||
+      bufferStart.startsWith('<html') ||
+      bufferStart.startsWith('<HTML')
+    ) {
+      return { isValid: false, detectedType: 'text/html' };
+    }
+
+    // Check for XML content
+    if (bufferStart.startsWith('<?xml') || bufferStart.startsWith('<?XML')) {
+      return { isValid: false, detectedType: 'application/xml' };
+    }
+
+    // Check for JSON content
+    if (bufferStart.startsWith('{') || bufferStart.startsWith('[')) {
+      return { isValid: false, detectedType: 'application/json' };
+    }
+
+    return { isValid: false, detectedType: 'unknown' };
+  }
+
   // Default implementations for common content types
   protected async processTextAndUrl(qrContent: string, contentType: QRContentType): Promise<QRProcessingResult> {
     try {
-      // Extract URL from content using regex
+      // Check if qrContent contains URL (catches invalid QR codes like base64 strings)
+      const normalizedContent = qrContent.toLowerCase();
+      if (!normalizedContent.includes('http://') && !normalizedContent.includes('https://')) {
+        return {
+          qrCodeDetected: true,
+          qrCodeContent: qrContent,
+          contentType,
+          error: 'QR_TEXT_AND_URL_NO_URL',
+          errorType: 'INVALID_QR_CONTENT',
+        };
+      }
+
+      // Extract URL from content
       const urlRegex = /https?:\/\/[^\s]+/i;
       const urlMatch = urlRegex.exec(qrContent);
-
       if (!urlMatch) {
-        throw new Error('No URL found in QR content');
+        return {
+          qrCodeDetected: true,
+          qrCodeContent: qrContent,
+          contentType,
+          error: 'QR_TEXT_AND_URL_NO_URL',
+          errorType: 'INVALID_QR_CONTENT',
+        };
       }
 
       const url = urlMatch[0];
       const textPart = qrContent.replace(urlRegex, '').trim();
 
-      const validatedUrl = new URL(url);
+      // Validate URL format
+      let validatedUrl: URL;
+      try {
+        validatedUrl = new URL(url);
+      } catch {
+        return {
+          qrCodeDetected: true,
+          qrCodeContent: qrContent,
+          contentType,
+          error: 'QR_TEXT_AND_URL_NO_URL',
+          errorType: 'INVALID_QR_CONTENT',
+        };
+      }
       
       // Download document from URL
       const downloadResult = await this.qrCodeDetector.downloadFromUrl(validatedUrl.href);
+
+      // Validate downloaded file is PDF
+      const normalizedMimeType = downloadResult.mimeType.toLowerCase().trim();
+      if (normalizedMimeType !== 'application/pdf') {
+        return {
+          qrCodeDetected: true,
+          qrCodeContent: qrContent,
+          contentType,
+          error: 'QR_TEXT_AND_URL_INVALID_FILE_TYPE',
+          errorType: 'INVALID_FILE_TYPE',
+          technicalError: downloadResult.mimeType,
+        };
+      }
+
+      // Validate actual file content using magic bytes to catch HTML/other files masquerading as PDFs
+      const contentValidation = this.validatePdfContent(downloadResult.buffer);
+      if (!contentValidation.isValid) {
+        return {
+          qrCodeDetected: true,
+          qrCodeContent: qrContent,
+          contentType,
+          error: 'QR_TEXT_AND_URL_INVALID_FILE_TYPE',
+          errorType: 'INVALID_FILE_TYPE',
+          technicalError: contentValidation.detectedType || downloadResult.mimeType,
+        };
+      }
 
       return {
         qrCodeDetected: true,
