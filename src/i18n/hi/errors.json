@@ -130,6 +130,9 @@
     "QR_REGION_CROPPING_FAILED": "क्षेत्र क्रॉपिंग डिटेक्शन विफल: {{error}}",
     "QR_DOCUMENT_OPTIMIZATION_FAILED": "दस्तावेज़ अनुकूलन डिटेक्शन विफल: {{error}}",
     "QR_ENHANCED_PREPROCESSING_FAILED": "उन्नत पूर्व-प्रक्रिया डिटेक्शन विफल: {{error}}",
+    "QR_TEXT_AND_URL_NO_URL": "QR कोड अमान्य है और इसमें कोई URL नहीं है।",
+    "QR_TEXT_AND_URL_INVALID_FILE_TYPE": "URL एक मान्य PDF फ़ाइल की ओर इंगित नहीं करता है। कृपया URL जांचें और पुनः प्रयास करें।",
+    "QR_URL_PROCESSING_FAILED": "अमान्य QR कोड या QR कोड में कोई मान्य URL नहीं है।",
     "_comment_7": "Custom Fields Errors",
     "FIELD_ALREADY_EXISTS": "नाम \"{{name}}\" वाला फ़ील्ड संदर्भ \"{{context}}\" में पहले से मौजूद है",
     "FIELD_NOT_FOUND": "ID {{fieldId}} वाला फ़ील्ड नहीं मिला",
@@ -221,5 +224,16 @@
     "_comment_21": "Document Type Validation Errors",
     "DOCUMENT_TYPE_MISMATCH": "अपलोड किया गया दस्तावेज़ आवश्यक प्रकार से मेल नहीं खाता: {{documentName}}। कृपया सही दस्तावेज़ अपलोड करें।",
     "DOCUMENT_VALIDATION_FAILED": "दस्तावेज़ सत्यापन विफल: {{errorMessages}}",
-    "EXPECTED_DOCUMENT_NAME_REQUIRED": "सत्यापन के लिए दस्तावेज़ का नाम आवश्यक है"
+    "EXPECTED_DOCUMENT_NAME_REQUIRED": "सत्यापन के लिए दस्तावेज़ का नाम आवश्यक है",
+    "_comment_22": "Dhiway VC Adapter Errors",
+    "DHIWAY_VC_CALLBACK_FAILED": "VC callback प्रोसेस करने में विफल",
+    "DHIWAY_VC_EMPTY_RESPONSE": "VC URL से खाली प्रतिक्रिया प्राप्त हुई",
+    "DHIWAY_VC_INVALID_STRUCTURE": "अमान्य VC डेटा संरचना प्राप्त हुई",
+    "DHIWAY_VC_NOT_FOUND": "VC नहीं मिला। VC अभी तक प्रकाशित नहीं हो सकता है।",
+    "DHIWAY_VC_FETCH_FAILED": "VC डेटा प्राप्त करने में विफल",
+    "DHIWAY_VC_VERIFICATION_INVALID": "अमान्य VC डेटा संरचना",
+    "DHIWAY_VC_VERIFICATION_FAILED": "VC सत्यापन विफल",
+    "DHIWAY_VC_CONFIG_MISSING": "पर्यावरण चर में Dhiway VC कॉन्फ़िगरेशन अनुपलब्ध",
+    "DHIWAY_VC_NO_VERIFICATION_URL": "Dhiway API से कोई सत्यापन URL वापस नहीं आया",
+    "DHIWAY_VC_CREATION_FAILED": "VC निर्माण विफल।"
 }

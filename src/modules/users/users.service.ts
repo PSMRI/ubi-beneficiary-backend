@@ -2925,6 +2925,7 @@ export class UserService {
 					issueVC,
 					vcMapping,
 					userDetails,
+					locale,
 				);
 			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
 
@@ -3044,6 +3045,7 @@ export class UserService {
 				documentConfig,
 				issuer,
 				requiresQRProcessing,
+				locale,
 			);
 			Logger.log(`⏱️ QR Content Processing took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
@@ -3110,6 +3112,7 @@ export class UserService {
 					issueVC,
 					vcMapping,
 					userDetails,
+					locale,
 				);
 			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
 
@@ -3182,6 +3185,7 @@ export class UserService {
 	 * @param documentConfig Document configuration from vcConfiguration
 	 * @param issuer Issuer type (optional)
 	 * @param requiresQRProcessing Whether QR processing is required
+	 * @param locale Language locale for error messages (defaults to 'en')
 	 * @returns OCR result structure compatible with existing flow
 	 */
 	private async processQrContentDirectly(
@@ -3189,6 +3193,7 @@ export class UserService {
 		documentConfig: any,
 		issuer: string,
 		requiresQRProcessing: boolean,
+		locale: string = 'en',
 	) {
 		try {
 			if (!qrContent || qrContent.trim().length === 0) {
@@ -3209,10 +3214,13 @@ export class UserService {
 			documentConfig,
 		);
 
-		// Check if QR processing failed (only fail if it's marked as required)
-		if (qrProcessingResult?.error && qrProcessingResult?.isRequired) {
-			Logger.error(`QR processing failed: ${qrProcessingResult.error}`);
-			throw new BadRequestException(`QR_PROCESSING_FAILED: ${qrProcessingResult.error}`);
+		// Check if QR processing failed
+		if (qrProcessingResult?.error && (qrProcessingResult?.isRequired || requiresQRProcessing)) {
+			const errorMessage = this.i18n.translateError(qrProcessingResult.error, locale);
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
 		}
 
 			// Build OCR result structure similar to extractTextFromBufferWithQR output
@@ -3247,8 +3255,16 @@ export class UserService {
 						}
 					}
 				} catch (ocrError) {
-					Logger.error(`OCR extraction from downloaded document failed: ${ocrError.message}`, ocrError.stack);
 					if (ocrError instanceof BadRequestException) {
+						const errorMessage = ocrError.message || '';
+						// Handle file type errors
+						if (errorMessage.includes("is not supported by") || errorMessage.includes("File type")) {
+							const translatedError = this.i18n.translateError('QR_TEXT_AND_URL_INVALID_FILE_TYPE', locale);
+							throw new BadRequestException({
+								message: translatedError,
+								statusCode: HttpStatus.BAD_REQUEST,
+							});
+						}
 						throw ocrError;
 					}
 					throw new BadRequestException(`Failed to extract text from downloaded document: ${ocrError.message}`);
@@ -3677,6 +3693,7 @@ export class UserService {
 		issueVC: string,
 		vcMapping: any,
 		userDetails: any,
+		locale: string = 'en',
 	) {
 		let uploadResult = null;
 		let downloadUrl = null;
@@ -3721,6 +3738,7 @@ export class UserService {
 				issuer,
 				vcMapping,
 				userDetails,
+				locale,
 			);
 		} else {
 			Logger.log(`Document configured for data extraction only (issueVC: no) - ${file ? 'file uploaded to S3' : 'no file provided'}, no VC creation`);
@@ -3737,6 +3755,7 @@ export class UserService {
 		issuer: string,
 		vcMapping: any,
 		userDetails: any,
+		locale: string = 'en',
 	) {
 		Logger.log(
 			`Creating VC for document: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
@@ -3764,7 +3783,17 @@ export class UserService {
 		);
 
 		if (!vcCreationResult.success) {
-			throw new InternalServerErrorException(vcCreationResult.message || 'Failed to create VC record',);
+			let errorMessage: string;
+			if (vcCreationResult.message && /^[A-Z_]+$/.test(vcCreationResult.message)) {
+				errorMessage = this.i18n.translateError(vcCreationResult.message, locale);
+				// Log detailed error reason for debugging
+				if (vcCreationResult.errorReason) {
+					Logger.error(`VC creation failed. Reason: ${vcCreationResult.errorReason}`);
+				}
+			} else {
+				errorMessage = vcCreationResult.message || 'Failed to create VC record';
+			}
+			throw new InternalServerErrorException(errorMessage);
 		}
 
 		Logger.log(

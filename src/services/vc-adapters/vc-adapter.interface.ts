@@ -6,6 +6,7 @@ export interface VcCreationResponse {
 	recordId?: string;
 	message?: string;
 	error?: any;
+	errorReason?: string;
 }
 
 export interface CallbackResult {

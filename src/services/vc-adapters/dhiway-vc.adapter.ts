@@ -72,7 +72,7 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			return {
 				success: false,
 				status: status,
-				message: error.message || `Failed to process ${status} callback`,
+				message: 'DHIWAY_VC_CALLBACK_FAILED',
 				error: error,
 			};
 		}
@@ -113,12 +113,12 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 
 			// Validate response
 			if (!response.data) {
-				throw new Error('Empty response from VC URL');
+				throw new Error('DHIWAY_VC_EMPTY_RESPONSE');
 			}
 
 			// Validate VC structure
 			if (!this.validateVcData(response.data)) {
-				throw new Error('Invalid VC data structure received from Dhiway');
+				throw new Error('DHIWAY_VC_INVALID_STRUCTURE');
 			}
 
 			this.logger.log(`Successfully fetched VC data for public ID: ${publicId}`);
@@ -130,16 +130,15 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			
 			if (axios.isAxiosError(error)) {
 				const status = error.response?.status;
-				const message = error.response?.data?.message || error.message;
 				
 				if (status === 404) {
-					throw new Error(`VC not found for public ID: ${publicId}. The VC may not be published yet.`);
+					throw new Error('DHIWAY_VC_NOT_FOUND');
 				}
 				
-				throw new Error(`Failed to fetch VC from Dhiway: ${message} (Status: ${status || 'Unknown'})`);
+				throw new Error('DHIWAY_VC_FETCH_FAILED');
 			}
 			
-			throw new Error(`Failed to fetch VC data: ${error.message}`);
+			throw new Error('DHIWAY_VC_FETCH_FAILED');
 		}
 	}
 
@@ -155,12 +154,11 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			if (!this.validateVcData(vcData)) {
 				return {
 					success: false,
-					message: 'Invalid VC data structure',
+					message: 'DHIWAY_VC_VERIFICATION_INVALID',
 					errors: ['VC data does not contain required fields']
 				};
 			}
 
-			// For mock implementation, always return success for valid structure
 			this.logSuccess('VC verification');
 			
 			return {
@@ -171,7 +169,7 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			this.logger.error('VC verification failed:', error);
 			return {
 				success: false,
-				message: 'VC verification failed',
+				message: 'DHIWAY_VC_VERIFICATION_FAILED',
 				errors: [error.message]
 			};
 		}
@@ -202,6 +200,9 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			const url = `${this.baseUrl}/${this.organizationId}/${spaceId}/records`;
 			const formData = this.prepareFormData(mappedData, originalFile, userId, vcFields);
 
+			// Log payload details for debugging
+			this.logPayloadDetails(mappedData, originalFile, userId, vcFields);
+
 			this.logger.log(`Creating VC record in Dhiway - URL: ${url}`);
 			const response = await axios.post(url, formData, {
 				headers: {
@@ -217,7 +218,7 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 
 			return this.processResponse(response.data);
 		} catch (error) {
-			return this.handleDhiwayError(error);
+			return this.handleDhiwayError(error, mappedData, originalFile, userId);
 		}
 	}
 
@@ -238,7 +239,7 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			this.logger.error('Missing Dhiway VC configuration');
 			return {
 				success: false,
-				message: 'Missing Dhiway VC configuration in environment variables',
+				message: 'DHIWAY_VC_CONFIG_MISSING',
 			};
 		}
 
@@ -415,7 +416,7 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 			this.logger.warn('No verificationUrl in Dhiway API response');
 			return {
 				success: false,
-				message: 'No verificationUrl returned from Dhiway API',
+				message: 'DHIWAY_VC_NO_VERIFICATION_URL',
 				error: data,
 			};
 		}
@@ -437,9 +438,134 @@ export class DhiwayVcAdapter extends BaseVcAdapter {
 		};
 	}
 
-	private handleDhiwayError(error: any): VcCreationResponse {
-		// Use base class error handling
+	private handleDhiwayError(
+		error: any,
+		mappedData?: Record<string, any>,
+		originalFile?: Express.Multer.File,
+		userId?: string,
+	): VcCreationResponse {
+		// Check if it's an axios error with response data
+		if (!axios.isAxiosError(error)) {
+			return super.handleError(error, 'VC creation') as VcCreationResponse;
+		}
+
+		const status = error.response?.status;
+		const responseData = error.response?.data;
+		const responseHeaders = error.response?.headers;
+
+		// Handle 400 Bad Request errors with detailed logging
+		if (status === 400) {
+			return this.handleBadRequestError(
+				error,
+				responseData,
+				responseHeaders,
+				mappedData,
+				originalFile,
+				userId,
+			);
+		}
+
+		// Log other HTTP errors with response data
+		if (status && status >= 400) {
+			this.logger.error(
+				`VC creation failed with HTTP ${status}`,
+				{
+					url: error.config?.url,
+					status: status,
+					responseData: responseData,
+					responseMessage: error.message,
+				},
+			);
+		}
+
+		// Use base class error handling for other errors
 		return super.handleError(error, 'VC creation') as VcCreationResponse;
+	}
+
+	/**
+	 * Handle 400 Bad Request errors with detailed logging
+	 */
+	private handleBadRequestError(
+		error: any,
+		responseData: any,
+		responseHeaders: any,
+		mappedData?: Record<string, any>,
+		originalFile?: Express.Multer.File,
+		userId?: string,
+	): VcCreationResponse {
+		const errorReason = this.extractErrorMessage(responseData);
+		
+		this.logger.error(`VC creation failed: ${errorReason}`, {
+			url: error.config?.url,
+			status: 400,
+			error: responseData?.error || responseData?.message,
+		});
+
+		return {
+			success: false,
+			message: 'DHIWAY_VC_CREATION_FAILED',
+			error: responseData || error.message,
+			errorReason: errorReason,
+		};
+	}
+
+	/**
+	 * Extract error message from API response data
+	 */
+	private extractErrorMessage(responseData: any): string {
+		if (!responseData) {
+			return 'Bad Request';
+		}
+
+		if (responseData.error) {
+			return responseData.error;
+		}
+
+		if (responseData.message) {
+			return responseData.message;
+		}
+
+		if (typeof responseData === 'string') {
+			return responseData;
+		}
+
+		return 'Bad Request';
+	}
+
+	/**
+	 * Log payload details before sending to Dhiway API
+	 */
+	private logPayloadDetails(
+		mappedData: Record<string, any>,
+		originalFile?: Express.Multer.File,
+		userId?: string,
+		vcFields?: Record<string, any>,
+	): void {
+		const payloadInfo: any = {
+			mappedDataFields: Object.keys(mappedData),
+			mappedDataCount: Object.keys(mappedData).length,
+			hasOriginalFile: !!originalFile,
+		};
+
+		if (originalFile) {
+			payloadInfo.originalFile = {
+				name: originalFile.originalname,
+				size: originalFile.size,
+				mimeType: originalFile.mimetype,
+			};
+		}
+
+		if (userId) {
+			payloadInfo.userId = userId;
+		}
+
+		if (vcFields) {
+			payloadInfo.vcFieldsKeys = Object.keys(vcFields);
+		}
+
+		// Log mapped data values (excluding sensitive data if needed)
+		this.logger.debug('VC creation payload details:', payloadInfo);
+		this.logger.debug('Mapped data values:', mappedData);
 	}
 
 	/**
