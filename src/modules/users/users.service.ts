@@ -2867,6 +2867,7 @@ export class UserService {
 			uploadDocumentDto,
 			requiresQRProcessing,
 			documentConfig,
+			locale,
 		);
 		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
@@ -3218,7 +3219,11 @@ export class UserService {
 	) {
 		try {
 			if (!qrContent || qrContent.trim().length === 0) {
-				throw new BadRequestException('QR_CONTENT_REQUIRED');
+				const translatedError = this.i18n.translateError('QR_CONTENT_REQUIRED', locale);
+				throw new BadRequestException({
+					message: translatedError,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
 			}
 
 		// Get docQRContains from document config - the processor will handle all logic
@@ -3308,9 +3313,22 @@ export class UserService {
 		} catch (error) {
 			Logger.error(`QR content processing failed: ${error.message}`, error.stack);
 			if (error instanceof BadRequestException) {
+				// If BadRequestException already has a translated message, keep it
+				// Otherwise, try to translate the error key if it's a string
+				if (typeof error.message === 'string' && error.message.includes('_')) {
+					const translatedError = this.i18n.translateError(error.message, locale);
+					throw new BadRequestException({
+						message: translatedError,
+						statusCode: HttpStatus.BAD_REQUEST,
+					});
+				}
 				throw error;
 			}
-			throw new InternalServerErrorException('QR_CONTENT_PROCESSING_FAILED');
+			const translatedError = this.i18n.translateError('QR_CONTENT_PROCESSING_FAILED', locale);
+			throw new InternalServerErrorException({
+				message: translatedError,
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			});
 		}
 	}
 
@@ -4301,6 +4319,7 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 		requiresQRProcessing: boolean,
 		documentConfig?: any,
+		locale: string = 'en',
 	) {
 		try {
 			const isVcUrlCase = this.isVcUrlCase(requiresQRProcessing, documentConfig);
@@ -4314,11 +4333,11 @@ export class UserService {
 			const hasVcDataFromQR = this.hasVcDataFromQR(extractedData, requiresQRProcessing);
 			this.logVcDataDetection(hasVcDataFromQR, isVcUrlCase);
 
-			this.validateOcrText(extractedData, hasVcDataFromQR, isVcUrlCase);
+			this.validateOcrText(extractedData, hasVcDataFromQR, isVcUrlCase, locale);
 
 			return ocrResult;
 		} catch (ocrError) {
-			return this.handleOcrError(ocrError);
+			return this.handleOcrError(ocrError, locale);
 		}
 	}
 
@@ -4420,7 +4439,7 @@ export class UserService {
 		}
 	}
 
-	private validateOcrText(extractedData: any, hasVcDataFromQR: boolean, isVcUrlCase: boolean): void {
+	private validateOcrText(extractedData: any, hasVcDataFromQR: boolean, isVcUrlCase: boolean, locale: string = 'en'): void {
 		const shouldSkipValidation = hasVcDataFromQR && isVcUrlCase;
 		if (shouldSkipValidation) {
 			return;
@@ -4428,9 +4447,11 @@ export class UserService {
 
 		if (extractedData.fullText.length === 0) {
 			Logger.error(`OCR validation failed: No text extracted from document`);
-			throw new BadRequestException(
-				'OCR_TEXT_EXTRACTION_FAILED'
-			);
+			const translatedError = this.i18n.translateError('OCR_TEXT_EXTRACTION_FAILED', locale);
+			throw new BadRequestException({
+				message: translatedError,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
 		}
 
 		if (extractedData.confidence < 10) {
@@ -4441,16 +4462,27 @@ export class UserService {
 		}
 	}
 
-	private handleOcrError(ocrError: any): never {
+	private handleOcrError(ocrError: any, locale: string = 'en'): never {
 		Logger.error(`OCR processing failed: ${ocrError.message}`);
 
 		if (ocrError instanceof BadRequestException) {
+			// If BadRequestException already has a translated message, keep it
+			// Otherwise, try to translate the error key if it's a string
+			if (typeof ocrError.message === 'string' && ocrError.message.includes('_')) {
+				const translatedError = this.i18n.translateError(ocrError.message, locale);
+				throw new BadRequestException({
+					message: translatedError,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
+			}
 			throw ocrError;
 		}
 
-		throw new InternalServerErrorException(
-			'OCR_PROCESSING_FAILED'
-		);
+		const translatedError = this.i18n.translateError('OCR_PROCESSING_FAILED', locale);
+		throw new InternalServerErrorException({
+			message: translatedError,
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+		});
 	}
 
 	// Helper methods for document management
