@@ -37,15 +37,15 @@ export class JharsevaQRContentProcessor extends BaseQRContentProcessor {
     documentConfig?: any
   ): Promise<QRProcessingResult> {
     try {
-      // Extract URL from content using regex - Jharseva might have specific URL patterns
-      const urlRegex = /https?:\/\/[^\s]+/i;
+      // Extract URL from content using regex
+      const urlRegex = /https?:\/\/[^\s<>"']+/i;
       const urlMatch = urlRegex.exec(qrContent);
-
+      
       if (!urlMatch) {
         throw new Error('No URL found in Jharseva QR content');
       }
 
-      const url = urlMatch[0];
+      const url = urlMatch[0].trim();
       const textPart = qrContent.replace(urlRegex, '').trim();
 
       // Jharseva-specific validation

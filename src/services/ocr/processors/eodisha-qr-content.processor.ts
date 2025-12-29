@@ -57,19 +57,19 @@ export class EOdishaQRContentProcessor extends BaseQRContentProcessor {
         detectedDelimiter = 'comma';
       } else {
         // Fallback to regex extraction
-        const urlRegex = /https?:\/\/[^\s]+/i;
+        const urlRegex = /https?:\/\/[^\s<>"']+/i;
         const urlMatch = urlRegex.exec(qrContent);
 
         if (!urlMatch) {
           throw new Error('No URL found in eOdisha QR content');
         }
-
-        url = urlMatch[0];
+        
+        url = urlMatch[0].trim();
         textPart = qrContent.replace(urlRegex, '').trim();
         detectedDelimiter = 'regex';
       }
 
-      if (!url) {
+      if (!url || url.length === 0) {
         throw new Error('No valid URL found in eOdisha QR content');
       }
 

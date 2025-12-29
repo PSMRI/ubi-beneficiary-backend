@@ -133,6 +133,7 @@
     "QR_TEXT_AND_URL_NO_URL": "QR कोड अमान्य है और इसमें कोई URL नहीं है।",
     "QR_TEXT_AND_URL_INVALID_FILE_TYPE": "URL एक मान्य PDF फ़ाइल की ओर इंगित नहीं करता है। कृपया URL जांचें और पुनः प्रयास करें।",
     "QR_URL_PROCESSING_FAILED": "अमान्य QR कोड या QR कोड में कोई मान्य URL नहीं है।",
+    "QR_DOWNLOAD_TIMEOUT": "दस्तावेज़ डाउनलोड समय सीमा समाप्त हो गई। सर्वर धीमा या पहुंच से बाहर हो सकता है। कृपया बाद में पुनः प्रयास करें।",
     "_comment_7": "Custom Fields Errors",
     "FIELD_ALREADY_EXISTS": "नाम \"{{name}}\" वाला फ़ील्ड संदर्भ \"{{context}}\" में पहले से मौजूद है",
     "FIELD_NOT_FOUND": "ID {{fieldId}} वाला फ़ील्ड नहीं मिला",
