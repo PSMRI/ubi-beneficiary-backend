@@ -2551,6 +2551,8 @@ export class UserService {
 	}> {
 		Logger.log(`Starting VC field validation for user: ${userId}, docType: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`);
 
+		const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+
 		// Step 1: Fetch vcFields configuration
 		const vcFields = await this.vcFieldsService.getVcFields(
 			uploadDocumentDto.docType,
@@ -2558,9 +2560,14 @@ export class UserService {
 		);
 
 		if (!vcFields) {
-			throw new BadRequestException(
-				`No vcFields configuration found for document type: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
-			);
+			const errorMessage = this.i18n.translateError('VC_MISSING_CONFIG_WITH_TYPE', locale, {
+				docType: uploadDocumentDto.docType,
+				docSubType: uploadDocumentDto.docSubType,
+			});
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
 		}
 
 		// Step 2: Fetch user profile data (both entity fields and custom fields)
@@ -2608,9 +2615,11 @@ export class UserService {
 					`Error processing field '${fieldName}': ${error.message}`,
 					error.stack,
 				);
-				throw new BadRequestException(
-					`Error processing field '${fieldName}': ${error.message}`,
-				);
+				const errorMessage = this.i18n.translateError('FIELD_PROCESSING_ERROR', locale, {
+					fieldName: fieldName,
+					error: error.message,
+				});
+				throw new BadRequestException(errorMessage);
 			}
 		}
 
@@ -2620,7 +2629,7 @@ export class UserService {
 				`VC field validation failed with ${failedFields.length} field(s) not matching`,
 			);
 
-			const errorMessage = this.formatFieldMatchingError(failedFields);
+			const errorMessage = this.formatFieldMatchingError(failedFields, locale);
 			throw new BadRequestException(errorMessage);
 		}
 
@@ -2735,11 +2744,18 @@ export class UserService {
 	 * @param failedFields Array of failed field names
 	 * @returns Formatted error message
 	 */
-	private formatFieldMatchingError(failedFields: string[]): string {
-		if (failedFields.length === 1) {
-			return `${failedFields[0]} does not match the user profile. Please re-upload the document.`;
-		}
-		return `${failedFields.join(', ')} not match the user profile. Please re-upload the document.`;
+	/**
+	 * Formats error message for failed field matching
+	 * @param failedFields Array of failed field names
+	 * @param locale Locale for translation
+	 * @returns Formatted error message
+	 */
+	private formatFieldMatchingError(failedFields: string[], locale: string = 'en'): string {
+		const failedIdsString = failedFields.join(', ');
+		Logger.log(`Failed fields: ${failedFields}`);
+		return this.i18n.translateError('FIELDS_NOT_MATCHING', locale, {
+			failedFields: failedIdsString,
+		});
 	}
 
 	/**
@@ -2841,7 +2857,7 @@ export class UserService {
 			// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
 			const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
 			Logger.log(`Processing document upload with locale: ${locale}`);
-			
+
 			const flowStartTime = Date.now();
 			const userDetails = await this.getUserDetails(req);
 
@@ -2859,51 +2875,51 @@ export class UserService {
 				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
 			const issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
 
-		// Process document
-		this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
-		const ocrStartTime = Date.now();
-		const ocrResult = await this.performOcr(
-			file,
-			uploadDocumentDto,
-			requiresQRProcessing,
-			documentConfig,
-			locale,
-		);
-		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+			// Process document
+			this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+			const ocrStartTime = Date.now();
+			const ocrResult = await this.performOcr(
+				file,
+				uploadDocumentDto,
+				requiresQRProcessing,
+				documentConfig,
+				locale,
+			);
+			Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
-		// Validate document type from OCR text and VC fields
-		Logger.log(`Starting document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
-		const isValidDocument = await this.validateDocumentAndFields(
-			documentConfig,
-			ocrResult,
-			uploadDocumentDto,
-			issueVC,
-			locale,
-		);
+			// Validate document type from OCR text and VC fields
+			Logger.log(`Starting document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+			const isValidDocument = await this.validateDocumentAndFields(
+				documentConfig,
+				ocrResult,
+				uploadDocumentDto,
+				issueVC,
+				locale,
+			);
 
-		if (isValidDocument === false) {
-			const documentName = uploadDocumentDto.docName || 'Unknown';
-			Logger.warn(`Document validation failed - returning error. Expected document type: ${documentName}`);
-			const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { documentName });
-			return new ErrorResponse({
-				statusCode: HttpStatus.BAD_REQUEST,
-				errorMessage,
-			});
-		}
-		
-		Logger.log(`Document validation passed or skipped. isValidDocument=${isValidDocument}, proceeding with document processing.`);
+			if (isValidDocument === false) {
+				const documentName = uploadDocumentDto.docName || 'Unknown';
+				Logger.warn(`Document validation failed - returning error. Expected document type: ${documentName}`);
+				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { documentName });
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage,
+				});
+			}
 
-		// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
-		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+			Logger.log(`Document validation passed or skipped. isValidDocument=${isValidDocument}, proceeding with document processing.`);
 
-		const mappingStartTime = Date.now();
-		const expectedDocumentName = uploadDocumentDto.docName;
-		const vcMapping = isDhiwayVcUrl
-			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
+			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
+			const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+
+			const mappingStartTime = Date.now();
+			const expectedDocumentName = uploadDocumentDto.docName;
+			const vcMapping = isDhiwayVcUrl
+				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
+				: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
 			console.log('vcMapping ====>', vcMapping);
 			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
-			
+
 			// Check for validation errors BEFORE proceeding with storage and VC creation
 			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
 				Logger.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
@@ -2911,7 +2927,7 @@ export class UserService {
 				const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
 				throw new BadRequestException(translatedError);
 			}
-			
+
 			// Step: Perform VC field validation and matching against user profile
 			const matchingResult = await this.performFieldMatching(
 				userDetails.user_id,
@@ -3025,7 +3041,7 @@ export class UserService {
 			// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
 			const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
 			Logger.log(`Processing document upload with QR content directly, locale: ${locale}`);
-			
+
 			const flowStartTime = Date.now();
 			const userDetails = await this.getUserDetails(req);
 
@@ -3084,7 +3100,7 @@ export class UserService {
 					errorMessage,
 				});
 			}
-			
+
 			Logger.log(`Document validation passed or skipped. isValidDocument=${isValidDocument}, proceeding with document processing.`);
 
 			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
@@ -3096,7 +3112,7 @@ export class UserService {
 				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
 				: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
 			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
-			
+
 			// Check for validation errors BEFORE proceeding with storage and VC creation
 			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
 				Logger.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
@@ -3104,7 +3120,7 @@ export class UserService {
 				const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
 				throw new BadRequestException(translatedError);
 			}
-			
+
 			// Step: Perform VC field validation and matching against user profile
 			const matchingResult = await this.performFieldMatching(
 				userDetails.user_id,
@@ -3172,7 +3188,7 @@ export class UserService {
 			// Update profile and mark document as verified (verification already done above for issueVC: "no")
 			await this.updateProfileAfterDocumentSave(issueVC, vcMapping, issuer, savedDoc, userDetails);
 			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
-			
+
 			// Build and return response
 			const responseData = this.buildResponseData(
 				savedDoc,
@@ -3226,28 +3242,28 @@ export class UserService {
 				});
 			}
 
-		// Get docQRContains from document config - the processor will handle all logic
-		const docQRContains = documentConfig?.docQRContains || 'PLAIN_TEXT';
+			// Get docQRContains from document config - the processor will handle all logic
+			const docQRContains = documentConfig?.docQRContains || 'PLAIN_TEXT';
 
-		// Process QR content using QRContentProcessorService - it handles all logic including:
-		// - Selecting the right processor (Jharseva, eOdisha, Dhiway) based on issuer
-		// - URL detection and download for TEXT_AND_URL format
-		// - All QR content processing
-		const qrProcessingResult = await this.qrContentProcessor.processQRContent(
-			qrContent,
-			docQRContains,
-			issuer,
-			documentConfig,
-		);
+			// Process QR content using QRContentProcessorService - it handles all logic including:
+			// - Selecting the right processor (Jharseva, eOdisha, Dhiway) based on issuer
+			// - URL detection and download for TEXT_AND_URL format
+			// - All QR content processing
+			const qrProcessingResult = await this.qrContentProcessor.processQRContent(
+				qrContent,
+				docQRContains,
+				issuer,
+				documentConfig,
+			);
 
-		// Check if QR processing failed
-		if (qrProcessingResult?.error && (qrProcessingResult?.isRequired || requiresQRProcessing)) {
-			const errorMessage = this.i18n.translateError(qrProcessingResult.error, locale);
-			throw new BadRequestException({
-				message: errorMessage,
-				statusCode: HttpStatus.BAD_REQUEST,
-			});
-		}
+			// Check if QR processing failed
+			if (qrProcessingResult?.error && (qrProcessingResult?.isRequired || requiresQRProcessing)) {
+				const errorMessage = this.i18n.translateError(qrProcessingResult.error, locale);
+				throw new BadRequestException({
+					message: errorMessage,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
+			}
 
 			// Build OCR result structure similar to extractTextFromBufferWithQR output
 			let extractedText = qrContent;
@@ -3262,16 +3278,19 @@ export class UserService {
 					);
 					extractedText = qrResult.fullText;
 					confidence = qrResult.confidence;
-					
+
 					// Validate OCR result - must have sufficient text
 					if (!extractedText || extractedText.trim().length === 0) {
 						throw new BadRequestException('OCR_TEXT_EXTRACTION_FAILED: No text could be extracted from the downloaded document. The PDF may be corrupted, password-protected, or contain only images without OCR-able text.');
 					}
-					
+
 					if (confidence < 10) {
-						throw new BadRequestException(`OCR_LOW_CONFIDENCE: Extracted text has very low confidence (${confidence}%). The document may be of poor quality.`);
+						const errorMessage = this.i18n.translateError('OCR_LOW_CONFIDENCE', locale, {
+							confidence: confidence,
+						});
+						throw new BadRequestException(errorMessage);
 					}
-					
+
 					// For TEXT_AND_URL format, combine text part from QR with OCR'd text from document
 					// The processor already extracted the text part and stored it in processedData.text
 					if (qrProcessingResult?.processedData?.text) {
@@ -3293,7 +3312,10 @@ export class UserService {
 						}
 						throw ocrError;
 					}
-					throw new BadRequestException(`Failed to extract text from downloaded document: ${ocrError.message}`);
+					const errorMessage = this.i18n.translateError('OCR_TEXT_EXTRACTION_FAILED_REASON', locale, {
+						error: ocrError.message,
+					});
+					throw new BadRequestException(errorMessage);
 				}
 			} else if (qrProcessingResult?.qrCodeDetected && qrProcessingResult?.qrCodeContent) {
 				// Use processed QR content if available (for formats that don't require document download)
@@ -3375,7 +3397,7 @@ export class UserService {
 		if (!isDhiwayVcUrl && vcMapping && 'isValidDocument' in vcMapping && vcMapping.isValidDocument !== undefined) {
 			isValidDocument = vcMapping.isValidDocument;
 			Logger.log(`Document type validation result from LLM: isValidDocument=${isValidDocument}`);
-			
+
 			if (!isValidDocument) {
 				Logger.warn(`Document type validation FAILED: LLM determined document does not match expected type. Stopping validation and returning error.`);
 				return false;
@@ -3385,7 +3407,7 @@ export class UserService {
 			// For Dhiway VC URL cases, skip document type validation as VC data is already validated
 			Logger.log(`Skipping document type validation for Dhiway VC URL case - VC data already validated`);
 		}
-		
+
 		// Proceed to field validation
 		Logger.log(`Proceeding to field validation. isValidDocument=${isValidDocument}`);
 
@@ -3402,9 +3424,9 @@ export class UserService {
 				`No vcFields configuration found for ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType} - skipping required field validation`,
 			);
 		}
-		
+
 		Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
-		
+
 		return isValidDocument;
 	}
 
@@ -3454,7 +3476,7 @@ export class UserService {
 		if (issueVC === 'no' && vcMapping?.mapped_data) {
 			try {
 				const mappedData = vcMapping.mapped_data;
-				
+
 				Logger.log(`Verifying document before profile update for issueVC: no`);
 				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
 				Logger.log(`Document verification successful before profile update`);
@@ -3555,7 +3577,7 @@ export class UserService {
 		if (issueVC === 'no' && vcMapping?.mapped_data) {
 			const mappedData = vcMapping.mapped_data;
 			const dataKeys = Object.keys(mappedData || {});
-			
+
 			// Skip if mapped_data is empty (verification will happen later in verifyAndUpdateProfile after originalDocument is added)
 			if (dataKeys.length === 0) {
 				Logger.log(`Skipping early verification: mapped_data is empty. Verification will happen after file upload and originalDocument is added.`);
@@ -3712,7 +3734,7 @@ export class UserService {
 		if (!verificationResult.success) {
 			const baseMessage = verificationResult.message ?? 'Credential verification failed';
 			Logger.error(`VC Verification failed: ${baseMessage}. Errors: ${JSON.stringify(verificationResult.errors || [])}`);
-			
+
 			// Format error message with details from verification API
 			let errorMessage = baseMessage;
 			if (verificationResult.errors && Array.isArray(verificationResult.errors) && verificationResult.errors.length > 0) {
@@ -3731,12 +3753,12 @@ export class UserService {
 					})
 					.filter((detail: string) => detail && detail.trim().length > 0)
 					.join('; ');
-				
+
 				if (errorDetails) {
 					errorMessage = `${baseMessage}. ${errorDetails}`;
 				}
 			}
-			
+
 			// Throw BadRequestException with string message for proper error handling
 			throw new BadRequestException(errorMessage);
 		}
@@ -3790,7 +3812,7 @@ export class UserService {
 		// Upload file to S3 if provided
 		if (file) {
 			Logger.log(`Uploading file to S3 storage (issueVC: ${issueVC})`);
-			
+
 			// Upload all files as public to enable permanent URL access (can be reused multiple times)
 			uploadResult = await this.uploadFileToStorage(
 				file,
@@ -4124,29 +4146,29 @@ export class UserService {
 				);
 			}
 
-		const allMissingRequired = this.collectMissingRequiredFields(
-			vcFields,
-			vcMapping,
-			uploadDocumentDto,
-			issueVC,
-		);
-		this.logValidationResults(vcFields, vcMapping, allMissingRequired);
+			const allMissingRequired = this.collectMissingRequiredFields(
+				vcFields,
+				vcMapping,
+				uploadDocumentDto,
+				issueVC,
+			);
+			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
-		if (allMissingRequired.length > 0) {
-			this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto, locale);
-		}
+			if (allMissingRequired.length > 0) {
+				this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto, locale);
+			}
 
-		// Check for validation constraint failures
-		if (vcMapping.validation_errors && vcMapping.validation_errors.length > 0) {
-			this.throwValidationConstraintsError(vcMapping.validation_errors, uploadDocumentDto, locale);
-		}
+			// Check for validation constraint failures
+			if (vcMapping.validation_errors && vcMapping.validation_errors.length > 0) {
+				this.throwValidationConstraintsError(vcMapping.validation_errors, uploadDocumentDto, locale);
+			}
 
-		const requiredFieldsCount = Object.values(vcFields).filter(
-			(config) => config?.required === true,
-		).length;
-		Logger.log(
-			`All ${requiredFieldsCount} required fields are present for document`,
-		);
+			const requiredFieldsCount = Object.values(vcFields).filter(
+				(config) => config?.required === true,
+			).length;
+			Logger.log(
+				`All ${requiredFieldsCount} required fields are present for document`,
+			);
 		} catch (error) {
 			Logger.error(
 				`Error in validateRequiredFieldsFromOcrMapping: ${error.message}`,
@@ -4286,14 +4308,14 @@ export class UserService {
 	): void {
 		// Format validation errors for user-friendly display
 		const errorDetails = validationErrors.map(ve => `${ve.field}: ${ve.error}`).join('; ');
-		
+
 		const errorMessage = this.i18n.translateError('VC_VALIDATION_CONSTRAINTS_FAILED', locale, {
 			errors: errorDetails
 		});
 
 		Logger.error(`Document validation constraints failed: ${errorMessage}`);
 		Logger.debug(`Validation errors: ${JSON.stringify(validationErrors, null, 2)}`);
-		
+
 		throw new BadRequestException({
 			message: errorMessage,
 			statusCode: HttpStatus.BAD_REQUEST,
