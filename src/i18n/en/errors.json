@@ -44,6 +44,7 @@
     "KEYCLOAK_USER_TOKEN_FAILED": "Failed to get Keycloak user token",
     "KEYCLOAK_TOKEN_REQUEST_FAILED": "Keycloak token request failed",
     "KEYCLOAK_USER_NOT_FOUND": "User not found in keycloak !",
+    "USER_ALREADY_EXISTS": "User already exists!",
     "KEYCLOAK_USER_CREATE_FAILED": "Error while creating user !",
     "KEYCLOAK_USER_DELETE_FAILED": "Error while deleting user!",
     "KEYCLOAK_OPERATION_FAILED": "Keycloak operation failed",
