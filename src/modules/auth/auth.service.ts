@@ -11,6 +11,7 @@ import { LoginDTO } from './dto/login.dto';
 import { UpdatePasswordDTO } from './dto/update-password.dto';
 import { UploadDocumentDto } from '@modules/users/dto/upload-document.dto';
 import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
+import { I18nService } from 'src/common/services/i18n.service';
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -31,6 +32,7 @@ export class AuthService {
     private readonly loggerService: LoggerService,
     private readonly walletService: WalletService,
     private readonly documentUploadService: DocumentUploadService,
+    private readonly i18n: I18nService,
   ) { }
 
   public async login(body: LoginDTO) {
@@ -151,7 +153,7 @@ export class AuthService {
 }
 } */
 
-  public async registerWithUsernamePassword(body) {
+  public async registerWithUsernamePassword(body, locale: string = 'en') {
     try {
       // Step 1: Prepare user data for Keycloak registration
       const dataToCreateUser = this.prepareUserDataV2(body);
@@ -164,6 +166,7 @@ export class AuthService {
       const keycloakId = await this.registerUserInKeycloak(
         rest,
         token.access_token,
+        locale,
       );
 
       // Step 4: Register user in PostgreSQL
@@ -360,7 +363,7 @@ export class AuthService {
     return userInfo;
   }
 
-  private async registerUserInKeycloak(userData, accessToken) {
+  private async registerUserInKeycloak(userData, accessToken, locale: string = 'en') {
     const registerUserRes = await this.keycloakService.registerUser(
       userData,
       accessToken,
@@ -372,9 +375,10 @@ export class AuthService {
           'User already exists!',
           registerUserRes?.error,
         );
+        const errorMessage = this.i18n.translateError('USER_ALREADY_EXISTS', locale);
         throw new ErrorResponse({
           statusCode: HttpStatus.CONFLICT,
-          errorMessage: 'User already exists!',
+          errorMessage,
         });
       }
       throw new ErrorResponse({
@@ -463,6 +467,7 @@ export class AuthService {
   private async processOtrCertificate(
     file: Express.Multer.File,
     uploadDocumentDto: UploadDocumentDto,
+    locale: string = 'en',
   ) {
     try {
       if (uploadDocumentDto.docSubType !== 'otrCertificate') {
@@ -481,6 +486,8 @@ export class AuthService {
         file,
         uploadDocumentDto,
         requiresQRProcessing,
+        undefined,
+        locale,
       );
       this.loggerService.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'AuthService');
 
@@ -531,7 +538,7 @@ export class AuthService {
       if (vcMapping && 'isValidDocument' in vcMapping && vcMapping.isValidDocument !== undefined) {
         const isValidDocument = vcMapping.isValidDocument;
         this.loggerService.log(`Document type validation result from LLM: isValidDocument=${isValidDocument}, expectedDocumentName=${uploadDocumentDto.docName}`);
-        
+
         if (!isValidDocument) {
           const documentName = uploadDocumentDto.docName || 'Unknown';
           this.loggerService.warn(`Document type validation FAILED: LLM determined document does not match expected type "${documentName}". Stopping processing.`);
@@ -583,7 +590,8 @@ export class AuthService {
         file,
       };
       const processingStartTime = Date.now();
-      const otrResult = await this.processOtrCertificate(file, uploadDocumentDto);
+      const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+      const otrResult = await this.processOtrCertificate(file, uploadDocumentDto, locale);
       this.loggerService.log(`⏱️ Total OTR Processing (OCR+Mapping) took: ${Date.now() - processingStartTime}ms`, 'AuthService');
 
       ocrResult = otrResult.ocrResult;
@@ -610,6 +618,7 @@ export class AuthService {
       const regStartTime = Date.now();
       const registrationResponse = await this.registerWithUsernamePassword(
         payload,
+        locale,
       );
       this.loggerService.log(`⏱️ User Registration took: ${Date.now() - regStartTime}ms`, 'AuthService');
       // Check if registration was successful
