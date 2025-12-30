@@ -133,6 +133,7 @@
     "QR_TEXT_AND_URL_NO_URL": "QR code is invalid and does not contain a URL.",
     "QR_TEXT_AND_URL_INVALID_FILE_TYPE": "The URL does not point to a valid PDF file. Please check the URL and try again.",
     "QR_URL_PROCESSING_FAILED": "Invalid QR code or QR code does not contain a valid URL.",
+    "QR_DOWNLOAD_TIMEOUT": "The document download timed out. The server may be slow or unreachable. Please try again later.",
     "_comment_7": "Custom Fields Errors",
     "FIELD_ALREADY_EXISTS": "Field with name \"{{name}}\" already exists in context \"{{context}}\"",
     "FIELD_NOT_FOUND": "Field with ID {{fieldId}} not found",

@@ -251,7 +251,14 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
     let errorType = 'UNKNOWN_ERROR';
     let errorKey = 'QR_URL_PROCESSING_FAILED';
 
-    if (error.name === 'TypeError' && error.message.includes('Invalid URL')) {
+    const errorMessage = error.message || '';
+    const hasInvalidUrl = (error.name === 'TypeError' && errorMessage.includes('Invalid URL')) ||
+                          errorMessage.includes('Invalid URL format') ||
+                          errorMessage.includes('Invalid URL') ||
+                          errorMessage.includes('No URL found') ||
+                          errorMessage.includes('No valid URL');
+
+    if (hasInvalidUrl) {
       errorType = 'INVALID_URL';
       errorKey = 'QR_TEXT_AND_URL_NO_URL';
     } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
@@ -260,8 +267,9 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
       errorType = 'DOCUMENT_NOT_FOUND';
     } else if (error.response?.status === 403) {
       errorType = 'ACCESS_DENIED';
-    } else if (error.code === 'ECONNABORTED') {
+    } else if (error.code === 'ECONNABORTED' || errorMessage.includes('timeout')) {
       errorType = 'TIMEOUT';
+      errorKey = 'QR_DOWNLOAD_TIMEOUT';
     }
 
     this.logger.error(`URL processing failed: ${errorKey}`, error.stack);
@@ -349,8 +357,8 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
   protected async processTextAndUrl(qrContent: string, contentType: QRContentType): Promise<QRProcessingResult> {
     try {
       // Check if qrContent contains URL (catches invalid QR codes like base64 strings)
-      const normalizedContent = qrContent.toLowerCase();
-      if (!normalizedContent.includes('http://') && !normalizedContent.includes('https://')) {
+      const lowerContent = qrContent.toLowerCase();
+      if (!lowerContent.includes('http://') && !lowerContent.includes('https://')) {
         return {
           qrCodeDetected: true,
           qrCodeContent: qrContent,
@@ -360,9 +368,10 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
         };
       }
 
-      // Extract URL from content
-      const urlRegex = /https?:\/\/[^\s]+/i;
+      // Extract URL from content using regex
+      const urlRegex = /https?:\/\/[^\s<>"']+/i;
       const urlMatch = urlRegex.exec(qrContent);
+      
       if (!urlMatch) {
         return {
           qrCodeDetected: true,
@@ -373,7 +382,7 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
         };
       }
 
-      const url = urlMatch[0];
+      const url = urlMatch[0].trim();
       const textPart = qrContent.replace(urlRegex, '').trim();
 
       // Validate URL format

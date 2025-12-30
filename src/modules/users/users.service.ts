@@ -1773,6 +1773,7 @@ export class UserService {
 	private async verifyVcWithApi(
 		vcData: any,
 		issuer?: string,
+		acceptLanguage?: string,
 	): Promise<{ success: boolean; message?: string; errors?: any[] }> {
 		try {
 			// Try to extract issuer from VC data if not provided
@@ -1798,11 +1799,19 @@ export class UserService {
 				};
 			}
 
+			// Prepare headers with Accept-Language if provided
+			const headers: Record<string, string> = {
+				'Content-Type': 'application/json',
+			};
+			if (acceptLanguage) {
+				headers['Accept-Language'] = acceptLanguage;
+			}
+
 			const response = await axios.post(
 				`${verificationUrl}/verification`,
 				verificationPayload,
 				{
-					headers: { 'Content-Type': 'application/json' },
+					headers,
 					timeout: 8000,
 				},
 			);
@@ -2858,6 +2867,7 @@ export class UserService {
 			uploadDocumentDto,
 			requiresQRProcessing,
 			documentConfig,
+			locale,
 		);
 		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
@@ -2912,9 +2922,6 @@ export class UserService {
 				req,
 			);
 
-			// Note: Verification happens in verifyAndUpdateProfile after originalDocument is added
-			// Skipping early verification here to avoid duplicate calls and ensure originalDocument is included
-
 			// Handle VC creation or file upload
 			const storageStartTime = Date.now();
 			const { uploadResult, downloadUrl, vcCreationResult } =
@@ -2948,7 +2955,16 @@ export class UserService {
 				Logger.warn(`vcMapping.mapped_data is null/undefined - cannot add originalDocument`);
 			}
 
-			// Save document record
+			// Verify document BEFORE saving to database (for issueVC: "no" cases)
+			// This ensures document is not saved if verification fails
+			if (issueVC === 'no' && vcMapping?.mapped_data) {
+				const mappedData = vcMapping.mapped_data;
+				Logger.log(`Verifying document before saving to database for issueVC: no`);
+				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
+				Logger.log(`Document verification successful before saving`);
+			}
+
+			// Save document record (only after successful verification for issueVC: "no")
 			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
 			const dbSaveStartTime = Date.now();
 			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
@@ -2960,8 +2976,8 @@ export class UserService {
 				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
 			);
 
-			// Verify and update profile
-			await this.verifyAndUpdateProfile(issueVC, vcMapping, issuer, savedDoc, userDetails);
+			// Update profile and mark document as verified (verification already done above for issueVC: "no")
+			await this.updateProfileAfterDocumentSave(issueVC, vcMapping, issuer, savedDoc, userDetails);
 			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');			// Build and return response
 			const responseData = this.buildResponseData(
 				savedDoc,
@@ -3099,9 +3115,6 @@ export class UserService {
 				req,
 			);
 
-			// Note: Verification happens in verifyAndUpdateProfile after originalDocument is added
-			// Skipping early verification here to avoid duplicate calls and ensure originalDocument is included
-
 			// Handle VC creation or file upload
 			const storageStartTime = Date.now();
 			const { uploadResult, downloadUrl, vcCreationResult } =
@@ -3135,7 +3148,16 @@ export class UserService {
 				Logger.warn(`vcMapping.mapped_data is null/undefined - cannot add originalDocument`);
 			}
 
-			// Save document record
+			// Verify document BEFORE saving to database (for issueVC: "no" cases)
+			// This ensures document is not saved if verification fails
+			if (issueVC === 'no' && vcMapping?.mapped_data) {
+				const mappedData = vcMapping.mapped_data;
+				Logger.log(`Verifying document before saving to database for issueVC: no`);
+				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
+				Logger.log(`Document verification successful before saving`);
+			}
+
+			// Save document record (only after successful verification for issueVC: "no")
 			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
 			const dbSaveStartTime = Date.now();
 			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
@@ -3147,8 +3169,8 @@ export class UserService {
 				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
 			);
 
-			// Verify and update profile
-			await this.verifyAndUpdateProfile(issueVC, vcMapping, issuer, savedDoc, userDetails);
+			// Update profile and mark document as verified (verification already done above for issueVC: "no")
+			await this.updateProfileAfterDocumentSave(issueVC, vcMapping, issuer, savedDoc, userDetails);
 			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
 			
 			// Build and return response
@@ -3197,7 +3219,11 @@ export class UserService {
 	) {
 		try {
 			if (!qrContent || qrContent.trim().length === 0) {
-				throw new BadRequestException('QR_CONTENT_REQUIRED');
+				const translatedError = this.i18n.translateError('QR_CONTENT_REQUIRED', locale);
+				throw new BadRequestException({
+					message: translatedError,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
 			}
 
 		// Get docQRContains from document config - the processor will handle all logic
@@ -3287,9 +3313,22 @@ export class UserService {
 		} catch (error) {
 			Logger.error(`QR content processing failed: ${error.message}`, error.stack);
 			if (error instanceof BadRequestException) {
+				// If BadRequestException already has a translated message, keep it
+				// Otherwise, try to translate the error key if it's a string
+				if (typeof error.message === 'string' && error.message.includes('_')) {
+					const translatedError = this.i18n.translateError(error.message, locale);
+					throw new BadRequestException({
+						message: translatedError,
+						statusCode: HttpStatus.BAD_REQUEST,
+					});
+				}
 				throw error;
 			}
-			throw new InternalServerErrorException('QR_CONTENT_PROCESSING_FAILED');
+			const translatedError = this.i18n.translateError('QR_CONTENT_PROCESSING_FAILED', locale);
+			throw new InternalServerErrorException({
+				message: translatedError,
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			});
 		}
 	}
 
@@ -3370,7 +3409,37 @@ export class UserService {
 	}
 
 	/**
+	 * Updates user profile after document save (verification already done earlier for issueVC: "no")
+	 * For issueVC: "yes", verification happens after VC callback when published
+	 */
+	private async updateProfileAfterDocumentSave(
+		issueVC: string,
+		vcMapping: any,
+		issuer: string,
+		savedDoc: UserDoc,
+		userDetails: any,
+	): Promise<void> {
+		// Mark document as verified for issueVC: "no" cases (verification already done before saving)
+		if (issueVC === 'no') {
+			savedDoc.doc_verified = true;
+			savedDoc.verified_at = new Date();
+			await this.userDocsRepository.save(savedDoc);
+			Logger.log(`Document marked as verified: doc_id=${savedDoc.doc_id}`);
+		}
+
+		// Update profile based on documents
+		try {
+			await this.updateProfile(userDetails);
+			Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
+		} catch (error) {
+			Logger.error('Profile update failed after document upload:', error);
+			// Don't fail the entire operation if profile update fails
+		}
+	}
+
+	/**
 	 * Verifies document and updates user profile
+	 * @deprecated Verification should happen before saving document. Use updateProfileAfterDocumentSave instead.
 	 */
 	private async verifyAndUpdateProfile(
 		issueVC: string,
@@ -3378,6 +3447,7 @@ export class UserService {
 		issuer: string,
 		savedDoc: UserDoc,
 		userDetails: any,
+		acceptLanguage?: string,
 	): Promise<void> {
 		// Verify document before profile update for issueVC: "no" cases
 		// (Verification for issueVC: "yes" happens after VC callback when published)
@@ -3386,7 +3456,7 @@ export class UserService {
 				const mappedData = vcMapping.mapped_data;
 				
 				Logger.log(`Verifying document before profile update for issueVC: no`);
-				await this.verifyDocumentData(mappedData, issuer);
+				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
 				Logger.log(`Document verification successful before profile update`);
 
 				// Update doc_verified and verified_at after successful verification
@@ -3470,12 +3540,14 @@ export class UserService {
 	 * @param requiresQRProcessing Whether document requires QR processing
 	 * @param vcMapping VC mapping data
 	 * @param issuer Issuer name
+	 * @param acceptLanguage Accept-Language header for i18n support
 	 */
 	private async performDocumentVerification(
 		issueVC: string,
 		requiresQRProcessing: boolean,
 		vcMapping: any,
 		issuer: string,
+		acceptLanguage?: string,
 	): Promise<void> {
 		const verifyStartTime = Date.now();
 
@@ -3488,7 +3560,7 @@ export class UserService {
 			if (dataKeys.length === 0) {
 				Logger.log(`Skipping early verification: mapped_data is empty. Verification will happen after file upload and originalDocument is added.`);
 			} else {
-				await this.verifyDocumentData(mappedData, issuer);
+				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
 			}
 		} else if (issueVC === 'yes') {
 			Logger.log(`Skipping external verification for document with issueVC: yes`);
@@ -3614,17 +3686,13 @@ export class UserService {
 	/**
 	 * Verify document data with API for issueVC: "no" cases
 	 */
-	private async verifyDocumentData(mappedData: any, issuer: string): Promise<void> {
+	private async verifyDocumentData(mappedData: any, issuer: string, acceptLanguage?: string): Promise<void> {
 		Logger.log(`Calling verification API for document with issueVC: no`);
 
 		// Validate mappedData exists
 		if (!mappedData) {
 			Logger.error(`Cannot verify: mappedData is null or undefined`);
-			throw new BadRequestException({
-				message: 'Cannot verify document: mapped data is missing',
-				statusCode: 400,
-				error: 'Bad Request',
-			});
+			throw new BadRequestException('Cannot verify document: mapped data is missing');
 		}
 
 		// Log the data structure for debugging
@@ -3639,17 +3707,38 @@ export class UserService {
 
 		// Send mappedData directly to verification API (including originalDocument)
 		// Let the verification API handle empty data validation
-		const verificationResult = await this.verifyVcWithApi(mappedData, issuer);
+		const verificationResult = await this.verifyVcWithApi(mappedData, issuer, acceptLanguage);
 
 		if (!verificationResult.success) {
-			const message = verificationResult.message ?? 'VC Verification failed';
-			Logger.error(`VC Verification failed: ${message}. Errors: ${JSON.stringify(verificationResult.errors || [])}`);
-			throw new BadRequestException({
-				message,
-				errors: verificationResult.errors ?? [],
-				statusCode: 400,
-				error: 'Bad Request',
-			});
+			const baseMessage = verificationResult.message ?? 'Credential verification failed';
+			Logger.error(`VC Verification failed: ${baseMessage}. Errors: ${JSON.stringify(verificationResult.errors || [])}`);
+			
+			// Format error message with details from verification API
+			let errorMessage = baseMessage;
+			if (verificationResult.errors && Array.isArray(verificationResult.errors) && verificationResult.errors.length > 0) {
+				// Extract error details from verification API response
+				const errorDetails = verificationResult.errors
+					.map((err: any) => {
+						if (typeof err === 'string') {
+							return err;
+						} else if (err?.error) {
+							return err.error;
+						} else if (err?.message) {
+							return err.message;
+						} else {
+							return JSON.stringify(err);
+						}
+					})
+					.filter((detail: string) => detail && detail.trim().length > 0)
+					.join('; ');
+				
+				if (errorDetails) {
+					errorMessage = `${baseMessage}. ${errorDetails}`;
+				}
+			}
+			
+			// Throw BadRequestException with string message for proper error handling
+			throw new BadRequestException(errorMessage);
 		}
 
 		Logger.log(`Document verification successful`);
@@ -4230,6 +4319,7 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 		requiresQRProcessing: boolean,
 		documentConfig?: any,
+		locale: string = 'en',
 	) {
 		try {
 			const isVcUrlCase = this.isVcUrlCase(requiresQRProcessing, documentConfig);
@@ -4243,11 +4333,11 @@ export class UserService {
 			const hasVcDataFromQR = this.hasVcDataFromQR(extractedData, requiresQRProcessing);
 			this.logVcDataDetection(hasVcDataFromQR, isVcUrlCase);
 
-			this.validateOcrText(extractedData, hasVcDataFromQR, isVcUrlCase);
+			this.validateOcrText(extractedData, hasVcDataFromQR, isVcUrlCase, locale);
 
 			return ocrResult;
 		} catch (ocrError) {
-			return this.handleOcrError(ocrError);
+			return this.handleOcrError(ocrError, locale);
 		}
 	}
 
@@ -4349,7 +4439,7 @@ export class UserService {
 		}
 	}
 
-	private validateOcrText(extractedData: any, hasVcDataFromQR: boolean, isVcUrlCase: boolean): void {
+	private validateOcrText(extractedData: any, hasVcDataFromQR: boolean, isVcUrlCase: boolean, locale: string = 'en'): void {
 		const shouldSkipValidation = hasVcDataFromQR && isVcUrlCase;
 		if (shouldSkipValidation) {
 			return;
@@ -4357,9 +4447,11 @@ export class UserService {
 
 		if (extractedData.fullText.length === 0) {
 			Logger.error(`OCR validation failed: No text extracted from document`);
-			throw new BadRequestException(
-				'OCR_TEXT_EXTRACTION_FAILED'
-			);
+			const translatedError = this.i18n.translateError('OCR_TEXT_EXTRACTION_FAILED', locale);
+			throw new BadRequestException({
+				message: translatedError,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
 		}
 
 		if (extractedData.confidence < 10) {
@@ -4370,16 +4462,27 @@ export class UserService {
 		}
 	}
 
-	private handleOcrError(ocrError: any): never {
+	private handleOcrError(ocrError: any, locale: string = 'en'): never {
 		Logger.error(`OCR processing failed: ${ocrError.message}`);
 
 		if (ocrError instanceof BadRequestException) {
+			// If BadRequestException already has a translated message, keep it
+			// Otherwise, try to translate the error key if it's a string
+			if (typeof ocrError.message === 'string' && ocrError.message.includes('_')) {
+				const translatedError = this.i18n.translateError(ocrError.message, locale);
+				throw new BadRequestException({
+					message: translatedError,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
+			}
 			throw ocrError;
 		}
 
-		throw new InternalServerErrorException(
-			'OCR_PROCESSING_FAILED'
-		);
+		const translatedError = this.i18n.translateError('OCR_PROCESSING_FAILED', locale);
+		throw new InternalServerErrorException({
+			message: translatedError,
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+		});
 	}
 
 	// Helper methods for document management
