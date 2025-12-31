@@ -38,7 +38,6 @@ DHIWAY_ANALYTICS_BASE_URL=https://api.dhiway.net
 DHIWAY_ANALYTICS_TIMEOUT_MS=30000
 
 # VC Processing Configuration
-VC_PROCESSING_LOOKBACK_MINUTES=120  # Lookback window in minutes from current time (120 = 2 hours). Events within this window from current time will not be processed.
 VC_PROCESSING_CRON_SCHEDULE=0 */2 * * *  # Cron schedule (default: every 2 hours)
 ```
 
@@ -87,11 +86,10 @@ Or manually run the SQL from `migrations/create_vc_processing_cron_tables.sql`.
 
 ### Time Window Processing
 
-1. **First Run**: Initializes `cron_state` with `last_processed_to = NOW() - lookback_minutes`
+1. **First Run**: Initializes `cron_state` with `last_processed_to = NOW()`
 2. **Subsequent Runs**:
    - Reads `last_processed_to` from `cron_state`
-   - Calculates time window: `from = last_processed_to`, `to = NOW() - lookback_minutes`
-   - This ensures we don't process events that are too recent (within the lookback window)
+   - Calculates time window: `from = last_processed_to`, `to = NOW()`
    - Processes all records in that window
    - Updates `last_processed_to` to `to` after successful batch
 
