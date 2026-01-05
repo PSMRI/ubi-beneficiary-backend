@@ -433,32 +433,48 @@ export class AuthService {
     });
   }
 
-  public async logout(req) {
+  public async logout(req, locale: string = 'en') {
     const accessToken = req.body.access_token;
-    const refreshToken = req.body.refresh_token; // Optional: if provided
+    const refreshToken = req.body.refresh_token;
 
-    try {
-      // Revoke the access token
-      await this.keycloakService.revokeToken(accessToken);
-
-      // Optionally, revoke the refresh token if provided
-      if (refreshToken) {
-        await this.keycloakService.revokeToken(refreshToken, 'refresh_token');
-      }
-
-      // Return successful logout response
+    // If no tokens at all, still consider user logged out
+    if (!accessToken && !refreshToken) {
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
-        message: 'LOGGED OUT SUCCESSFULLY',
-      });
-    } catch (error) {
-      console.error('Error during logout:', error.message);
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: 'LOGOUT_FAILED',
+        message: this.i18n.translateSuccess('AUTH_LOGOUT_SUCCESS', locale),
       });
     }
+
+    // 1️⃣ Revoke access token (best effort)
+    if (accessToken) {
+      try {
+        await this.keycloakService.revokeToken(accessToken);
+      } catch (err) {
+        // Ignore known logout-safe errors
+        console.warn('Access token revoke failed:', err?.message);
+      }
+    }
+
+    // 2️⃣ Revoke refresh token (optional cleanup)
+    if (refreshToken) {
+      try {
+        await this.keycloakService.revokeToken(
+          refreshToken,
+          'refresh_token',
+        );
+      } catch (err) {
+        // Never fail logout because of refresh token
+        console.warn('Refresh token revoke failed:', err?.message);
+      }
+    }
+
+    // 3️⃣ Always succeed
+    return new SuccessResponse({
+      statusCode: HttpStatus.OK,
+      message: this.i18n.translateSuccess('AUTH_LOGOUT_SUCCESS', locale),
+    });
   }
+
 
   /**
  * Sets Keycloak required actions for a given user (e.g., UPDATE_PASSWORD)
