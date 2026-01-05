@@ -125,7 +125,8 @@ export class AuthController {
   @Post('/logout')
   @UsePipes(ValidationPipe)
   logout(@Req() req: Request) {
-    return this.authService.logout(req);
+    const locale = req.headers['accept-language'];
+    return this.authService.logout(req, locale);
   }
 
   @Post('/update-password')
