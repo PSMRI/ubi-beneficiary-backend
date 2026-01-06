@@ -491,8 +491,9 @@ export class AuthService {
       }
 
       // Step 2: Document config (QR requirement)
-      const { requiresQRProcessing } = await this.userService.getDocumentConfig(uploadDocumentDto);
-
+      const { requiresQRProcessing, documentConfig } = await this.userService.getDocumentConfig(uploadDocumentDto);
+      const issueVC =
+        documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
       // Step 3: File type validation
       this.userService.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
 
@@ -504,6 +505,7 @@ export class AuthService {
         requiresQRProcessing,
         undefined,
         locale,
+
       );
       this.loggerService.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'AuthService');
 
@@ -531,6 +533,8 @@ export class AuthService {
           vcFields,
           expectedDocumentName,
         );
+
+
       } else {
         vcMapping = {
           mapped_data: {},
@@ -540,7 +544,14 @@ export class AuthService {
           warnings: ['No vcFields configuration found'],
         };
       }
-      this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
+
+      await this.userService.validateRequiredFieldsFromOcrMapping(
+        vcFields,
+        vcMapping,
+        uploadDocumentDto,
+        issueVC,
+        locale,
+      );
       this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
 
       // Step 6.5: Check for validation errors BEFORE proceeding
@@ -619,11 +630,6 @@ export class AuthService {
         username: vcMapping?.mapped_data?.otr_number
           ? vcMapping.mapped_data.otr_number.toString()
           : '',
-
-        phoneNumber: vcMapping?.mapped_data?.phoneNumber
-          ? vcMapping.mapped_data.phoneNumber.toString()
-          : '',
-
         password: defaultPassword,
       };
 
@@ -763,22 +769,11 @@ export class AuthService {
     if (!payload.username || payload.username.trim() === '') {
       missingFields.push('username');
     }
-    if (!payload.phoneNumber || payload.phoneNumber.trim() === '') {
-      missingFields.push('phoneNumber');
-    }
 
     if (missingFields.length > 0) {
       throw new ErrorResponse({
         statusCode: HttpStatus.BAD_REQUEST,
         errorMessage: `Missing required fields: ${missingFields.join(', ')}. Please re-upload document again.`,
-      });
-    }
-
-    // Additional validation for phoneNumber format
-    if (!/^\d{10}$/.test(payload.phoneNumber.trim())) {
-      throw new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: 'Invalid phone number format. Phone number must be 10 digits.',
       });
     }
   }
