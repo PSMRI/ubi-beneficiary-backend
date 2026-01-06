@@ -4124,7 +4124,7 @@ export class UserService {
 	}
 
 	// Helper to validate required fields using OCR mapping results
-	private async validateRequiredFieldsFromOcrMapping(
+	public async validateRequiredFieldsFromOcrMapping(
 		vcFields: VcFields,
 		vcMapping: any,
 		uploadDocumentDto: UploadDocumentDto,
@@ -4349,6 +4349,7 @@ export class UserService {
 		requiresQRProcessing: boolean,
 		documentConfig?: any,
 		locale: string = 'en',
+
 	) {
 		try {
 			const isVcUrlCase = this.isVcUrlCase(requiresQRProcessing, documentConfig);
