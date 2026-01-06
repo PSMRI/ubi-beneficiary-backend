@@ -637,7 +637,7 @@ export class AuthService {
       };
 
       // 🟩 Step 3.1: Validate required fields
-      this.validateRegistrationPayload(payload);
+      this.validateRegistrationPayload(payload, locale);
 
       // 🟩 Step 4: Register user
       const regStartTime = Date.now();
@@ -762,7 +762,7 @@ export class AuthService {
   /**
    * Validates registration payload for required fields
    */
-  private validateRegistrationPayload(payload: any) {
+  private validateRegistrationPayload(payload: any, locale: string = 'en') {
 
     const missingFields: string[] = [];
 
@@ -774,9 +774,23 @@ export class AuthService {
     }
 
     if (missingFields.length > 0) {
+      // Format field names: convert camelCase/snake_case to Title Case
+      const formattedFields = missingFields.map(field => 
+        field
+          .replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
+          .replaceAll('_', ' ')  // Replace underscores with spaces
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ')
+      );
+      const fieldList = formattedFields.join(', ');
+      const errorMessage = this.i18n.translateError('FIELDS_REQUIRED', locale, {
+        fields: fieldList
+      });
+
       throw new ErrorResponse({
         statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: `Missing required fields: ${missingFields.join(', ')}. Please re-upload document again.`,
+        errorMessage: errorMessage,
       });
     }
   }

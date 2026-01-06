@@ -4287,11 +4287,18 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 		locale: string = 'en',
 	): void {
-		const fieldList = allMissingRequired.join(', ');
+		// Format field names: convert camelCase/snake_case to Title Case
+		const formattedFields = allMissingRequired.map(field => 
+			field
+				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
+				.replaceAll('_', ' ')  // Replace underscores with spaces
+				.split(' ')
+				.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+				.join(' ')
+		);
+		const fieldList = formattedFields.join(', ');
 		const errorMessage = this.i18n.translateError('MISSING_REQUIRED_FIELDS_IN_DOCUMENT', locale, {
-			fields: fieldList,
-			docType: uploadDocumentDto.docType,
-			docSubType: uploadDocumentDto.docSubType
+			fields: fieldList
 		});
 
 		Logger.error(`Document validation failed: ${errorMessage}`);
