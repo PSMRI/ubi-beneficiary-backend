@@ -249,7 +249,7 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
 
   protected handleUrlProcessingError(error: any, qrContent: string, contentType: QRContentType): QRProcessingResult {
     let errorType = 'UNKNOWN_ERROR';
-    let errorKey = 'QR_URL_PROCESSING_FAILED';
+    let errorKey = 'QR_TEXT_AND_URL_NO_URL';
 
     const errorMessage = error.message || '';
     const hasInvalidUrl = (error.name === 'TypeError' && errorMessage.includes('Invalid URL')) ||
@@ -269,7 +269,7 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
       errorType = 'ACCESS_DENIED';
     } else if (error.code === 'ECONNABORTED' || errorMessage.includes('timeout')) {
       errorType = 'TIMEOUT';
-      errorKey = 'QR_DOWNLOAD_TIMEOUT';
+      errorKey = 'QR_TEXT_AND_URL_NO_URL';
     }
 
     this.logger.error(`URL processing failed: ${errorKey}`, error.stack);
@@ -409,7 +409,7 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
           qrCodeDetected: true,
           qrCodeContent: qrContent,
           contentType,
-          error: 'QR_TEXT_AND_URL_INVALID_FILE_TYPE',
+          error: 'QR_TEXT_AND_URL_NO_URL',
           errorType: 'INVALID_FILE_TYPE',
           technicalError: downloadResult.mimeType,
         };
@@ -422,7 +422,7 @@ export abstract class BaseQRContentProcessor implements IQRContentProcessor {
           qrCodeDetected: true,
           qrCodeContent: qrContent,
           contentType,
-          error: 'QR_TEXT_AND_URL_INVALID_FILE_TYPE',
+          error: 'QR_TEXT_AND_URL_NO_URL',
           errorType: 'INVALID_FILE_TYPE',
           technicalError: contentValidation.detectedType || downloadResult.mimeType,
         };

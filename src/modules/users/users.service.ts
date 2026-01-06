@@ -2751,7 +2751,16 @@ export class UserService {
 	 * @returns Formatted error message
 	 */
 	private formatFieldMatchingError(failedFields: string[], locale: string = 'en'): string {
-		const failedIdsString = failedFields.join(', ');
+		// Format field names: convert camelCase/snake_case to Title Case
+		const formattedFields = failedFields.map(field => 
+			field
+				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
+				.replaceAll('_', ' ')  // Replace underscores with spaces
+				.split(' ')
+				.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+				.join(' ')
+		);
+		const failedIdsString = formattedFields.join(', ');
 		Logger.log(`Failed fields: ${failedFields}`);
 		return this.i18n.translateError('FIELDS_NOT_MATCHING', locale, {
 			failedFields: failedIdsString,
@@ -3256,14 +3265,27 @@ export class UserService {
 				documentConfig,
 			);
 
-			// Check if QR processing failed
-			if (qrProcessingResult?.error && (qrProcessingResult?.isRequired || requiresQRProcessing)) {
-				const errorMessage = this.i18n.translateError(qrProcessingResult.error, locale);
-				throw new BadRequestException({
-					message: errorMessage,
-					statusCode: HttpStatus.BAD_REQUEST,
-				});
-			}
+		// Check if QR processing failed
+		if (qrProcessingResult?.error && (qrProcessingResult?.isRequired || requiresQRProcessing)) {
+			// Log the technical error details for debugging
+			Logger.error(
+				`QR Processing Failed: ${qrProcessingResult.error}`,
+				JSON.stringify({
+					errorType: qrProcessingResult.errorType,
+					technicalError: qrProcessingResult.technicalError,
+					qrContent: qrProcessingResult.qrCodeContent?.substring(0, 100), // Log first 100 chars
+					contentType: qrProcessingResult.contentType,
+				}),
+				'UserService'
+			);
+			
+			// Show user-friendly message
+			const errorMessage = this.i18n.translateError(qrProcessingResult.error, locale);
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
+		}
 
 			// Build OCR result structure similar to extractTextFromBufferWithQR output
 			let extractedText = qrContent;
@@ -3299,19 +3321,29 @@ export class UserService {
 							extractedText = `${textPart}\n\n${extractedText}`;
 						}
 					}
-				} catch (ocrError) {
-					if (ocrError instanceof BadRequestException) {
-						const errorMessage = ocrError.message || '';
-						// Handle file type errors
-						if (errorMessage.includes("is not supported by") || errorMessage.includes("File type")) {
-							const translatedError = this.i18n.translateError('QR_TEXT_AND_URL_INVALID_FILE_TYPE', locale);
-							throw new BadRequestException({
-								message: translatedError,
-								statusCode: HttpStatus.BAD_REQUEST,
-							});
-						}
-						throw ocrError;
+			} catch (ocrError) {
+				if (ocrError instanceof BadRequestException) {
+					const errorMessage = ocrError.message || '';
+					// Handle file type errors
+					if (errorMessage.includes("is not supported by") || errorMessage.includes("File type")) {
+						// Log the technical error details for debugging
+						Logger.error(
+							`QR Document Processing Failed: File type validation error`,
+							JSON.stringify({
+								originalError: errorMessage,
+								errorType: 'INVALID_FILE_TYPE'
+							}),
+							'UserService'
+						);
+						
+						const translatedError = this.i18n.translateError('QR_TEXT_AND_URL_NO_URL', locale);
+						throw new BadRequestException({
+							message: translatedError,
+							statusCode: HttpStatus.BAD_REQUEST,
+						});
 					}
+					throw ocrError;
+				}
 					const errorMessage = this.i18n.translateError('OCR_TEXT_EXTRACTION_FAILED_REASON', locale, {
 						error: ocrError.message,
 					});
@@ -4331,11 +4363,22 @@ export class UserService {
 	}
 
 	// Helper to validate file type when QR processing is required
-	public async validateFileTypeForQr(
+	public async 	validateFileTypeForQr(
 		requiresQRProcessing: boolean,
 		mimetype: string,
 	) {
 		if (requiresQRProcessing && mimetype === 'application/pdf') {
+			// Log the technical error details for debugging
+			Logger.error(
+				`QR Processing Failed: PDF file type not supported for QR processing`,
+				JSON.stringify({
+					errorType: 'UNSUPPORTED_FILE_TYPE',
+					mimetype: mimetype,
+					requiresQRProcessing: requiresQRProcessing
+				}),
+				'UserService'
+			);
+			
 			throw new BadRequestException(
 				'QR_PDF_NOT_SUPPORTED'
 			);
