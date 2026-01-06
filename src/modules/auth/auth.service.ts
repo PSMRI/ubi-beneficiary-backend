@@ -315,7 +315,7 @@ export class AuthService {
       password, // Return the password directly
       attributes: {
         // Custom user attributes
-        phoneNumber: '+91' + trimmedPhoneNumber,
+        phoneNumber: trimmedPhoneNumber ? '+91' + trimmedPhoneNumber : '',
         firstName: trimmedName,
       },
       groups: this.defaultGroupPath ? [this.defaultGroupPath] : [],
@@ -625,12 +625,15 @@ export class AuthService {
       vcMapping = otrResult.vcMapping;
 
       // 🟩 Step 2: Enrich registration payload with OTR extracted data
-      const payload = {
+      const payload: any = {
         name: vcMapping?.mapped_data?.name || '',
         username: vcMapping?.mapped_data?.otr_number
           ? vcMapping.mapped_data.otr_number.toString()
           : '',
         password: defaultPassword,
+        phoneNumber: vcMapping?.mapped_data?.phoneNumber
+          ? vcMapping.mapped_data.phoneNumber.toString()
+          : '',
       };
 
       // 🟩 Step 3.1: Validate required fields
