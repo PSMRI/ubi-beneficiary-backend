@@ -11,6 +11,7 @@ import { IFileStorageService } from '@services/storage-providers/file-storage.se
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { QRProcessingService } from './services/qr-processing.service';
 import { SUPPORTED_OCR_TYPES } from './constants/mime-types.constants';
+import { I18nService } from 'src/common/services/i18n.service';
 
 /**
  * OCR Service for document text extraction
@@ -27,6 +28,7 @@ export class OcrService {
     private readonly fileStorageService: IFileStorageService,
     private readonly configService: ConfigService,
     private readonly qrProcessingService: QRProcessingService,
+    private readonly i18n: I18nService,
   ) {
     this.logger.log(
       `OCR Service initialized with provider: ${this.textExtractor.getProviderName()}`,
@@ -54,9 +56,11 @@ export class OcrService {
 
       // Check if file type is supported
       if (!this.textExtractor.supportsFileType(mimeType)) {
-        throw new BadRequestException(
-          `File type '${mimeType}' is not supported by ${this.textExtractor.getProviderName()}`,
-        );
+        const errorMessage = this.i18n.translateError('OCR_FILE_TYPE_NOT_SUPPORTED', 'en', {
+          mimeType,
+          providerName: this.textExtractor.getProviderName()
+        });
+        throw new BadRequestException(errorMessage);
       }
 
       this.logger.log(
@@ -165,9 +169,11 @@ export class OcrService {
 
       // Check if file type is supported
       if (!this.textExtractor.supportsFileType(mimeType)) {
-        throw new BadRequestException(
-          `File type '${mimeType}' is not supported by ${this.textExtractor.getProviderName()}`,
-        );
+        const errorMessage = this.i18n.translateError('OCR_FILE_TYPE_NOT_SUPPORTED', 'en', {
+          mimeType,
+          providerName: this.textExtractor.getProviderName()
+        });
+        throw new BadRequestException(errorMessage);
       }
 
       this.logger.log(
@@ -251,9 +257,8 @@ export class OcrService {
       return await this.extractTextFromS3(filePath, mimeType);
     } else {
       // For local storage, you would read the file from disk
-      throw new BadRequestException(
-        'Local file extraction not implemented yet. Use extractTextFromBuffer instead.',
-      );
+      const errorMessage = this.i18n.translateError('OCR_LOCAL_EXTRACTION_NOT_IMPLEMENTED', 'en');
+      throw new BadRequestException(errorMessage);
     }
   }
 

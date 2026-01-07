@@ -11,6 +11,7 @@ import { UserDoc } from '@entities/user_docs.entity';
 import { User } from '@entities/user.entity';
 import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
+import { I18nService } from 'src/common/services/i18n.service';
 import axios from 'axios';
 
 @Injectable()
@@ -22,7 +23,8 @@ export class HousekeepingService {
 		private readonly userDocsRepository: Repository<UserDoc>,
 		@InjectRepository(User)
 		private readonly userRepository: Repository<User>,
-		private readonly configService: ConfigService
+		private readonly configService: ConfigService,
+		private readonly i18n: I18nService,
 	) { }
 
 	/**
@@ -138,9 +140,10 @@ export class HousekeepingService {
 
 		} catch (error) {
 			this.logger.error('Error in registerWatchersForExistingDocuments:', error);
+			const errorMessage = error.message || this.i18n.translateError('HOUSEKEEPING_WATCHER_REGISTRATION_FAILED', 'en');
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message || 'Failed to register watchers',
+				errorMessage,
 			});
 		}
 	}
@@ -278,9 +281,10 @@ export class HousekeepingService {
 			});
 		} catch (error) {
 			this.logger.error('Error in getMigrationStatus:', error);
+			const errorMessage = error.message || this.i18n.translateError('HOUSEKEEPING_MIGRATION_STATUS_FAILED', 'en');
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message || 'Failed to get migration status',
+				errorMessage,
 			});
 		}
 	}
@@ -318,9 +322,10 @@ export class HousekeepingService {
 
 		} catch (error) {
 			this.logger.error('Error getting watcher registration status:', error);
+			const errorMessage = this.i18n.translateError('HOUSEKEEPING_WATCHER_STATUS_FAILED', 'en');
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: 'Failed to get watcher registration status',
+				errorMessage,
 			});
 		}
 	}

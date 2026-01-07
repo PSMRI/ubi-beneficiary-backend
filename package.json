@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "prepare": "husky",
     "script:encrypt-fields": "ts-node -r tsconfig-paths/register scripts/encrypt-fields-migration.ts",
-    "script:key-rotation": "ts-node -r tsconfig-paths/register scripts/key-rotation.ts"
+    "script:key-rotation": "ts-node -r tsconfig-paths/register scripts/key-rotation.ts",
+    "check-unused-constants": "node scripts/check-unused-language-constants.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.925.0",

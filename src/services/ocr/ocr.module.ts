@@ -11,6 +11,7 @@ import { EOdishaQRContentProcessor } from './processors/eodisha-qr-content.proce
 import { DhiwayQRContentProcessor } from './processors/dhiway-qr-content.processor';
 import { AdminModule } from '@modules/admin/admin.module';
 import { QRScanningService } from '../qr/qr-scanning.service';
+import { I18nService } from 'src/common/services/i18n.service';
 
 /**
  * OCR Module - Provides OCR text extraction services with QR code processing
@@ -79,6 +80,7 @@ import { QRScanningService } from '../qr/qr-scanning.service';
     QRProcessingService,
     QRScanningService, // Added QRScanningService to providers
     OcrService,
+    I18nService,
   ],
   exports: [OcrService, QRScanningService, QRContentProcessorService], // Exporting QRScanningService and QRContentProcessorService
 })

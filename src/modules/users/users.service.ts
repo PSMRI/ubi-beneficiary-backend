@@ -335,9 +335,11 @@ export class UserService {
 		try {
 			const sso_id = req?.user?.keycloak_id;
 			if (!sso_id) {
+				const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+				const errorMessage = this.i18n.translateError('USER_INVALID_KEYCLOAK_ID', locale);
 				return new ErrorResponse({
 					statusCode: HttpStatus.UNAUTHORIZED,
-					errorMessage: 'Invalid or missing Keycloak ID',
+					errorMessage,
 				});
 			}
 
@@ -671,7 +673,7 @@ export class UserService {
 				},
 			});
 		} catch (error) {
-			return this.handleUpdateProfileError(error);
+			return this.handleUpdateProfileError(error, req);
 		}
 	}
 
@@ -887,7 +889,7 @@ export class UserService {
 	 * Handles errors in updateUserProfile
 	 * @private
 	 */
-	private handleUpdateProfileError(error: any): ErrorResponse | never {
+	private handleUpdateProfileError(error: any, req?: any): ErrorResponse | never {
 		if (
 			error instanceof UnauthorizedException ||
 			error instanceof NotFoundException ||
@@ -900,9 +902,11 @@ export class UserService {
 			`Error updating user profile: ${error.message}`,
 			error.stack,
 		);
+		const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+		const errorMessage = this.i18n.translateError('USER_PROFILE_UPDATE_FAILED', locale);
 		return new ErrorResponse({
 			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-			errorMessage: error.message || 'Failed to update user profile',
+			errorMessage,
 		});
 	}
 
@@ -1545,11 +1549,14 @@ export class UserService {
 			where: { sso_id: sso_id },
 		});
 
-		if (!user)
+		if (!user) {
+			const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+			const errorMessage = this.i18n.translateError('USER_NOT_FOUND', locale);
 			return new ErrorResponse({
 				statusCode: HttpStatus.NOT_FOUND,
-				errorMessage: 'User with given sso_id not found',
+				errorMessage,
 			});
+		}
 
 		const user_id = user.user_id;
 
@@ -1627,7 +1634,8 @@ export class UserService {
 			// Validate URL scheme to prevent SSRF attacks
 			const parsed = new URL(url);
 			if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-				return { error: true, message: 'Invalid VC URL scheme', status: 400 };
+				const errorMessage = this.i18n.translateError('VC_URL_INVALID_SCHEME', 'en');
+				return { error: true, message: errorMessage, status: 400 };
 			}
 
 			// Fetch the VC JSON with proper headers
@@ -1718,7 +1726,8 @@ export class UserService {
 				initialParsed.protocol !== 'http:' &&
 				initialParsed.protocol !== 'https:'
 			) {
-				return { error: true, message: 'Invalid URL scheme', status: 400 };
+				const errorMessage = this.i18n.translateError('URL_INVALID_SCHEME', 'en');
+				return { error: true, message: errorMessage, status: 400 };
 			}
 
 			// 1. Follow redirects to get the final URL (without downloading the VC yet)
@@ -2285,16 +2294,17 @@ export class UserService {
 		return null; // No error
 	}
 
-	private async fetchAndValidateWalletData(docDataLink: string) {
+	private async fetchAndValidateWalletData(docDataLink: string, locale: string = 'en') {
 		let updatedDocData;
 
 		try {
 			updatedDocData = await this.fetchVcJsonFromVcUrl(docDataLink);
 		} catch (error) {
 			Logger.error(`Failed to fetch updated data from wallet: ${error}`);
+			const errorMessage = this.i18n.translateError('WALLET_DATA_FETCH_FAILED', locale);
 			return new ErrorResponse({
 				statusCode: HttpStatus.BAD_REQUEST,
-				errorMessage: 'Failed to fetch updated data from wallet',
+				errorMessage,
 			});
 		}
 
@@ -2302,24 +2312,26 @@ export class UserService {
 
 		if (!updatedDocData?.credentialSubject) {
 			Logger.error(`Not a valid VC: ${updatedDocData}`);
+			const errorMessage = this.i18n.translateError('VC_INVALID_DATA', locale);
 			return new ErrorResponse({
 				statusCode: HttpStatus.BAD_REQUEST,
-				errorMessage: 'Not a valid VC',
+				errorMessage,
 			});
 		}
 
 		return updatedDocData;
 	}
 
-	private async verifyVcData(vcData: any, issuer?: string) {
+	private async verifyVcData(vcData: any, issuer?: string, locale: string = 'en') {
 		let verificationResult;
 		try {
 			verificationResult = await this.verifyVcWithApi(vcData, issuer);
 		} catch (error) {
 			Logger.error(`VC Verification failed for wallet callback: ${error}`);
+			const errorMessage = this.i18n.translateError('VC_VERIFICATION_FAILED_UPDATED_DATA', locale);
 			return new ErrorResponse({
 				statusCode: HttpStatus.BAD_REQUEST,
-				errorMessage: 'VC Verification failed for updated data',
+				errorMessage,
 			});
 		}
 
@@ -2331,7 +2343,7 @@ export class UserService {
 				statusCode: HttpStatus.BAD_REQUEST,
 				errorMessage:
 					verificationResult.message ??
-					'VC Verification failed for updated data',
+					this.i18n.translateError('VC_VERIFICATION_FAILED_UPDATED_DATA', locale),
 			});
 		}
 
@@ -2459,7 +2471,7 @@ export class UserService {
 			if (updatedDocData instanceof ErrorResponse) return updatedDocData;
 
 			// Verify VC data
-			const verificationError = await this.verifyVcData(updatedDocData);
+			const verificationError = await this.verifyVcData(updatedDocData, undefined, 'en');
 			if (verificationError) return verificationError;
 
 			// Update all documents with the new data
@@ -2494,9 +2506,10 @@ export class UserService {
 			});
 		} catch (error) {
 			Logger.error(`Error processing wallet callback: ${error}`);
+			const errorMessage = this.i18n.translateError('WALLET_CALLBACK_PROCESSING_FAILED', 'en');
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: 'Failed to process wallet callback',
+				errorMessage,
 			});
 		}
 	}
@@ -2862,9 +2875,10 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 		acceptLanguage?: string,
 	) {
+		// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
+		const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
+		
 		try {
-			// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
-			const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
 			Logger.log(`Processing document upload with locale: ${locale}`);
 
 			const flowStartTime = Date.now();
@@ -3027,7 +3041,7 @@ export class UserService {
 				data: responseData,
 			});
 		} catch (error) {
-			return this.handleUploadError(error);
+			return this.handleUploadError(error, locale);
 		}
 	}
 
@@ -3046,9 +3060,10 @@ export class UserService {
 		uploadDocumentQrDto: UploadDocumentQrDto,
 		acceptLanguage?: string,
 	) {
+		// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
+		const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
+		
 		try {
-			// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
-			const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
 			Logger.log(`Processing document upload with QR content directly, locale: ${locale}`);
 
 			const flowStartTime = Date.now();
@@ -3222,7 +3237,7 @@ export class UserService {
 				data: responseData,
 			});
 		} catch (error) {
-			return this.handleUploadError(error);
+			return this.handleUploadError(error, locale);
 		}
 	}
 
@@ -3303,7 +3318,8 @@ export class UserService {
 
 					// Validate OCR result - must have sufficient text
 					if (!extractedText || extractedText.trim().length === 0) {
-						throw new BadRequestException('OCR_TEXT_EXTRACTION_FAILED: No text could be extracted from the downloaded document. The PDF may be corrupted, password-protected, or contain only images without OCR-able text.');
+						const errorMessage = this.i18n.translateError('OCR_EXTRACTION_FAILED_DETAILED', locale);
+						throw new BadRequestException(errorMessage);
 					}
 
 					if (confidence < 10) {
@@ -3746,7 +3762,9 @@ export class UserService {
 		// Validate mappedData exists
 		if (!mappedData) {
 			Logger.error(`Cannot verify: mappedData is null or undefined`);
-			throw new BadRequestException('Cannot verify document: mapped data is missing');
+			const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
+			const errorMessage = this.i18n.translateError('DOCUMENT_MAPPED_DATA_MISSING', locale);
+			throw new BadRequestException(errorMessage);
 		}
 
 		// Log the data structure for debugging
@@ -4044,7 +4062,7 @@ export class UserService {
 		return responseData;
 	}
 
-	private handleUploadError(error: any) {
+	private handleUploadError(error: any, locale: string = 'en') {
 		Logger.error(
 			'users.service:uploadDocument',
 			error?.message ?? error,
@@ -4052,9 +4070,10 @@ export class UserService {
 		);
 
 		if (error?.code === '23505') {
+			const errorMessage = this.i18n.translateError('DOCUMENT_DUPLICATE_ENTRY', locale);
 			return new ErrorResponse({
 				statusCode: HttpStatus.BAD_REQUEST,
-				errorMessage: 'Duplicate document entry',
+				errorMessage,
 			});
 		}
 
@@ -4075,9 +4094,10 @@ export class UserService {
 			});
 		}
 
+		const errorMessage = this.i18n.translateError('DOCUMENT_UPLOAD_FAILED', locale);
 		return new ErrorResponse({
 			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-			errorMessage: error?.message || 'Failed to upload document',
+			errorMessage,
 		});
 	}
 
@@ -4710,9 +4730,10 @@ export class UserService {
 						? HttpStatus.NOT_FOUND
 						: HttpStatus.INTERNAL_SERVER_ERROR;
 
+				const errorMessage = result.error || this.i18n.translateError('VC_EVENT_PROCESSING_FAILED', 'en');
 				return new ErrorResponse({
 					statusCode,
-					errorMessage: result.error || 'Failed to process VC event',
+					errorMessage,
 				});
 			}
 
@@ -4732,9 +4753,10 @@ export class UserService {
 			});
 		} catch (error) {
 			Logger.error(`Error processing VC event: ${error.message}`, error.stack);
+			const errorMessage = error.message || this.i18n.translateError('VC_EVENT_PROCESSING_FAILED', 'en');
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message || 'Failed to process VC event',
+				errorMessage,
 			});
 		}
 	}
