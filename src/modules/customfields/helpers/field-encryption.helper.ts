@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { EncryptionService } from '../../../common/helper/encryptionService';
 import { Field } from '../entities/field.entity';
 import { FieldValidationHelper } from './field-validation.helper';
+import { I18nService } from 'src/common/services/i18n.service';
 
 /**
  * Helper for handling encryption and decryption of custom field values
@@ -16,6 +17,7 @@ export class FieldEncryptionHelper {
 	constructor(
 		private readonly configService: ConfigService,
 		private readonly fieldValidationHelper: FieldValidationHelper,
+		private readonly i18n: I18nService,
 	) {
 		try {
 			this.encryptionService = EncryptionService.getInstance(configService);
@@ -50,7 +52,10 @@ export class FieldEncryptionHelper {
 			return encryptedValue;
 		} catch (error) {
 			this.logger.error(`Failed to encrypt value for field ${field.name}: ${error.message}`, error.stack);
-			throw new BadRequestException(`Failed to encrypt field value: ${error.message}`);
+			const errorMessage = this.i18n.translateError('FIELD_ENCRYPTION_ERROR', 'en', {
+				error: error.message
+			});
+			throw new BadRequestException(errorMessage);
 		}
 	}
 
@@ -80,7 +85,10 @@ export class FieldEncryptionHelper {
 			return parsedValue;
 		} catch (error) {
 			this.logger.error(`Failed to decrypt value for field ${field.name}: ${error.message}`, error.stack);
-			throw new BadRequestException(`Failed to decrypt field value: ${error.message}`);
+			const errorMessage = this.i18n.translateError('FIELD_DECRYPTION_ERROR', 'en', {
+				error: error.message
+			});
+			throw new BadRequestException(errorMessage);
 		}
 	}
 } 

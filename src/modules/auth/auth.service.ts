@@ -105,14 +105,14 @@ export class AuthService {
       try {
         // let wallet_api_url = process.env.WALLET_API_URL;
         // Step 1: Check if mobile number exists in the database
-        await this.checkMobileExistence(body?.phoneNumber);
+        await this.checkMobileExistence(body?.phoneNumber, locale);
   
         // Step 2: Prepare user data for Keycloak registration
         const dataToCreateUser = this.prepareUserData(body);
   
         // Step 3: Get Keycloak admin token
         const token = await this.keycloakService.getAdminKeycloakToken();
-        this.validateToken(token);
+        this.validateToken(token, locale);
   
         // Step 4: Register user in Keycloak
         const keycloakId = await this.registerUserInKeycloak(
@@ -177,7 +177,7 @@ export class AuthService {
       const user = await this.userService.createKeycloakData(userData);
 
       // Step 5: Handle wallet onboarding
-      const walletToken = await this.handleWalletOnboarding(body, password, user, keycloakId);
+      const walletToken = await this.handleWalletOnboarding(body, password, user, keycloakId, locale);
 
       // Step 6: Return success response
       return new SuccessResponse({
@@ -195,7 +195,7 @@ export class AuthService {
     }
   }
 
-  private async handleWalletOnboarding(body: any, password: string, user: any, keycloakId: string): Promise<string | null> {
+  private async handleWalletOnboarding(body: any, password: string, user: any, keycloakId: string, locale: string = 'en'): Promise<string | null> {
     const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
 
     if (!isWalletRegistrationEnabled) {
@@ -230,9 +230,10 @@ export class AuthService {
       return walletToken;
     } catch (walletError) {
       await this.rollbackUserRegistration(user, keycloakId, walletError);
+      const errorMessage = this.i18n.translateError('AUTH_REGISTRATION_INCOMPLETE', locale);
       throw new ErrorResponse({
         statusCode: HttpStatus.BAD_GATEWAY,
-        errorMessage: 'Registration could not be completed. Please try again later.',
+        errorMessage,
       });
     }
   }
@@ -255,18 +256,20 @@ export class AuthService {
     }
   }
 
-  private async checkMobileExistence(phoneNumber: string) {
+  private async checkMobileExistence(phoneNumber: string, locale: string = 'en') {
     if (!phoneNumber || !/^\d{10}$/.test(phoneNumber)) {
+      const errorMessage = this.i18n.translateError('AUTH_INVALID_PHONE_FORMAT', locale);
       throw new ErrorResponse({
         statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: 'Invalid phone number format',
+        errorMessage,
       });
     }
     const isMobileExist = await this.userService.findByMobile(phoneNumber);
     if (isMobileExist) {
+      const errorMessage = this.i18n.translateError('AUTH_MOBILE_ALREADY_EXISTS', locale);
       throw new ErrorResponse({
         statusCode: HttpStatus.CONFLICT,
-        errorMessage: 'Mobile Number Already Exists',
+        errorMessage,
       });
     }
   }
@@ -322,11 +325,12 @@ export class AuthService {
     };
   }
 
-  private validateToken(token) {
+  private validateToken(token, locale: string = 'en') {
     if (!token?.access_token) {
+      const errorMessage = this.i18n.translateError('AUTH_KEYCLOAK_TOKEN_FAILED', locale);
       throw new ErrorResponse({
         statusCode: HttpStatus.UNAUTHORIZED,
-        errorMessage: 'Unable to get Keycloak token',
+        errorMessage,
       });
     }
   }
@@ -390,24 +394,27 @@ export class AuthService {
     if (registerUserRes.headers.location) {
       const locationParts = registerUserRes.headers.location.split('/');
       if (locationParts?.length === 0) {
+        const errorMessage = this.i18n.translateError('AUTH_INVALID_LOCATION_HEADER', locale);
         throw new ErrorResponse({
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          errorMessage: 'Invalid location header format',
+          errorMessage,
         });
       }
       const keycloakId = registerUserRes?.headers?.location.split('/').pop();
       if (!keycloakId) {
+        const errorMessage = this.i18n.translateError('AUTH_KEYCLOAK_ID_EXTRACTION_FAILED', locale);
         throw new ErrorResponse({
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          errorMessage: 'Unable to extract Keycloak ID',
+          errorMessage,
         });
       }
       return keycloakId;
     }
 
+    const errorMessage = this.i18n.translateError('AUTH_KEYCLOAK_USER_CREATION_FAILED', locale);
     throw new ErrorResponse({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      errorMessage: 'Unable to create user in Keycloak',
+      errorMessage,
     });
   }
 
@@ -558,7 +565,8 @@ export class AuthService {
       if (vcMapping?.validationErrors && vcMapping.validationErrors.length > 0) {
         this.loggerService.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
         const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
-        throw new BadRequestException(`Document validation failed: ${errorMessages}`);
+        const translatedError = this.i18n.translateError('AUTH_DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
+        throw new BadRequestException(translatedError);
       }
 
       // Step 7: Validate document type - check isValidDocument from LLM mapping result
@@ -569,7 +577,8 @@ export class AuthService {
         if (!isValidDocument) {
           const documentName = uploadDocumentDto.docName || 'Unknown';
           this.loggerService.warn(`Document type validation FAILED: LLM determined document does not match expected type "${documentName}". Stopping processing.`);
-          throw new BadRequestException('The uploaded document does not match the expected document type. Please upload the correct document');
+          const translatedError = this.i18n.translateError('AUTH_DOCUMENT_TYPE_MISMATCH', locale, { documentName });
+          throw new BadRequestException(translatedError);
         }
         this.loggerService.log(`Document type validation PASSED: LLM confirmed document matches expected type "${uploadDocumentDto.docName}".`);
       } else if (vcFields) {
@@ -582,9 +591,10 @@ export class AuthService {
       return { ocrResult, vcMapping };
     } catch (error) {
       this.loggerService.error('processOtrCertificate', error.message, error.stack);
+      const errorMessage = error.message ?? this.i18n.translateError('AUTH_OTR_PROCESSING_FAILED', locale);
       throw new ErrorResponse({
         statusCode: error.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message ?? 'Failed to process OTR Certificate',
+        errorMessage,
       });
     }
   }
@@ -752,9 +762,11 @@ export class AuthService {
       }
 
       // Otherwise, wrap the error in an ErrorResponse
+      const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+      const fallbackErrorMessage = this.i18n.translateError('AUTH_OTR_REGISTRATION_FLOW_FAILED', locale);
       return new ErrorResponse({
         statusCode: error.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: errorMessage ?? 'Failed OTR registration flow',
+        errorMessage: errorMessage ?? fallbackErrorMessage,
       });
     }
   }

@@ -23,6 +23,7 @@ import { QueryFieldsDto } from './dto/query-fields.dto';
 import { AdminService } from '../admin/admin.service';
 import { FieldEncryptionHelper } from './helpers/field-encryption.helper';
 import { FieldValidationHelper } from './helpers/field-validation.helper';
+import { I18nService } from 'src/common/services/i18n.service';
 
 /**
  * Service for managing custom fields and field values
@@ -42,6 +43,7 @@ export class CustomFieldsService {
 		private readonly adminService: AdminService,
 		private readonly fieldEncryptionHelper: FieldEncryptionHelper,
 		private readonly fieldValidationHelper: FieldValidationHelper,
+		private readonly i18n: I18nService,
 	) { }
 
 	/**
@@ -224,20 +226,25 @@ export class CustomFieldsService {
 
 		if (isEnabling) {
 			if (!this.canEnableEncryption(field, existingValuesCount > 0)) {
-				throw new BadRequestException(
-					`Cannot enable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
-				);
+				const errorMessage = this.i18n.translateError('FIELD_CANNOT_ENABLE_ENCRYPTION_WITH_VALUES', 'en', {
+					name: field.name,
+					count: existingValuesCount
+				});
+				throw new BadRequestException(errorMessage);
 			}
 		} else if (isDisabling) {
 			if (!this.canDisableEncryption(field, existingValuesCount > 0)) {
 				if (existingValuesCount > 0) {
-					throw new BadRequestException(
-						`Cannot disable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
-					);
+					const errorMessage = this.i18n.translateError('FIELD_CANNOT_DISABLE_ENCRYPTION_WITH_VALUES', 'en', {
+						name: field.name,
+						count: existingValuesCount
+					});
+					throw new BadRequestException(errorMessage);
 				} else {
-					throw new BadRequestException(
-						`Cannot disable encryption for field '${field.name}'. Field is not currently encrypted.`
-					);
+					const errorMessage = this.i18n.translateError('FIELD_NOT_ENCRYPTED_CANNOT_DISABLE', 'en', {
+						name: field.name
+					});
+					throw new BadRequestException(errorMessage);
 				}
 			}
 		}
@@ -338,9 +345,10 @@ export class CustomFieldsService {
 		if (fields.length !== fieldIds.length) {
 			const foundIds = fields.map((f) => f.fieldId);
 			const missingIds = fieldIds.filter((id) => !foundIds.includes(id));
-			throw new BadRequestException(
-				`Invalid field IDs: ${missingIds.join(', ')}`
-			);
+			const errorMessage = this.i18n.translateError('FIELD_INVALID_IDS_LIST', 'en', {
+				ids: missingIds.join(', ')
+			});
+			throw new BadRequestException(errorMessage);
 		}
 
 		// Get all existing field values for this itemId
@@ -440,9 +448,10 @@ export class CustomFieldsService {
 		if (fields.length !== fieldIds.length) {
 			const foundIds = fields.map((f) => f.fieldId);
 			const missingIds = fieldIds.filter((id) => !foundIds.includes(id));
-			throw new BadRequestException(
-				`Invalid field IDs: ${missingIds.join(', ')}`
-			);
+			const errorMessage = this.i18n.translateError('FIELD_INVALID_IDS_LIST', 'en', {
+				ids: missingIds.join(', ')
+			});
+			throw new BadRequestException(errorMessage);
 		}
 
 		// Only fetch existing values for the fields being updated (not all fields)
