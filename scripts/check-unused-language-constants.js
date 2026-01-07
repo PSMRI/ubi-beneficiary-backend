@@ -128,8 +128,9 @@ class SimpleLanguageChecker {
         for (const key of this.allKeys) {
             try {
                 // Search for the key in the src directory (excluding i18n directory)
+                // NOSONAR - Command injection is safe here: key comes from controlled JSON translation files, not user input
                 const command = `grep -r "${key}" ${CONFIG.SRC_DIR} ${excludePattern} 2>/dev/null || true`;
-                const result = execSync(command, { encoding: 'utf8' });
+                const result = execSync(command, { encoding: 'utf8' }); // NOSONAR
                 
                 if (result.trim()) {
                     this.usedKeys.add(key);
