@@ -85,7 +85,7 @@ export class S3StorageAdapter implements IFileStorageService {
           // If ACLs are disabled or IAM doesn't have ACL permissions, fallback to private upload
           // Public access can be handled via bucket policies or CloudFront
           this.logger.warn(
-            `⚠️ Cannot upload as PUBLIC (ACL/permission issue) - uploading as PRIVATE instead. ` +
+            `Cannot upload as PUBLIC (ACL/permission issue) - uploading as PRIVATE instead. ` +
             `Key: ${key}. ` +
             `Error: ${errorMessage.substring(0, 200)}. ` +
             `To enable public URLs, configure bucket policies to allow public read access (s3:GetObject). ` +
@@ -98,7 +98,7 @@ export class S3StorageAdapter implements IFileStorageService {
         } else if (isAclError && !isPublic) {
           // Even private upload failed with ACL error - this shouldn't happen, but handle it
           this.logger.warn(
-            `⚠️ ACL error on private upload, retrying: ${key}. Error: ${errorMessage.substring(0, 200)}`,
+            `ACL error on private upload, retrying: ${key}. Error: ${errorMessage.substring(0, 200)}`,
           );
           await storage.write(key, content, {
             visibility: Visibility.PRIVATE,
@@ -112,7 +112,7 @@ export class S3StorageAdapter implements IFileStorageService {
       // Log final upload status
       if (isPublic && !uploadedAsPublic) {
         this.logger.warn(
-          `⚠️ File uploaded as PRIVATE but public URL will be generated. ` +
+          `File uploaded as PRIVATE but public URL will be generated. ` +
           `Ensure bucket policies allow public read access for URL to work. Key: ${key}`,
         );
       }

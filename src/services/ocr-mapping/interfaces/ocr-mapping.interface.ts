@@ -17,7 +17,6 @@ export interface OcrMappingResult {
   processing_method: 'ai' | 'keyword' | 'hybrid';
   warnings?: string[];
   validationErrors?: Array<{ field: string; error: string; constraint: string }>;
-  isValidDocument?: boolean; // Document type validation result from LLM semantic analysis
 }
 
 /**
@@ -28,15 +27,13 @@ export interface IAiMappingAdapter {
    * Map extracted text to structured data using AI
    * @param extractedText - Raw text from OCR
    * @param schema - Target JSON schema
-   * @param expectedDocumentName - Expected document type name for validation
    * @param docType - Optional document type for context-specific processing
    * @param customPromptTemplate - Optional custom prompt template from vcConfiguration
-   * @returns Mapped data object with isValidDocument field, or null if failed
+   * @returns Mapped data object, or null if failed
    */
   mapTextToSchema(
     extractedText: string, 
     schema: Record<string, any>, 
-    expectedDocumentName: string, 
     docType?: string,
     customPromptTemplate?: string | null
   ): Promise<Record<string, any> | null>;

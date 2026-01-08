@@ -12,6 +12,7 @@ import { UpdatePasswordDTO } from './dto/update-password.dto';
 import { UploadDocumentDto } from '@modules/users/dto/upload-document.dto';
 import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
 import { I18nService } from 'src/common/services/i18n.service';
+import { DocumentValidationService } from '@services/document-validation/document-validation.service';
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly walletService: WalletService,
     private readonly documentUploadService: DocumentUploadService,
     private readonly i18n: I18nService,
+    private readonly documentValidationService: DocumentValidationService,
   ) { }
 
   public async login(body: LoginDTO) {
@@ -516,21 +518,33 @@ export class AuthService {
       );
       this.loggerService.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'AuthService');
 
-      // Step 5: Fetch vcFields
+      // Step 5: Keyword-based document validation (preValidation)
+      this.loggerService.log(`Starting keyword-based document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+      const keywordValidationResult = await this.documentValidationService.validateDocument(
+        ocrResult.extractedText,
+        uploadDocumentDto.docType,
+        uploadDocumentDto.docSubType,
+      );
+
+      if (!keywordValidationResult.isValid) {
+        const documentName = uploadDocumentDto.docName || 'Unknown';
+        this.loggerService.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
+        const translatedError = this.i18n.translateError('AUTH_DOCUMENT_TYPE_MISMATCH', locale, { documentName });
+        throw new BadRequestException(translatedError);
+      }
+
+      this.loggerService.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
+
+      // Step 6: Fetch vcFields
       const vcFields = await this.userService.getVcFieldsForDocument(
         uploadDocumentDto.docType,
         uploadDocumentDto.docSubType,
       );
 
-      // Step 6: OCR → structured mapping
+      // Step 7: OCR → structured mapping
       let vcMapping = null;
       const mappingStartTime = Date.now();
       if (vcFields) {
-        // Pass docName from uploadDocumentDto for document type validation
-        const expectedDocumentName = uploadDocumentDto.docName;
-        if (!expectedDocumentName || expectedDocumentName.trim() === '') {
-          throw new BadRequestException('DOCUMENT_NAME_REQUIRED_FOR_VALIDATION');
-        }
         vcMapping = await this.userService.ocrMapping.mapAfterOcr(
           {
             text: ocrResult.extractedText,
@@ -538,10 +552,8 @@ export class AuthService {
             docSubType: uploadDocumentDto.docSubType,
           },
           vcFields,
-          expectedDocumentName,
+          locale,
         );
-
-
       } else {
         vcMapping = {
           mapped_data: {},
@@ -561,29 +573,12 @@ export class AuthService {
       );
       this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
 
-      // Step 6.5: Check for validation errors BEFORE proceeding
+      // Check for validation errors BEFORE proceeding
       if (vcMapping?.validationErrors && vcMapping.validationErrors.length > 0) {
         this.loggerService.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
         const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
         const translatedError = this.i18n.translateError('AUTH_DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
         throw new BadRequestException(translatedError);
-      }
-
-      // Step 7: Validate document type - check isValidDocument from LLM mapping result
-      if (vcMapping && 'isValidDocument' in vcMapping && vcMapping.isValidDocument !== undefined) {
-        const isValidDocument = vcMapping.isValidDocument;
-        this.loggerService.log(`Document type validation result from LLM: isValidDocument=${isValidDocument}, expectedDocumentName=${uploadDocumentDto.docName}`);
-
-        if (!isValidDocument) {
-          const documentName = uploadDocumentDto.docName || 'Unknown';
-          this.loggerService.warn(`Document type validation FAILED: LLM determined document does not match expected type "${documentName}". Stopping processing.`);
-          const translatedError = this.i18n.translateError('AUTH_DOCUMENT_TYPE_MISMATCH', locale, { documentName });
-          throw new BadRequestException(translatedError);
-        }
-        this.loggerService.log(`Document type validation PASSED: LLM confirmed document matches expected type "${uploadDocumentDto.docName}".`);
-      } else if (vcFields) {
-        // If vcFields exist but isValidDocument is missing, log warning but proceed (shouldn't happen with required expectedDocumentName)
-        this.loggerService.warn(`Document type validation: isValidDocument field missing from LLM response. Expected document type: ${uploadDocumentDto.docName}`);
       }
 
       this.loggerService.log('OTR Certificate processed successfully (OCR + mapping done)');

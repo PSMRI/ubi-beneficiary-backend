@@ -44,6 +44,7 @@ import { I18nService } from 'src/common/services/i18n.service';
 import { VcProcessingService } from './services/vc-processing.service';
 import { QRContentProcessorService } from '@services/ocr/services/qr-content-processor.service';
 import { UploadDocumentQrDto } from './dto/upload-document-qr.dto';
+import { DocumentValidationService } from '@services/document-validation/document-validation.service';
 
 type StatusUpdateInfo = {
 	attempted: boolean;
@@ -122,6 +123,7 @@ export class UserService {
 		private readonly i18n: I18nService,
 		private readonly vcProcessingService: VcProcessingService,
 		private readonly qrContentProcessor: QRContentProcessorService,
+		private readonly documentValidationService: DocumentValidationService,
 	) { }
 
 	/*  async create(createUserDto: CreateUserDto) {
@@ -2907,41 +2909,43 @@ export class UserService {
 				requiresQRProcessing,
 				documentConfig,
 				locale,
-			);
-			Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+		);
+		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
-			// Validate document type from OCR text and VC fields
-			Logger.log(`Starting document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
-			const isValidDocument = await this.validateDocumentAndFields(
-				documentConfig,
-				ocrResult,
-				uploadDocumentDto,
-				issueVC,
-				locale,
-			);
+		// Step 1: Keyword-based document validation (preValidation)
+		Logger.log(`Starting keyword-based document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+		const keywordValidationResult = await this.documentValidationService.validateDocument(
+			ocrResult.extractedText,
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
 
-			if (isValidDocument === false) {
-				const documentName = uploadDocumentDto.docName || 'Unknown';
-				Logger.warn(`Document validation failed - returning error. Expected document type: ${documentName}`);
-				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { documentName });
-				return new ErrorResponse({
-					statusCode: HttpStatus.BAD_REQUEST,
-					errorMessage,
-				});
-			}
+		if (!keywordValidationResult.isValid) {
+			const documentName = uploadDocumentDto.docName || 'Unknown';
+			Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
+			const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { 
+				documentName,
+				reason: keywordValidationResult.reason 
+			});
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage,
+			});
+		}
 
-			Logger.log(`Document validation passed or skipped. isValidDocument=${isValidDocument}, proceeding with document processing.`);
+		Logger.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
 
-			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
-			const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+	// Step 2: Validate document type from OCR text and VC fields (includes OCR mapping)
+	Logger.log(`Starting field validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+	const { vcMapping } = await this.validateDocumentAndFields(
+		documentConfig,
+		ocrResult,
+		uploadDocumentDto,
+		issueVC,
+		locale,
+	);
 
-			const mappingStartTime = Date.now();
-			const expectedDocumentName = uploadDocumentDto.docName;
-			const vcMapping = isDhiwayVcUrl
-				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-				: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
-			console.log('vcMapping ====>', vcMapping);
-			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
+	Logger.log(`Document validation passed, proceeding with document processing.`);
 
 			// Check for validation errors BEFORE proceeding with storage and VC creation
 			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
@@ -3102,40 +3106,43 @@ export class UserService {
 				issuer,
 				requiresQRProcessing,
 				locale,
-			);
-			Logger.log(`⏱️ QR Content Processing took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+		);
+		Logger.log(`⏱️ QR Content Processing took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
-			// Validate document type from QR processing result and VC fields
-			Logger.log(`Starting document validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
-			const isValidDocument = await this.validateDocumentAndFields(
-				documentConfig,
-				ocrResult,
-				uploadDocumentDto,
-				issueVC,
-				locale,
-			);
+		// Step 1: Keyword-based document validation (preValidation)
+		Logger.log(`Starting keyword-based document validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
+		const keywordValidationResult = await this.documentValidationService.validateDocument(
+			ocrResult.extractedText,
+			uploadDocumentQrDto.docType,
+			uploadDocumentQrDto.docSubType,
+		);
 
-			if (isValidDocument === false) {
-				const documentName = uploadDocumentQrDto.docName || 'Unknown';
-				Logger.warn(`Document validation failed - returning error. Expected document type: ${documentName}`);
-				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { documentName });
-				return new ErrorResponse({
-					statusCode: HttpStatus.BAD_REQUEST,
-					errorMessage,
-				});
-			}
+		if (!keywordValidationResult.isValid) {
+			const documentName = uploadDocumentQrDto.docName || 'Unknown';
+			Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
+			const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { 
+				documentName,
+				reason: keywordValidationResult.reason 
+			});
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage,
+			});
+		}
 
-			Logger.log(`Document validation passed or skipped. isValidDocument=${isValidDocument}, proceeding with document processing.`);
+		Logger.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
 
-			// Check if this is a Dhiway VC_URL case - skip OCR mapping and use VC data directly
-			const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+	// Step 2: Validate document type from QR processing result and VC fields (includes OCR mapping)
+	Logger.log(`Starting field validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
+	const { vcMapping } = await this.validateDocumentAndFields(
+		documentConfig,
+		ocrResult,
+		uploadDocumentDto,
+		issueVC,
+		locale,
+	);
 
-			const mappingStartTime = Date.now();
-			const expectedDocumentName = uploadDocumentQrDto.docName;
-			const vcMapping = isDhiwayVcUrl
-				? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-				: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
-			Logger.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'UserService');
+	Logger.log(`Document validation passed, proceeding with document processing.`);
 
 			// Check for validation errors BEFORE proceeding with storage and VC creation
 			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
@@ -3404,7 +3411,7 @@ export class UserService {
 
 	/**
 	 * Validates document type from OCR text and required VC fields
-	 * @returns boolean | undefined - true if valid, false if invalid, undefined if validation not configured
+	 * Returns the vcMapping to avoid duplicate OCR mapping calls
 	 */
 	private async validateDocumentAndFields(
 		documentConfig: any,
@@ -3412,12 +3419,7 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 		issueVC: string,
 		locale: string = 'en',
-	): Promise<boolean | undefined> {
-		// Document type validation - now done by LLM during OCR mapping
-		let isValidDocument: boolean | undefined = undefined;
-		// Use docName from API payload instead of documentConfig.name
-		const expectedDocumentName = uploadDocumentDto.docName;
-
+	): Promise<{ vcMapping: any; isDhiwayVcUrl: boolean }> {
 		// Required field validation
 		const validationStartTime = Date.now();
 		Logger.log(`Validating document type and required fields`);
@@ -3429,7 +3431,7 @@ export class UserService {
 		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
 		const vcMapping = isDhiwayVcUrl
 			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
-			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, expectedDocumentName, locale);
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, locale);
 
 		// Check for validation errors BEFORE proceeding
 		if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
@@ -3439,25 +3441,8 @@ export class UserService {
 			throw new BadRequestException(translatedError);
 		}
 
-		// Check isValidDocument from LLM mapping result (only for non-Dhiway VC URL cases)
-		// THIS CHECK MUST HAPPEN BEFORE FIELD VALIDATION
-		// Use only LLM's response - no additional logic or validation
-		if (!isDhiwayVcUrl && vcMapping && 'isValidDocument' in vcMapping && vcMapping.isValidDocument !== undefined) {
-			isValidDocument = vcMapping.isValidDocument;
-			Logger.log(`Document type validation result from LLM: isValidDocument=${isValidDocument}`);
-
-			if (!isValidDocument) {
-				Logger.warn(`Document type validation FAILED: LLM determined document does not match expected type. Stopping validation and returning error.`);
-				return false;
-			}
-			Logger.log(`Document type validation PASSED: LLM confirmed document matches expected type. Proceeding with field validation.`);
-		} else if (isDhiwayVcUrl) {
-			// For Dhiway VC URL cases, skip document type validation as VC data is already validated
-			Logger.log(`Skipping document type validation for Dhiway VC URL case - VC data already validated`);
-		}
-
 		// Proceed to field validation
-		Logger.log(`Proceeding to field validation. isValidDocument=${isValidDocument}`);
+		Logger.log(`Proceeding to field validation`);
 
 		if (vcFields && Object.keys(vcFields).length > 0) {
 			await this.validateRequiredFieldsFromOcrMapping(
@@ -3474,8 +3459,8 @@ export class UserService {
 		}
 
 		Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
-
-		return isValidDocument;
+		
+		return { vcMapping, isDhiwayVcUrl };
 	}
 
 	/**
@@ -3715,7 +3700,6 @@ export class UserService {
 	private async prepareVcMapping(
 		ocrResult: any,
 		uploadDocumentDto: UploadDocumentDto,
-		expectedDocumentName: string,
 		locale: string = 'en',
 	) {
 		const vcFields = await this.vcFieldsService.getVcFields(
@@ -3736,11 +3720,6 @@ export class UserService {
 			};
 		}
 
-		// Ensure expectedDocumentName is provided (docName is required in DTO)
-		if (!expectedDocumentName || expectedDocumentName.trim() === '') {
-			throw new BadRequestException('DOCUMENT_NAME_REQUIRED_FOR_VALIDATION');
-		}
-
 		return await this.ocrMappingService.mapAfterOcr(
 			{
 				text: ocrResult.extractedText,
@@ -3748,7 +3727,6 @@ export class UserService {
 				docSubType: uploadDocumentDto.docSubType,
 			},
 			vcFields,
-			expectedDocumentName,
 			locale,
 		);
 	}
@@ -4187,7 +4165,6 @@ export class UserService {
 			Logger.log(
 				`Validating required fields - vcFields: ${Object.keys(vcFields || {}).length} fields, vcMapping present: ${!!vcMapping}`,
 			);
-			Logger.debug(`vcFields structure: ${JSON.stringify(vcFields, null, 2)}`);
 
 			if (!vcFields || !vcMapping) {
 				throw new ErrorResponse(
