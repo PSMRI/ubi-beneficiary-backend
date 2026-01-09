@@ -49,7 +49,6 @@ export class BedrockAdapter implements IAiMappingAdapter {
   async mapTextToSchema(
     extractedText: string, 
     schema: Record<string, any>, 
-    expectedDocumentName: string, 
     docType?: string,
     customPromptTemplate?: string | null
   ): Promise<Record<string, any> | null> {
@@ -59,11 +58,11 @@ export class BedrockAdapter implements IAiMappingAdapter {
     }
 
     try {
-      const prompt = buildOcrMappingPrompt(extractedText, schema, expectedDocumentName, customPromptTemplate);
+      const prompt = buildOcrMappingPrompt(extractedText, schema, customPromptTemplate);
       if (customPromptTemplate) {
         this.logger.debug(`Using custom prompt from vcConfiguration for Bedrock mapping`);
       }
-      this.logger.debug(`Sending request to Bedrock (${Object.keys(schema.properties || {}).length} fields, expectedDocumentName: ${expectedDocumentName})`);
+      this.logger.debug(`Sending request to Bedrock (${Object.keys(schema.properties || {}).length} fields)`);
       const response = await this.invokeModel(prompt);
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'bedrock');
       
@@ -72,7 +71,7 @@ export class BedrockAdapter implements IAiMappingAdapter {
         return null;
       }
       
-      this.logger.debug(`Bedrock extracted ${Object.keys(parsedResult).length} fields, isValidDocument: ${parsedResult.isValidDocument}`);
+      this.logger.debug(`Bedrock extracted ${Object.keys(parsedResult).length} fields`);
       return parsedResult;
     } catch (error: any) {
       this.logger.error(`Bedrock mapping failed: ${error?.message || error}`);

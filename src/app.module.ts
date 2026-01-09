@@ -26,6 +26,7 @@ import { NetworkCache } from './entity/network-cache.entity';
 import { StorageProviderModule } from './services/storage-providers/storage-provider.module';
 import { OcrModule } from './services/ocr/ocr.module';
 import { OcrMappingModule } from './services/ocr-mapping/ocr-mapping.module';
+import { DocumentValidationModule } from './services/document-validation/document-validation.module';
 import { I18nModule } from './common/i18n.module';
 
 @Module({
@@ -66,6 +67,7 @@ import { I18nModule } from './common/i18n.module';
 		StorageProviderModule,
 		OcrModule,
 		OcrMappingModule,
+		DocumentValidationModule,
 		I18nModule,
 	],
 	controllers: [AppController],
