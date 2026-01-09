@@ -181,15 +181,6 @@ export class DocumentUploadService {
           }
         }
         
-        // Log warning about bucket policy requirement
-        if (publicUrl) {
-          this.logger.log(
-            `Generated public URL: ${publicUrl}. ` +
-            `Note: This URL will only work if bucket policies allow public read access (s3:GetObject). ` +
-            `If ACLs are disabled and files are uploaded as private, ensure bucket policies are configured for public access.`,
-          );
-        }
-        
         return publicUrl;
       } catch (error) {
         this.logger.error(
