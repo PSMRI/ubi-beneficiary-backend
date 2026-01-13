@@ -104,7 +104,7 @@
     "OCR_BEDROCK_PROCESSING_FAILED": "Bedrock के साथ दस्तावेज़ मैपिंग प्रोसेस करने में असमर्थ। कृपया पुनः प्रयास करें।",
     "_comment_07": "=== QR CODE PROCESSING ERRORS ===",
     "QR_PDF_NOT_SUPPORTED": "PDF QR कोड डिटेक्शन समर्थित नहीं है। कृपया अपनी PDF को छवि (PNG, JPEG) में परिवर्तित करें और पुनः प्रयास करें।",
-    "QR_TEXT_AND_URL_NO_URL": "QR कोड सत्यापित करने में असमर्थ।",
+    "QR_TEXT_AND_URL_NO_URL": "यह QR कोड समर्थित नहीं है। कृपया मूल दस्तावेज़ से QR कोड स्कैन करें।",
     "QR_CONTENT_REQUIRED": "QR सामग्री आवश्यक है और खाली नहीं हो सकती",
     "QR_CONTENT_PROCESSING_FAILED": "QR सामग्री प्रोसेस करने में विफल",
     "_comment_08": "=== CUSTOM FIELDS ERRORS ===",
