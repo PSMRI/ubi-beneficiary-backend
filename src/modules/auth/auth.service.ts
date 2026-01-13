@@ -541,37 +541,14 @@ export class AuthService {
         uploadDocumentDto.docSubType,
       );
 
-      // Step 7: OCR → structured mapping
-      let vcMapping = null;
-      const mappingStartTime = Date.now();
-      if (vcFields) {
-        vcMapping = await this.userService.ocrMapping.mapAfterOcr(
-          {
-            text: ocrResult.extractedText,
-            docType: uploadDocumentDto.docType,
-            docSubType: uploadDocumentDto.docSubType,
-          },
-          vcFields,
-          locale,
-        );
-      } else {
-        vcMapping = {
-          mapped_data: {},
-          missing_fields: [],
-          confidence: 0,
-          processing_method: 'keyword' as const,
-          warnings: ['No vcFields configuration found'],
-        };
-      }
-
-      await this.userService.validateRequiredFieldsFromOcrMapping(
-        vcFields,
-        vcMapping,
+      const { vcMapping } = await this.userService.validateDocumentAndFields(
+        documentConfig,
+        ocrResult,
         uploadDocumentDto,
         issueVC,
         locale,
       );
-      this.loggerService.log(`⏱️ OCR Mapping took: ${Date.now() - mappingStartTime}ms`, 'AuthService');
+      this.loggerService.log(`⏱️ OCR Mapping took`, 'AuthService');
 
       // Check for validation errors BEFORE proceeding
       if (vcMapping?.validationErrors && vcMapping.validationErrors.length > 0) {
@@ -782,7 +759,7 @@ export class AuthService {
 
     if (missingFields.length > 0) {
       // Format field names: convert camelCase/snake_case to Title Case
-      const formattedFields = missingFields.map(field => 
+      const formattedFields = missingFields.map(field =>
         field
           .replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
           .replaceAll('_', ' ')  // Replace underscores with spaces
