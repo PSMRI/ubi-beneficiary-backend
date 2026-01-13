@@ -33,7 +33,7 @@ export interface DocumentValidationResult {
 export class DocumentValidationService {
   private readonly logger = new Logger(DocumentValidationService.name);
 
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   /**
    * Validate document based on keyword matching
@@ -60,7 +60,7 @@ export class DocumentValidationService {
 
       // Check if pre-validation is enabled
       const preValidationEnabled = config.preValidationEnabled?.toLowerCase() === 'yes';
-      
+
       if (!preValidationEnabled) {
         this.logger.log(
           `Pre-validation disabled for ${docType}/${docSubType}. Skipping keyword validation.`,
@@ -82,19 +82,19 @@ export class DocumentValidationService {
         // eslint-disable-next-line unicorn/prefer-string-replace-all
         .replace(/\s+/g, ' ')   // Convert multiple spaces to single space
         .trim();
-      
+
       // Log a sample of the normalized text for debugging
       const textSample = normalizedText.substring(0, 200);
       this.logger.debug(
         `Normalized text sample (first 200 chars): "${textSample}..."`,
       );
 
-      // Check exclusion keywords first (if present, document is invalid)
+      // Check exclusion keywords first (if present, document isextractedText invalid)
       if (config.preValidationExclusionKeywords && config.preValidationExclusionKeywords.length > 0) {
         this.logger.debug(
           `Checking ${config.preValidationExclusionKeywords.length} exclusion keyword(s): [${config.preValidationExclusionKeywords.join(', ')}]`,
         );
-        
+
         const matchedExclusionKeywords = config.preValidationExclusionKeywords.filter((keyword) => {
           const normalizedKeyword = keyword.toLowerCase();
           const isFound = normalizedText.includes(normalizedKeyword);
@@ -112,7 +112,7 @@ export class DocumentValidationService {
             matchedKeywords: matchedExclusionKeywords,
           };
         }
-        
+
         this.logger.debug(`No exclusion keywords found ✓`);
       }
 
@@ -121,7 +121,7 @@ export class DocumentValidationService {
         this.logger.debug(
           `Checking ${config.preValidationRequiredKeywords.length} required keyword(s): [${config.preValidationRequiredKeywords.join(', ')}]`,
         );
-        
+
         const matchedRequiredKeywords = config.preValidationRequiredKeywords.filter((keyword) => {
           const normalizedKeyword = keyword.toLowerCase();
           const isFound = normalizedText.includes(normalizedKeyword);
@@ -161,6 +161,98 @@ export class DocumentValidationService {
         error.stack,
       );
       // On error, allow document to proceed (fail-open approach)
+      return { isValid: true };
+    }
+  }
+
+  /**
+ * Perform post-validation on mapped document data using vcConfiguration
+ * @param mappedData - Mapped document fields
+ * @param docType - Document type
+ * @param docSubType - Document subtype
+ * @returns Validation result
+ */
+
+  async validatePostValidation(
+    mappedData: Record<string, any>,
+    docType: string,
+    docSubType: string,
+  ): Promise<{ isValid: boolean; reason?: string }> {
+    try {
+      const config = await this.getDocumentConfig(docType, docSubType);
+
+      if (!config) {
+        this.logger.warn(
+          `No configuration found for docType: ${docType}, docSubType: ${docSubType}. Skipping post-validation.`,
+        );
+        return { isValid: true };
+      }
+
+      const postValidationEnabled =
+        config.postValidationEnabled?.toLowerCase() === 'yes';
+
+      if (!postValidationEnabled) {
+        this.logger.log(
+          `Post-validation disabled for ${docType}/${docSubType}. Skipping field validation.`,
+        );
+        return { isValid: true };
+      }
+
+      this.logger.log(
+        `Post-validation enabled for ${docType}/${docSubType}. Performing mapped field validation.`,
+      );
+
+      const requiredFields: string[] =
+        config.postValidationRequiredFields || [];
+
+      const minRequiredRaw = config.postValidationFieldMappingNumbers;
+
+      // Determine minimum required fields
+      let minRequired =
+        typeof minRequiredRaw === 'number' && minRequiredRaw > 0
+          ? minRequiredRaw
+          : requiredFields.length;
+
+      // Configuration sanity check
+      if (minRequired > requiredFields.length) {
+        minRequired = requiredFields.length;
+      }
+
+      // Count matched fields
+      let matchedCount = 0;
+
+      for (const field of requiredFields) {
+        if (
+          mappedData?.mapped_data &&
+          field in mappedData.mapped_data &&
+          mappedData.mapped_data[field] != null
+        ) {
+          matchedCount++;
+        }
+      }
+
+      if (matchedCount < minRequired) {
+        this.logger.warn(
+          `Post-validation FAILED: Only ${matchedCount}/${minRequired} required fields present.`,
+        );
+        return {
+          isValid: false,
+          reason: `Document does not contain minimum required mapped fields (${matchedCount}/${minRequired})`,
+        };
+      }
+
+      this.logger.log(
+        `Post-validation PASSED: ${matchedCount}/${minRequired} required mapped fields present.`,
+      );
+
+      return { isValid: true };
+    } catch (error: any) {
+      this.logger.error(
+        `Post-validation error: ${error?.message || error}`,
+        error.stack,
+      );
+
+      // Fail-open
       return { isValid: true };
     }
   }

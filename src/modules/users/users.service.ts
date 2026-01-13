@@ -2767,7 +2767,7 @@ export class UserService {
 	 */
 	private formatFieldMatchingError(failedFields: string[], locale: string = 'en'): string {
 		// Format field names: convert camelCase/snake_case to Title Case
-		const formattedFields = failedFields.map(field => 
+		const formattedFields = failedFields.map(field =>
 			field
 				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
 				.replaceAll('_', ' ')  // Replace underscores with spaces
@@ -2879,7 +2879,7 @@ export class UserService {
 	) {
 		// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
 		const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
-		
+
 		try {
 			Logger.log(`Processing document upload with locale: ${locale}`);
 
@@ -2909,43 +2909,43 @@ export class UserService {
 				requiresQRProcessing,
 				documentConfig,
 				locale,
-		);
-		Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+			);
+			Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
-		// Step 1: Keyword-based document validation (preValidation)
-		Logger.log(`Starting keyword-based document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
-		const keywordValidationResult = await this.documentValidationService.validateDocument(
-			ocrResult.extractedText,
-			uploadDocumentDto.docType,
-			uploadDocumentDto.docSubType,
-		);
+			// Step 1: Keyword-based document validation (preValidation)
+			Logger.log(`Starting keyword-based document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+			const keywordValidationResult = await this.documentValidationService.validateDocument(
+				ocrResult.extractedText,
+				uploadDocumentDto.docType,
+				uploadDocumentDto.docSubType,
+			);
 
-		if (!keywordValidationResult.isValid) {
-			const documentName = uploadDocumentDto.docName || 'Unknown';
-			Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
-			const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { 
-				documentName,
-				reason: keywordValidationResult.reason 
-			});
-			return new ErrorResponse({
-				statusCode: HttpStatus.BAD_REQUEST,
-				errorMessage,
-			});
-		}
+			if (!keywordValidationResult.isValid) {
+				const documentName = uploadDocumentDto.docName || 'Unknown';
+				Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
+				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, {
+					documentName,
+					reason: keywordValidationResult.reason
+				});
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage,
+				});
+			}
 
-		Logger.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
+			Logger.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
 
-	// Step 2: Validate document type from OCR text and VC fields (includes OCR mapping)
-	Logger.log(`Starting field validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
-	const { vcMapping } = await this.validateDocumentAndFields(
-		documentConfig,
-		ocrResult,
-		uploadDocumentDto,
-		issueVC,
-		locale,
-	);
+			// Step 2: Validate document type from OCR text and VC fields (includes OCR mapping)
+			Logger.log(`Starting field validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+			const { vcMapping } = await this.validateDocumentAndFields(
+				documentConfig,
+				ocrResult,
+				uploadDocumentDto,
+				issueVC,
+				locale,
+			);
 
-	Logger.log(`Document validation passed, proceeding with document processing.`);
+			Logger.log(`Document validation passed, proceeding with document processing.`);
 
 			// Check for validation errors BEFORE proceeding with storage and VC creation
 			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
@@ -3066,7 +3066,7 @@ export class UserService {
 	) {
 		// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
 		const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
-		
+
 		try {
 			Logger.log(`Processing document upload with QR content directly, locale: ${locale}`);
 
@@ -3106,43 +3106,42 @@ export class UserService {
 				issuer,
 				requiresQRProcessing,
 				locale,
-		);
-		Logger.log(`⏱️ QR Content Processing took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+			);
+			Logger.log(`⏱️ QR Content Processing took: ${Date.now() - ocrStartTime}ms`, 'UserService');
 
-		// Step 1: Keyword-based document validation (preValidation)
-		Logger.log(`Starting keyword-based document validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
-		const keywordValidationResult = await this.documentValidationService.validateDocument(
-			ocrResult.extractedText,
-			uploadDocumentQrDto.docType,
-			uploadDocumentQrDto.docSubType,
-		);
+			// Step 1: Keyword-based document validation (preValidation)
+			Logger.log(`Starting keyword-based document validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
+			const keywordValidationResult = await this.documentValidationService.validateDocument(
+				ocrResult.extractedText,
+				uploadDocumentQrDto.docType,
+				uploadDocumentQrDto.docSubType,
+			);
 
-		if (!keywordValidationResult.isValid) {
-			const documentName = uploadDocumentQrDto.docName || 'Unknown';
-			Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
-			const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, { 
-				documentName,
-				reason: keywordValidationResult.reason 
-			});
-			return new ErrorResponse({
-				statusCode: HttpStatus.BAD_REQUEST,
-				errorMessage,
-			});
-		}
+			if (!keywordValidationResult.isValid) {
+				const documentName = uploadDocumentQrDto.docName || 'Unknown';
+				Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
+				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, {
+					documentName,
+					reason: keywordValidationResult.reason
+				});
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage,
+				});
+			}
 
-		Logger.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
+			Logger.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
 
-	// Step 2: Validate document type from QR processing result and VC fields (includes OCR mapping)
-	Logger.log(`Starting field validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
-	const { vcMapping } = await this.validateDocumentAndFields(
-		documentConfig,
-		ocrResult,
-		uploadDocumentDto,
-		issueVC,
-		locale,
-	);
-
-	Logger.log(`Document validation passed, proceeding with document processing.`);
+			// Step 2: Validate document type from QR processing result and VC fields (includes OCR mapping)
+			Logger.log(`Starting field validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
+			const { vcMapping } = await this.validateDocumentAndFields(
+				documentConfig,
+				ocrResult,
+				uploadDocumentDto,
+				issueVC,
+				locale,
+			);
+			Logger.log(`Document validation passed, proceeding with document processing.`);
 
 			// Check for validation errors BEFORE proceeding with storage and VC creation
 			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
@@ -3151,7 +3150,6 @@ export class UserService {
 				const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
 				throw new BadRequestException(translatedError);
 			}
-
 			// Step: Perform VC field validation and matching against user profile
 			const matchingResult = await this.performFieldMatching(
 				userDetails.user_id,
@@ -3287,27 +3285,27 @@ export class UserService {
 				documentConfig,
 			);
 
-		// Check if QR processing failed
-		if (qrProcessingResult?.error && (qrProcessingResult?.isRequired || requiresQRProcessing)) {
-			// Log the technical error details for debugging
-			Logger.error(
-				`QR Processing Failed: ${qrProcessingResult.error}`,
-				JSON.stringify({
-					errorType: qrProcessingResult.errorType,
-					technicalError: qrProcessingResult.technicalError,
-					qrContent: qrProcessingResult.qrCodeContent?.substring(0, 100), // Log first 100 chars
-					contentType: qrProcessingResult.contentType,
-				}),
-				'UserService'
-			);
-			
-			// Show user-friendly message
-			const errorMessage = this.i18n.translateError(qrProcessingResult.error, locale);
-			throw new BadRequestException({
-				message: errorMessage,
-				statusCode: HttpStatus.BAD_REQUEST,
-			});
-		}
+			// Check if QR processing failed
+			if (qrProcessingResult?.error && (qrProcessingResult?.isRequired || requiresQRProcessing)) {
+				// Log the technical error details for debugging
+				Logger.error(
+					`QR Processing Failed: ${qrProcessingResult.error}`,
+					JSON.stringify({
+						errorType: qrProcessingResult.errorType,
+						technicalError: qrProcessingResult.technicalError,
+						qrContent: qrProcessingResult.qrCodeContent?.substring(0, 100), // Log first 100 chars
+						contentType: qrProcessingResult.contentType,
+					}),
+					'UserService'
+				);
+
+				// Show user-friendly message
+				const errorMessage = this.i18n.translateError(qrProcessingResult.error, locale);
+				throw new BadRequestException({
+					message: errorMessage,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
+			}
 
 			// Build OCR result structure similar to extractTextFromBufferWithQR output
 			let extractedText = qrContent;
@@ -3344,29 +3342,29 @@ export class UserService {
 							extractedText = `${textPart}\n\n${extractedText}`;
 						}
 					}
-			} catch (ocrError) {
-				if (ocrError instanceof BadRequestException) {
-					const errorMessage = ocrError.message || '';
-					// Handle file type errors
-					if (errorMessage.includes("is not supported by") || errorMessage.includes("File type")) {
-						// Log the technical error details for debugging
-						Logger.error(
-							`QR Document Processing Failed: File type validation error`,
-							JSON.stringify({
-								originalError: errorMessage,
-								errorType: 'INVALID_FILE_TYPE'
-							}),
-							'UserService'
-						);
-						
-						const translatedError = this.i18n.translateError('QR_TEXT_AND_URL_NO_URL', locale);
-						throw new BadRequestException({
-							message: translatedError,
-							statusCode: HttpStatus.BAD_REQUEST,
-						});
+				} catch (ocrError) {
+					if (ocrError instanceof BadRequestException) {
+						const errorMessage = ocrError.message || '';
+						// Handle file type errors
+						if (errorMessage.includes("is not supported by") || errorMessage.includes("File type")) {
+							// Log the technical error details for debugging
+							Logger.error(
+								`QR Document Processing Failed: File type validation error`,
+								JSON.stringify({
+									originalError: errorMessage,
+									errorType: 'INVALID_FILE_TYPE'
+								}),
+								'UserService'
+							);
+
+							const translatedError = this.i18n.translateError('QR_TEXT_AND_URL_NO_URL', locale);
+							throw new BadRequestException({
+								message: translatedError,
+								statusCode: HttpStatus.BAD_REQUEST,
+							});
+						}
+						throw ocrError;
 					}
-					throw ocrError;
-				}
 					const errorMessage = this.i18n.translateError('OCR_TEXT_EXTRACTION_FAILED_REASON', locale, {
 						error: ocrError.message,
 					});
@@ -3413,7 +3411,7 @@ export class UserService {
 	 * Validates document type from OCR text and required VC fields
 	 * Returns the vcMapping to avoid duplicate OCR mapping calls
 	 */
-	private async validateDocumentAndFields(
+	public async validateDocumentAndFields(
 		documentConfig: any,
 		ocrResult: any,
 		uploadDocumentDto: UploadDocumentDto,
@@ -3441,6 +3439,33 @@ export class UserService {
 			throw new BadRequestException(translatedError);
 		}
 
+		//Field-mapping based document validation (postValidation)
+		Logger.log(
+			`Starting post-validation: docName=${documentConfig.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`,
+		);
+
+		const postValidationResult =
+			await this.documentValidationService.validatePostValidation(
+				vcMapping,
+				uploadDocumentDto.docType,
+				uploadDocumentDto.docSubType,
+			);
+
+		if (!postValidationResult.isValid) {
+			const documentName = uploadDocumentDto.docName || 'Unknown';
+			Logger.warn(`Post-validation FAILED: ${postValidationResult.reason}`);
+
+			const errorMessage = this.i18n.translateError(
+				'DOCUMENT_TYPE_MISMATCH',
+				locale,
+				{
+					documentName,
+					reason: postValidationResult.reason,
+				},
+			);
+
+			throw new BadRequestException(errorMessage);
+		}
 		// Proceed to field validation
 		Logger.log(`Proceeding to field validation`);
 
@@ -3459,7 +3484,7 @@ export class UserService {
 		}
 
 		Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
-		
+
 		return { vcMapping, isDhiwayVcUrl };
 	}
 
@@ -4317,7 +4342,7 @@ export class UserService {
 		locale: string = 'en',
 	): void {
 		// Format field names: convert camelCase/snake_case to Title Case
-		const formattedFields = allMissingRequired.map(field => 
+		const formattedFields = allMissingRequired.map(field =>
 			field
 				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
 				.replaceAll('_', ' ')  // Replace underscores with spaces
@@ -4360,7 +4385,7 @@ export class UserService {
 	}
 
 	// Helper to validate file type when QR processing is required
-	public async 	validateFileTypeForQr(
+	public async validateFileTypeForQr(
 		requiresQRProcessing: boolean,
 		mimetype: string,
 	) {
@@ -4375,7 +4400,7 @@ export class UserService {
 				}),
 				'UserService'
 			);
-			
+
 			throw new BadRequestException(
 				'QR_PDF_NOT_SUPPORTED'
 			);
