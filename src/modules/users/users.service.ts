@@ -2650,7 +2650,7 @@ export class UserService {
 				`VC field validation failed with ${failedFields.length} field(s) not matching`,
 			);
 
-			const errorMessage = this.formatFieldMatchingError(failedFields, locale);
+			const errorMessage = this.formatFieldMatchingError(failedFields, vcFields, locale);
 			throw new BadRequestException(errorMessage);
 		}
 
@@ -2771,16 +2771,25 @@ export class UserService {
 	 * @param locale Locale for translation
 	 * @returns Formatted error message
 	 */
-	private formatFieldMatchingError(failedFields: string[], locale: string = 'en'): string {
-		// Format field names: convert camelCase/snake_case to Title Case
-		const formattedFields = failedFields.map(field =>
-			field
+	private formatFieldMatchingError(failedFields: string[], vcFields: VcFields, locale: string = 'en'): string {
+		// Format field names using labels if available
+		const formattedFields = failedFields.map(field => {
+			const fieldConfig = vcFields[field];
+			const label = fieldConfig?.label;
+
+			if (label) {
+				return this.i18n.getLocalizedLabel(label, locale);
+			}
+
+			// Fallback to formatting the field name
+			return field
 				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
 				.replaceAll('_', ' ')  // Replace underscores with spaces
 				.split(' ')
 				.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-				.join(' ')
-		);
+				.join(' ');
+		});
+
 		const failedIdsString = formattedFields.join(', ');
 		Logger.log(`Failed fields: ${failedFields}`);
 		return this.i18n.translateError('FIELDS_NOT_MATCHING', locale, {
@@ -4215,7 +4224,7 @@ export class UserService {
 			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
 			if (allMissingRequired.length > 0) {
-				this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto, locale);
+				this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto, vcFields, locale);
 			}
 
 			// Check for validation constraint failures
@@ -4345,18 +4354,28 @@ export class UserService {
 	private throwMissingFieldsError(
 		allMissingRequired: string[],
 		uploadDocumentDto: UploadDocumentDto,
+		vcFields: VcFields,
 		locale: string = 'en',
 	): void {
-		// Format field names: convert camelCase/snake_case to Title Case
-		const formattedFields = allMissingRequired.map(field =>
-			field
+		// Format field names using labels if available
+		const formattedFields = allMissingRequired.map(field => {
+			const fieldConfig = vcFields[field];
+			const label = fieldConfig?.label;
+
+			if (label) {
+				return this.i18n.getLocalizedLabel(label, locale);
+			}
+
+			// Fallback to formatting the field name
+			return field
 				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
 				.replaceAll('_', ' ')  // Replace underscores with spaces
 				.split(' ')
 				.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-				.join(' ')
-		);
-		const fieldList = formattedFields.join(', ');
+				.join(' ');
+		});
+
+		const fieldList = `(${formattedFields.join(', ')})`;
 		const errorMessage = this.i18n.translateError('MISSING_REQUIRED_FIELDS_IN_DOCUMENT', locale, {
 			fields: fieldList
 		});

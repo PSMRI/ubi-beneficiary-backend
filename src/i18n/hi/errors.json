@@ -152,7 +152,7 @@
     "MISSING_REQUIRED_FIELD_VC": "VC डेटा में आवश्यक फ़ील्ड '{{fieldName}}' अनुपलब्ध",
     "MISSING_REQUIRED_FIELD_PROFILE": "उपयोगकर्ता प्रोफ़ाइल में आवश्यक फ़ील्ड '{{fieldName}}' अनुपलब्ध",
     "MISSING_COMPARE_WITH_CONFIG": "फ़ील्ड '{{fieldName}}' के लिए 'compareWith' कॉन्फ़िगरेशन अनुपलब्ध",
-    "MISSING_REQUIRED_FIELDS_IN_DOCUMENT": "दस्तावेज़ में आवश्यक जानकारी {{fields}} अनुपलब्ध है।",
+    "MISSING_REQUIRED_FIELDS_IN_DOCUMENT": "दस्तावेज़ में आवश्यक जानकारी {{fields}} उपलब्ध नहीं है।",
     "FIELD_PROCESSING_ERROR": "फ़ील्ड '{{fieldName}}' प्रोसेस करने में त्रुटि: {{error}}",
     "URL_INVALID_SCHEME": "अमान्य URL स्कीम",
     "_comment_13": "=== CONTENT & BENEFIT ERRORS ===",
