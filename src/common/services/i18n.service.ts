@@ -214,6 +214,7 @@ export class I18nService {
                     labelObj = JSON.parse(jsonLabel);
                 } catch (e) {
                     // If parsing fails, it might be a simple string already
+                    console.warn('[I18N Service] Failed to parse label JSON:', e.message);
                     return jsonLabel;
                 }
             } else {
@@ -227,6 +228,7 @@ export class I18nService {
 
             return labelObj[locale] || labelObj[this.defaultLocale] || labelObj['en'] || (typeof jsonLabel === 'string' ? jsonLabel : JSON.stringify(jsonLabel));
         } catch (error) {
+            console.error('[I18N Service] Error in getLocalizedLabel:', error.message);
             return typeof jsonLabel === 'string' ? jsonLabel : JSON.stringify(jsonLabel);
         }
     }

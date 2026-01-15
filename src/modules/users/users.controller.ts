@@ -22,7 +22,6 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from '../users/users.service';
 import { UPLOAD_CONFIG } from '../../config/upload.config';
-import { AdminService } from '@modules/admin/admin.service';
 import {
   ApiBasicAuth,
   ApiBearerAuth,
