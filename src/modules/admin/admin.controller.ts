@@ -136,6 +136,24 @@ export class AdminController {
 	}
 
 	/**
+	 * Get language configuration
+	 * @description Retrieves the language configuration. Public endpoint.
+	 */
+	@Get('config/languageConfig')
+	@ApiOperation({
+		summary: 'Get language configuration',
+		description: 'Retrieves the language configuration. Public endpoint.',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Configuration retrieved successfully',
+		type: ConfigResponseDto
+	})
+	async getLanguageConfig() {
+		return await this.adminService.getConfig('languageConfig');
+	}
+
+	/**
 	 * Get configuration by key
 	 * @param params Parameters containing the configuration key
 	 * @description Retrieves a configuration value by its key
