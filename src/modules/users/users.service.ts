@@ -4762,5 +4762,33 @@ export class UserService {
 			});
 		}
 	}
+	public async getConfig(key: string, acceptLanguage?: string): Promise<any> {
+		const configResponse = await this.adminService.getConfig(key);
+
+		if (configResponse instanceof SuccessResponse && configResponse.data) {
+			const config = configResponse.data as any;
+
+			// Transform label if value is an array
+			if (Array.isArray(config.value)) {
+				config.value = config.value.map((item) => {
+					if (
+						item &&
+						typeof item === 'object' &&
+						item.label &&
+						typeof item.label === 'object' &&
+						!Array.isArray(item.label)
+					) {
+						// Create shallow copy to avoid mutating original immutable fields if any
+						const newItem = { ...item };
+						newItem.label = this.i18n.getLocalizedLabel(item.label, acceptLanguage);
+						return newItem;
+					}
+					return item;
+				});
+			}
+		}
+
+		return configResponse;
+	}
 }
 
