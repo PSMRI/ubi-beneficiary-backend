@@ -198,6 +198,7 @@ export class I18nService {
 
         return message;
     }
+
     /**
      * Get localized label from JSON string
      * @param jsonLabel - JSON string containing labels for difference locales

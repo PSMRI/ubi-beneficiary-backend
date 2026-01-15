@@ -31,6 +31,7 @@ import {
   ApiResponse,
   ApiTags,
   ApiConsumes,
+  ApiParam,
 } from '@nestjs/swagger';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { CreateConsentDto } from './dto/create-consent.dto';
@@ -45,6 +46,7 @@ import { UploadDocumentDto } from './dto/upload-document.dto';
 import { UploadDocumentQrDto } from './dto/upload-document-qr.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { VcCallbackDto } from './dto/vc-callback.dto';
+import { ConfigKeyDto, ConfigResponseDto } from '@modules/admin/dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -563,12 +565,12 @@ export class UserController {
   }
 
   @Post('/vc/process-event')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Handle VC event',
     description: 'Processes VC status change events (issued, revoked, deleted) and updates document data. Issuer is automatically determined from the document record using adapter approach.'
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'VC callback processed successfully',
     schema: {
       example: {
@@ -587,23 +589,57 @@ export class UserController {
       }
     }
   })
-  @ApiResponse({ 
-    status: 404, 
-    description: 'No VC found for the given public ID' 
+  @ApiResponse({
+    status: 404,
+    description: 'No VC found for the given public ID'
   })
-  @ApiResponse({ 
-    status: 500, 
-    description: 'Internal server error' 
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error'
   })
   async handleVcEvent(@Body() callbackDto: VcCallbackDto) {
     Logger.log(`Received VC event: ${JSON.stringify(callbackDto)}`);
-    
+
     // Process event - issuer will be determined from document record using adapter approach
     return await this.userService.processVcEvent(
       callbackDto.publicId,
       callbackDto.status,
       callbackDto.timestamp
     );
+  }
+
+  /**
+     * Get configuration by key
+     * @param params Parameters containing the configuration key
+     * @description Retrieves a configuration value by its key
+     */
+  @Get('config/:key')
+  @UseGuards(AuthGuard)
+  @ApiOperation({
+    summary: 'Get configuration by key',
+    description: 'Retrieves a configuration value by its key. Requires authentication.',
+  })
+  @ApiParam({
+    name: 'key',
+    type: 'string',
+    description: 'Configuration key identifier',
+    example: 'documentTypeConfig'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Configuration retrieved successfully',
+    type: ConfigResponseDto
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Configuration not found'
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing authentication token'
+  })
+  async getConfig(@Param() params: ConfigKeyDto, @Headers('accept-language') acceptLanguage: string) {
+    return await this.userService.getConfig(params.key, acceptLanguage);
   }
 
 }
