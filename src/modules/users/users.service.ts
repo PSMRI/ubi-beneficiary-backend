@@ -198,11 +198,17 @@ export class UserService {
 		}
 	}
 
-	async findOne(req: UserRequest, decryptData?: boolean): Promise<SuccessResponse | ErrorResponse> {
+	async findOne(req: UserRequest, decryptData?: boolean, locale?: string): Promise<SuccessResponse | ErrorResponse> {
 		try {
 			const ssoId = this.extractSsoIdFromRequest(req);
 			const userDetails = await this.getUserBySsoId(ssoId);
-			const userData = await this.buildUserResponse(userDetails.user_id, decryptData);
+
+			// Always sanitize/extract locale
+			const reqAny = req as any;
+			const rawLocale = locale || reqAny.headers?.['accept-language'];
+			const sanitizedLocale = this.i18n.getLocaleFromHeader(rawLocale);
+
+			const userData = await this.buildUserResponse(userDetails.user_id, decryptData, sanitizedLocale);
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
@@ -254,10 +260,10 @@ export class UserService {
 	 * Builds complete user response with all related data
 	 * @private
 	 */
-	private async buildUserResponse(userId: string, decryptData?: boolean): Promise<UserResponseData> {
+	private async buildUserResponse(userId: string, decryptData?: boolean, locale?: string): Promise<UserResponseData> {
 		const [user, customFields, userDoc] = await Promise.all([
 			this.findOneUser(userId),
-			this.customFieldsService.getCustomFields(userId, FieldContext.USERS),
+			this.customFieldsService.getCustomFields(userId, FieldContext.USERS, locale),
 			this.findUserDocs(userId, decryptData),
 		]);
 

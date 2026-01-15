@@ -261,11 +261,11 @@ export class CustomFieldsService {
 		// Check if field is mapped in settings before proceeding
 		try {
 			const mappingConfig = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
-			
+
 			if (mappingConfig?.value) {
 				const mappings = Array.isArray(mappingConfig.value) ? mappingConfig.value : [];
 				const fieldMapping = mappings.find((mapping: any) => mapping.fieldId === fieldId);
-				
+
 				if (fieldMapping) {
 					throw new ForbiddenException(
 						`Field "${fieldMapping.fieldName}" (ID: ${fieldId}) is mapped to document fields. Please remove the mapping from settings before deleting this field.`
@@ -277,7 +277,7 @@ export class CustomFieldsService {
 			if (error instanceof ForbiddenException) {
 				throw error;
 			}
-			
+
 			// Log other errors but continue with deletion
 			this.logger.warn(`Error checking field mappings: ${error.message}`);
 		}
@@ -319,7 +319,7 @@ export class CustomFieldsService {
 	 * @param customFields Array of custom field data
 	 * @returns Array of created/updated field values
 	 */
-	 async saveCustomFields(
+	async saveCustomFields(
 		itemId: string,
 		context: FieldContext,
 		customFields: CustomFieldDto[]
@@ -456,7 +456,7 @@ export class CustomFieldsService {
 
 		// Only fetch existing values for the fields being updated (not all fields)
 		const existingValues = await this.fieldValueRepository.find({
-			where: { 
+			where: {
 				itemId,
 				fieldId: In(fieldIds) // Only fetch fields we're updating
 			},
@@ -517,9 +517,10 @@ export class CustomFieldsService {
 	 * @param context Entity context
 	 * @returns Array of custom field response DTOs
 	 */
-	 async getCustomFields(
+	async getCustomFields(
 		itemId: string,
-		context: FieldContext
+		context: FieldContext,
+		locale?: string
 	): Promise<CustomFieldResponseDto[]> {
 		this.logger.debug(
 			`Getting custom fields for item: ${itemId}, context: ${context}`
@@ -527,9 +528,9 @@ export class CustomFieldsService {
 
 		// Get ALL fields for this context (excluding hidden fields)
 		const allFields = await this.fieldRepository.find({
-			where: { 
+			where: {
 				context,
-				isHidden: false 
+				isHidden: false
 			},
 			order: {
 				ordering: 'ASC'
@@ -559,15 +560,18 @@ export class CustomFieldsService {
 			// Get value using centralized deserialization
 			let decryptedValue = null;
 			if (fieldValue) {
-				decryptedValue = field.isEncrypted() 
-									? this.fieldEncryptionHelper.decryptFieldValue(fieldValue.value, field)
-				: this.fieldValidationHelper.deserializeValue(fieldValue.value, field.type);
+				decryptedValue = field.isEncrypted()
+					? this.fieldEncryptionHelper.decryptFieldValue(fieldValue.value, field)
+					: this.fieldValidationHelper.deserializeValue(fieldValue.value, field.type);
 			}
+
+			// Localize label
+			const localizedLabel = this.i18n.getLocalizedLabel(field.label, locale);
 
 			const response: CustomFieldResponseDto = {
 				fieldId: field.fieldId,
 				name: field.name,
-				label: field.label,
+				label: localizedLabel,
 				type: field.type,
 				value: decryptedValue,
 				fieldParams: field.fieldParams,
@@ -585,7 +589,7 @@ export class CustomFieldsService {
 			`Retrieved ${responseFields.length} custom fields for item: ${itemId} (${fieldValueMap.size} have values)`
 		);
 		return responseFields;
-	} 
+	}
 
 	/**
 	 * Delete custom fields for an entity
@@ -714,43 +718,43 @@ export class CustomFieldsService {
 		return await this.fieldRepository.findOne({ where: { name, context } });
 	}
 
-		/**
-	 * Check if a field can have encryption enabled
+	/**
+ * Check if a field can have encryption enabled
+ * @param field The field to check
+ * @param hasExistingValues Whether the field has existing values
+ * @returns true if encryption can be enabled
+ */
+	canEnableEncryption(field: Field, hasExistingValues: boolean): boolean {
+		if (field.isEncrypted()) {
+			return false; // Already encrypted
+		}
+
+		if (hasExistingValues) {
+			return false; // Cannot enable encryption for fields with existing values
+		}
+
+		return true;
+	}
+
+	/**
+	 * Check if a field can have encryption disabled
 	 * @param field The field to check
 	 * @param hasExistingValues Whether the field has existing values
-	 * @returns true if encryption can be enabled
+	 * @returns true if encryption can be disabled
 	 */
-		canEnableEncryption(field: Field, hasExistingValues: boolean): boolean {
-			if (field.isEncrypted()) {
-				return false; // Already encrypted
-			}
-	
-			if (hasExistingValues) {
-				return false; // Cannot enable encryption for fields with existing values
-			}
-	
-			return true;
+	canDisableEncryption(field: Field, hasExistingValues: boolean): boolean {
+		// Encryption can only be disabled if the field is currently encrypted
+		if (!field.isEncrypted()) {
+			return false; // Not encrypted, so nothing to disable
 		}
-	
-		/**
-		 * Check if a field can have encryption disabled
-		 * @param field The field to check
-		 * @param hasExistingValues Whether the field has existing values
-		 * @returns true if encryption can be disabled
-		 */
-		canDisableEncryption(field: Field, hasExistingValues: boolean): boolean {
-			// Encryption can only be disabled if the field is currently encrypted
-			if (!field.isEncrypted()) {
-				return false; // Not encrypted, so nothing to disable
-			}
-	
-			// Encryption can only be disabled if there are no existing values
-			if (hasExistingValues) {
-				return false; // Cannot disable encryption for fields with existing values
-			}
-	
-			return true; // Can disable encryption if no existing values
+
+		// Encryption can only be disabled if there are no existing values
+		if (hasExistingValues) {
+			return false; // Cannot disable encryption for fields with existing values
 		}
+
+		return true; // Can disable encryption if no existing values
+	}
 
 
 }
