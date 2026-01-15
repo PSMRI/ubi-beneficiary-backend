@@ -17,6 +17,7 @@ import {
   BadRequestException,
   ParseFilePipe,
   MaxFileSizeValidator,
+  Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from '../users/users.service';
@@ -86,9 +87,13 @@ export class UserController {
   })
   async findOne(
     @Req() req: Request,
+    @Headers('accept-language') acceptLanguage: string,
     @Query('decryptData') decryptData?: boolean,
   ) {
-    return await this.userService.findOne(req as any, decryptData);
+    if (req.headers && !req.headers['accept-language']) {
+      req.headers['accept-language'] = acceptLanguage;
+    }
+    return await this.userService.findOne(req as any, decryptData, acceptLanguage);
   }
 
   @Patch('/update')
