@@ -198,6 +198,38 @@ export class I18nService {
 
         return message;
     }
+
+    /**
+     * Get localized label from JSON string
+     * @param jsonLabel - JSON string containing labels for difference locales
+     * @param locale - Target locale
+     */
+    getLocalizedLabel(jsonLabel: string | Record<string, any>, locale: string): string {
+        try {
+            if (!jsonLabel) return jsonLabel as string;
+
+            let labelObj;
+            if (typeof jsonLabel === 'string') {
+                try {
+                    labelObj = JSON.parse(jsonLabel);
+                } catch (e) {
+                    // If parsing fails, it might be a simple string already
+                    return jsonLabel;
+                }
+            } else {
+                labelObj = jsonLabel;
+            }
+
+            // Ensure labelObj is an object before accessing properties
+            if (typeof labelObj !== 'object' || labelObj === null) {
+                return String(labelObj);
+            }
+
+            return labelObj[locale] || labelObj[this.defaultLocale] || labelObj['en'] || (typeof jsonLabel === 'string' ? jsonLabel : JSON.stringify(jsonLabel));
+        } catch (error) {
+            return typeof jsonLabel === 'string' ? jsonLabel : JSON.stringify(jsonLabel);
+        }
+    }
 }
 
 
