@@ -525,9 +525,8 @@ export class AuthService {
         uploadDocumentDto.docType,
         uploadDocumentDto.docSubType,
       );
-
       if (!keywordValidationResult.isValid) {
-        const documentName = uploadDocumentDto.docName || 'Unknown';
+        const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
         this.loggerService.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
         const translatedError = this.i18n.translateError('AUTH_DOCUMENT_TYPE_MISMATCH', locale, { documentName });
         throw new BadRequestException(translatedError);

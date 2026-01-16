@@ -2936,7 +2936,7 @@ export class UserService {
 			);
 
 			if (!keywordValidationResult.isValid) {
-				const documentName = uploadDocumentDto.docName || 'Unknown';
+				const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
 				Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
 				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, {
 					documentName,
@@ -3133,7 +3133,7 @@ export class UserService {
 			);
 
 			if (!keywordValidationResult.isValid) {
-				const documentName = uploadDocumentQrDto.docName || 'Unknown';
+				const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
 				Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
 				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, {
 					documentName,
@@ -3467,7 +3467,7 @@ export class UserService {
 			);
 
 		if (!postValidationResult.isValid) {
-			const documentName = uploadDocumentDto.docName || 'Unknown';
+			const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
 			Logger.warn(`Post-validation FAILED: ${postValidationResult.reason}`);
 
 			const errorMessage = this.i18n.translateError(
