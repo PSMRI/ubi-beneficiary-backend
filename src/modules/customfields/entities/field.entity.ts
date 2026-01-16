@@ -79,8 +79,8 @@ export class Field {
 		description: 'Display label for the field',
 		example: 'School Name',
 	})
-	@Column({ length: 255 })
-	label: string;
+	@Column({ type: 'jsonb', nullable: true })
+	label: string | Record<string, any>;
 
 	/**
 	 * Field data type

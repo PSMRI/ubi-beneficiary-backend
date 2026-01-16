@@ -198,11 +198,17 @@ export class UserService {
 		}
 	}
 
-	async findOne(req: UserRequest, decryptData?: boolean): Promise<SuccessResponse | ErrorResponse> {
+	async findOne(req: UserRequest, decryptData?: boolean, locale?: string): Promise<SuccessResponse | ErrorResponse> {
 		try {
 			const ssoId = this.extractSsoIdFromRequest(req);
 			const userDetails = await this.getUserBySsoId(ssoId);
-			const userData = await this.buildUserResponse(userDetails.user_id, decryptData);
+
+			// Always sanitize/extract locale
+			const reqAny = req as any;
+			const rawLocale = locale || reqAny.headers?.['accept-language'];
+			const sanitizedLocale = this.i18n.getLocaleFromHeader(rawLocale);
+
+			const userData = await this.buildUserResponse(userDetails.user_id, decryptData, sanitizedLocale);
 
 			return new SuccessResponse({
 				statusCode: HttpStatus.OK,
@@ -254,10 +260,10 @@ export class UserService {
 	 * Builds complete user response with all related data
 	 * @private
 	 */
-	private async buildUserResponse(userId: string, decryptData?: boolean): Promise<UserResponseData> {
+	private async buildUserResponse(userId: string, decryptData?: boolean, locale?: string): Promise<UserResponseData> {
 		const [user, customFields, userDoc] = await Promise.all([
 			this.findOneUser(userId),
-			this.customFieldsService.getCustomFields(userId, FieldContext.USERS),
+			this.customFieldsService.getCustomFields(userId, FieldContext.USERS, locale),
 			this.findUserDocs(userId, decryptData),
 		]);
 
@@ -2644,7 +2650,7 @@ export class UserService {
 				`VC field validation failed with ${failedFields.length} field(s) not matching`,
 			);
 
-			const errorMessage = this.formatFieldMatchingError(failedFields, locale);
+			const errorMessage = this.formatFieldMatchingError(failedFields, vcFields, locale);
 			throw new BadRequestException(errorMessage);
 		}
 
@@ -2765,16 +2771,25 @@ export class UserService {
 	 * @param locale Locale for translation
 	 * @returns Formatted error message
 	 */
-	private formatFieldMatchingError(failedFields: string[], locale: string = 'en'): string {
-		// Format field names: convert camelCase/snake_case to Title Case
-		const formattedFields = failedFields.map(field =>
-			field
+	private formatFieldMatchingError(failedFields: string[], vcFields: VcFields, locale: string = 'en'): string {
+		// Format field names using labels if available
+		const formattedFields = failedFields.map(field => {
+			const fieldConfig = vcFields[field];
+			const label = fieldConfig?.label;
+
+			if (label) {
+				return this.i18n.getLocalizedLabel(label, locale);
+			}
+
+			// Fallback to formatting the field name
+			return field
 				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
 				.replaceAll('_', ' ')  // Replace underscores with spaces
 				.split(' ')
 				.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-				.join(' ')
-		);
+				.join(' ');
+		});
+
 		const failedIdsString = formattedFields.join(', ');
 		Logger.log(`Failed fields: ${failedFields}`);
 		return this.i18n.translateError('FIELDS_NOT_MATCHING', locale, {
@@ -2921,7 +2936,7 @@ export class UserService {
 			);
 
 			if (!keywordValidationResult.isValid) {
-				const documentName = uploadDocumentDto.docName || 'Unknown';
+				const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
 				Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
 				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, {
 					documentName,
@@ -3118,7 +3133,7 @@ export class UserService {
 			);
 
 			if (!keywordValidationResult.isValid) {
-				const documentName = uploadDocumentQrDto.docName || 'Unknown';
+				const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
 				Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
 				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, {
 					documentName,
@@ -3452,7 +3467,7 @@ export class UserService {
 			);
 
 		if (!postValidationResult.isValid) {
-			const documentName = uploadDocumentDto.docName || 'Unknown';
+			const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
 			Logger.warn(`Post-validation FAILED: ${postValidationResult.reason}`);
 
 			const errorMessage = this.i18n.translateError(
@@ -4209,7 +4224,7 @@ export class UserService {
 			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
 
 			if (allMissingRequired.length > 0) {
-				this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto, locale);
+				this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto, vcFields, locale);
 			}
 
 			// Check for validation constraint failures
@@ -4339,18 +4354,28 @@ export class UserService {
 	private throwMissingFieldsError(
 		allMissingRequired: string[],
 		uploadDocumentDto: UploadDocumentDto,
+		vcFields: VcFields,
 		locale: string = 'en',
 	): void {
-		// Format field names: convert camelCase/snake_case to Title Case
-		const formattedFields = allMissingRequired.map(field =>
-			field
+		// Format field names using labels if available
+		const formattedFields = allMissingRequired.map(field => {
+			const fieldConfig = vcFields[field];
+			const label = fieldConfig?.label;
+
+			if (label) {
+				return this.i18n.getLocalizedLabel(label, locale);
+			}
+
+			// Fallback to formatting the field name
+			return field
 				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
 				.replaceAll('_', ' ')  // Replace underscores with spaces
 				.split(' ')
 				.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-				.join(' ')
-		);
-		const fieldList = formattedFields.join(', ');
+				.join(' ');
+		});
+
+		const fieldList = `(${formattedFields.join(', ')})`;
 		const errorMessage = this.i18n.translateError('MISSING_REQUIRED_FIELDS_IN_DOCUMENT', locale, {
 			fields: fieldList
 		});
@@ -4761,6 +4786,34 @@ export class UserService {
 				errorMessage,
 			});
 		}
+	}
+	public async getConfig(key: string, acceptLanguage?: string): Promise<any> {
+		const configResponse = await this.adminService.getConfig(key);
+
+		if (configResponse instanceof SuccessResponse && configResponse.data) {
+			const config = configResponse.data as any;
+
+			// Transform label if value is an array
+			if (Array.isArray(config.value)) {
+				config.value = config.value.map((item) => {
+					if (
+						item &&
+						typeof item === 'object' &&
+						item.label &&
+						typeof item.label === 'object' &&
+						!Array.isArray(item.label)
+					) {
+						// Create shallow copy to avoid mutating original immutable fields if any
+						const newItem = { ...item };
+						newItem.label = this.i18n.getLocalizedLabel(item.label, acceptLanguage);
+						return newItem;
+					}
+					return item;
+				});
+			}
+		}
+
+		return configResponse;
 	}
 }
 
