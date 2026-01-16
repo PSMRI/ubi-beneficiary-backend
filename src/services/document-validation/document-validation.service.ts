@@ -177,7 +177,7 @@ export class DocumentValidationService {
     mappedData: Record<string, any>,
     docType: string,
     docSubType: string,
-  ): Promise<{ isValid: boolean; reason?: string }> {
+  ): Promise<{ isValid: boolean; reason?: string; missingFields?: string[] }> {
     try {
       const config = await this.getDocumentConfig(docType, docSubType);
 
@@ -218,26 +218,31 @@ export class DocumentValidationService {
         minRequired = requiredFields.length;
       }
 
-      // Count matched fields
+      // Check for missing fields
+      const missingFields: string[] = [];
       let matchedCount = 0;
 
       for (const field of requiredFields) {
         if (
           mappedData?.mapped_data &&
           field in mappedData.mapped_data &&
-          mappedData.mapped_data[field] != null
+          mappedData.mapped_data[field] != null &&
+          mappedData.mapped_data[field] !== ''
         ) {
           matchedCount++;
+        } else {
+          missingFields.push(field);
         }
       }
 
       if (matchedCount < minRequired) {
         this.logger.warn(
-          `Post-validation FAILED: Only ${matchedCount}/${minRequired} required fields present.`,
+          `Post-validation FAILED: Only ${matchedCount}/${minRequired} required fields present. Missing: ${missingFields.join(', ')}`,
         );
         return {
           isValid: false,
           reason: `Document does not contain minimum required mapped fields (${matchedCount}/${minRequired})`,
+          missingFields: missingFields,
         };
       }
 

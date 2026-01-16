@@ -3467,6 +3467,17 @@ export class UserService {
 			);
 
 		if (!postValidationResult.isValid) {
+			// If we have specific missing fields, use the detailed error message
+			if (postValidationResult.missingFields && postValidationResult.missingFields.length > 0) {
+				this.throwMissingFieldsError(
+					postValidationResult.missingFields,
+					uploadDocumentDto,
+					vcFields || {}, // Pass empty object if null to be safe, though it should be caught earlier
+					locale,
+					'POST_VALIDATION_ERROR'
+				);
+			}
+
 			const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
 			Logger.warn(`Post-validation FAILED: ${postValidationResult.reason}`);
 
@@ -4215,16 +4226,16 @@ export class UserService {
 				);
 			}
 
-			const allMissingRequired = this.collectMissingRequiredFields(
+			const missingRequiredFields = await this.collectMissingRequiredFields(
 				vcFields,
 				vcMapping,
 				uploadDocumentDto,
 				issueVC,
 			);
-			this.logValidationResults(vcFields, vcMapping, allMissingRequired);
+			this.logValidationResults(vcFields, vcMapping, missingRequiredFields);
 
-			if (allMissingRequired.length > 0) {
-				this.throwMissingFieldsError(allMissingRequired, uploadDocumentDto, vcFields, locale);
+			if (missingRequiredFields.length > 0) {
+				this.throwMissingFieldsError(missingRequiredFields, uploadDocumentDto, vcFields, locale, 'MISSING_REQUIRED_FIELDS_IN_DOCUMENT');
 			}
 
 			// Check for validation constraint failures
@@ -4247,12 +4258,12 @@ export class UserService {
 		}
 	}
 
-	private collectMissingRequiredFields(
+	private async collectMissingRequiredFields(
 		vcFields: VcFields,
 		vcMapping: any,
 		uploadDocumentDto?: UploadDocumentDto,
 		issueVC?: string,
-	): string[] {
+	): Promise<string[]> {
 		const missingFields = vcMapping.missing_fields || [];
 		Logger.log(
 			`OCR Mapping - Total missing fields: [${missingFields.join(', ')}]`,
@@ -4262,16 +4273,16 @@ export class UserService {
 			vcFields,
 			missingFields,
 		);
-		const additionalMissingRequired =
-			this.checkMappedDataForEmptyRequiredFields(
-				vcFields,
-				vcMapping,
-				missingRequiredFields,
-				uploadDocumentDto,
-				issueVC,
-			);
 
-		return [...missingRequiredFields, ...additionalMissingRequired];
+		const additionalMissing = await this.checkMappedDataForEmptyRequiredFields(
+			vcFields,
+			vcMapping,
+			missingRequiredFields, // Pass known missing to avoid dups
+			uploadDocumentDto,
+			issueVC,
+		);
+
+		return [...missingRequiredFields, ...additionalMissing];
 	}
 
 	private filterRequiredFields(
@@ -4279,27 +4290,29 @@ export class UserService {
 		missingFields: string[],
 	): string[] {
 		const missingRequiredFields: string[] = [];
+
 		for (const fieldName of missingFields) {
+			const fieldConfig = vcFields[fieldName];
 			// Only check required document fields (exclude fields with document_field: false)
-			if (vcFields[fieldName]?.required === true && vcFields[fieldName]?.document_field !== false) {
+			if (fieldConfig?.document_field !== false && fieldConfig?.required === true) {
 				missingRequiredFields.push(fieldName);
 			}
 		}
 		return missingRequiredFields;
 	}
 
-	private checkMappedDataForEmptyRequiredFields(
+	private async checkMappedDataForEmptyRequiredFields(
 		vcFields: VcFields,
 		vcMapping: any,
-		missingRequiredFields: string[],
+		knownMissingFields: string[],
 		uploadDocumentDto?: UploadDocumentDto,
 		issueVC?: string,
-	): string[] {
+	): Promise<string[]> {
 		const additionalMissingRequired: string[] = [];
 		const issuer = uploadDocumentDto?.issuer?.toLowerCase();
 
 		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
-			// Only check required document fields (exclude fields with document_field: false)
+			// Check if field is required and is a document field
 			if (fieldConfig?.required === true && fieldConfig?.document_field !== false) {
 				// Get field value from mapped_data
 				let fieldValue = vcMapping.mapped_data?.[fieldName];
@@ -4313,9 +4326,10 @@ export class UserService {
 					);
 				}
 
+
 				if (
 					this.isFieldValueEmpty(fieldValue) &&
-					!missingRequiredFields.includes(fieldName)
+					!knownMissingFields.includes(fieldName)
 				) {
 					additionalMissingRequired.push(fieldName);
 				}
@@ -4356,6 +4370,7 @@ export class UserService {
 		uploadDocumentDto: UploadDocumentDto,
 		vcFields: VcFields,
 		locale: string = 'en',
+		errorKey: string = 'MISSING_REQUIRED_FIELDS_IN_DOCUMENT',
 	): void {
 		// Format field names using labels if available
 		const formattedFields = allMissingRequired.map(field => {
@@ -4375,8 +4390,9 @@ export class UserService {
 				.join(' ');
 		});
 
+		// Format field list with commas
 		const fieldList = `(${formattedFields.join(', ')})`;
-		const errorMessage = this.i18n.translateError('MISSING_REQUIRED_FIELDS_IN_DOCUMENT', locale, {
+		const errorMessage = this.i18n.translateError(errorKey, locale, {
 			fields: fieldList
 		});
 
