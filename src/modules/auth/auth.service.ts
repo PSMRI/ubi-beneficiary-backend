@@ -13,6 +13,9 @@ import { UploadDocumentDto } from '@modules/users/dto/upload-document.dto';
 import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
 import { I18nService } from 'src/common/services/i18n.service';
 import { DocumentValidationService } from '@services/document-validation/document-validation.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { IdempotencyKey } from '@entities/idempotency_key.entity';
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -35,6 +38,8 @@ export class AuthService {
     private readonly documentUploadService: DocumentUploadService,
     private readonly i18n: I18nService,
     private readonly documentValidationService: DocumentValidationService,
+    @InjectRepository(IdempotencyKey)
+    private readonly idempotencyKeyRepository: Repository<IdempotencyKey>,
   ) { }
 
   public async login(body: LoginDTO) {
@@ -585,10 +590,64 @@ export class AuthService {
     let vcMapping = null;
     let isUserRegistered = false;
     let generatedUsername = null;
+    let idempotencyKey: string | null = null;
     const defaultPassword = process.env.SIGNUP_DEFAULT_PASSWORD;
 
     try {
       const flowStartTime = Date.now();
+      const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+
+      // 0️⃣ Idempotency Check
+      idempotencyKey = body.requestId || req.headers?.['x-idempotency-key'];
+      const apiName = 'register_with_document';
+
+      if (idempotencyKey) {
+        const existingKey = await this.idempotencyKeyRepository.findOne({
+          where: { idempotency_key: idempotencyKey }
+        });
+
+        if (existingKey) {
+          if (existingKey.status === 'SUCCESS') {
+            this.loggerService.log(`Idempotency key hit: ${idempotencyKey} (SUCCESS). Returning stored result.`);
+            // Return stored result if available, or a generic success if result wasn't stored
+            // If you stored the result in response_data, return that.
+            // For now, based on user request "return stored result (or skip processing if storing result is not needed)"
+            // We will attempt to return the stored response.
+            if (existingKey.response_data) {
+              return existingKey.response_data;
+            }
+            // If no data stored but status is success, we might need to fetch user?
+            // Assuming storing result is best.
+          } else if (existingKey.status === 'IN_PROGRESS') {
+            this.loggerService.log(`Idempotency key hit: ${idempotencyKey} (IN_PROGRESS). Returning currently processing.`);
+            // You might want to return an "Processing" status or error.
+            // User said: "If exists -> return stored result". For IN_PROGRESS there is no result.
+            // We will return a specific response or throw.
+            // Let's return a 202 Accepted type response or similar, or just throw Conflict saying "Already in progress".
+            const errorMessage = this.i18n.translateError('REQUEST_ALREADY_IN_PROGRESS', locale);
+            return new ErrorResponse({
+              statusCode: HttpStatus.CONFLICT,
+              errorMessage: errorMessage || 'Request is already in progress',
+            });
+          }
+          // If FAILED, we proceed to retry (implicit else)
+          if (existingKey.status === 'FAILED') {
+            this.loggerService.log(`Idempotency key hit: ${idempotencyKey} (FAILED). Retrying.`);
+            // Update to IN_PROGRESS for retry
+            existingKey.status = 'IN_PROGRESS';
+            existingKey.updated_at = new Date();
+            await this.idempotencyKeyRepository.save(existingKey);
+          }
+        } else {
+          // Create new key
+          await this.idempotencyKeyRepository.save({
+            idempotency_key: idempotencyKey,
+            api_name: apiName,
+            status: 'IN_PROGRESS',
+          });
+        }
+      }
+
       // 🟩 Step 1: Pre-process OTR Certificate
       const uploadDocumentDto: UploadDocumentDto = {
         docType: body.docType,
@@ -598,7 +657,6 @@ export class AuthService {
         file,
       };
       const processingStartTime = Date.now();
-      const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
       const otrResult = await this.processOtrCertificate(file, uploadDocumentDto, locale);
       this.loggerService.log(`⏱️ Total OTR Processing (OCR+Mapping) took: ${Date.now() - processingStartTime}ms`, 'AuthService');
 
@@ -689,7 +747,7 @@ export class AuthService {
 
       this.loggerService.log(`⏱️ Total OTR Registration Flow took: ${Date.now() - flowStartTime}ms`, 'AuthService');
       // 🟩 Step 6: Return success response
-      return new SuccessResponse({
+      const successResponse = new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'AUTH_REGISTRATION_SUCCESS',
         data: {
@@ -706,9 +764,46 @@ export class AuthService {
           password: defaultPassword,
         },
       });
+
+      // Update idempotency key status to SUCCESS
+      if (idempotencyKey) {
+        await this.idempotencyKeyRepository.update(
+          { idempotency_key: idempotencyKey },
+          {
+            status: 'SUCCESS',
+            response_data: successResponse as any,
+            updated_at: new Date()
+          }
+        );
+      }
+
+      return successResponse;
     } catch (error) {
       const errorMessage = error instanceof ErrorResponse ? error.errorMessage : error.message;
       this.loggerService.error('processOtrAndRegisterWithUpload', errorMessage, error.stack);
+
+      // Update idempotency key status to FAILED first, before any returns
+      if (idempotencyKey) {
+        // Only update to FAILED if it was THIS execution that failed.
+        // We generally assume any error caught here is a failure of this execution.
+        // "Request already in progress" checks return earlier and don't throw, so they won't reach here.
+
+        try {
+          // Check if it's a CONFLICT error which might mean something else, but here we just mark as FAILED
+          // If the error IS actually from the idempotency check saying "Already in progress", it wouldn't be here.
+          // But if some other Conflict occurred, we might still want to mark THIS attempt as failed.
+
+          await this.idempotencyKeyRepository.update(
+            { idempotency_key: idempotencyKey },
+            {
+              status: 'FAILED',
+              updated_at: new Date()
+            }
+          );
+        } catch (dbError) {
+          this.loggerService.error('Failed to update idempotency key status to FAILED', dbError.message);
+        }
+      }
 
       // If user was registered but document upload failed, return partial success
       if (isUserRegistered && (errorMessage?.includes('upload') || errorMessage?.includes('document'))) {

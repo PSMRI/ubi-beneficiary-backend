@@ -25,6 +25,7 @@ import { ProxyService } from '@services/proxy/proxy.service';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
 import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
 import { UserModule } from '@modules/users/users.module';
+import { IdempotencyKey } from '@entities/idempotency_key.entity';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { UserModule } from '@modules/users/users.module';
       UserApplication,
       Field,
       FieldValue,
+      IdempotencyKey,
     ]),
     CustomFieldsModule,
     AdminModule,
@@ -60,4 +62,4 @@ import { UserModule } from '@modules/users/users.module';
   ],
   exports: [AuthService, EncryptionService, WalletService, RoleGuard],
 })
-export class AuthModule {}
+export class AuthModule { }
