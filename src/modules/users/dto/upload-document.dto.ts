@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, MaxLength, IsOptional } from 'class-validator';
 
 export class UploadDocumentDto {
   @ApiProperty({
@@ -41,6 +41,17 @@ export class UploadDocumentDto {
   @IsNotEmpty()
   @MaxLength(255)
   importedFrom: string;
+
+  @ApiProperty({
+    description: 'VC issuer type (optional)',
+    example: 'dhiway',
+    maxLength: 50,
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  issuer?: string;
 
   @ApiProperty({
     type: 'string',

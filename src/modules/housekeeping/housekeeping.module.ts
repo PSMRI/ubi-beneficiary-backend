@@ -5,6 +5,7 @@ import { HousekeepingService } from './housekeeping.service';
 import { UserDoc } from '@entities/user_docs.entity';
 import { User } from '@entities/user.entity';
 import { ConfigModule } from '@nestjs/config';
+import { I18nService } from 'src/common/services/i18n.service';
 
 @Module({
 	imports: [
@@ -12,7 +13,7 @@ import { ConfigModule } from '@nestjs/config';
 		ConfigModule,
 	],
 	controllers: [HousekeepingController],
-	providers: [HousekeepingService],
+	providers: [HousekeepingService, I18nService],
 	exports: [HousekeepingService],
 })
 export class HousekeepingModule {} 

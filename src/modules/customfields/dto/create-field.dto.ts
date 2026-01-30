@@ -38,12 +38,9 @@ export class CreateFieldDto {
 	@ApiProperty({
 		description: 'Display label for the field',
 		example: 'School Name',
-		minLength: 1,
-		maxLength: 255,
 	})
-	@IsString()
-	@Length(1, 255)
-	label: string;
+	@IsOptional()
+	label: string | Record<string, any>;
 
 	/**
 	 * Entity context this field belongs to

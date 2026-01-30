@@ -75,7 +75,17 @@ export class AWSTextractAdapter implements ITextExtractor {
       const confidence = this.calculateAverageConfidence(response.Blocks || []);
       const processingTime = Date.now() - startTime;
       
-      this.logger.log(`AWS Textract extracted ${fullText.length} characters in ${processingTime}ms`);
+      // Log extracted text
+      this.logger.debug(`AWS Textract extracted text: ${fullText}`);
+      
+      // Log summary with text preview for info level
+      const textPreview = fullText.length > 500 
+        ? `${fullText.substring(0, 500)}... [truncated]` 
+        : fullText;
+      this.logger.log(
+        `AWS Textract extracted ${fullText.length} characters in ${processingTime}ms`,
+        { textPreview, confidence, blockCount: response.Blocks?.length || 0 },
+      );
 
       return {
         fullText,
@@ -99,7 +109,11 @@ export class AWSTextractAdapter implements ITextExtractor {
    * @returns true if supported
    */
   supportsFileType(mimeType: string): boolean {
-    return SUPPORTED_OCR_TYPES.includes(mimeType.toLowerCase());
+    // Normalize MIME type by removing charset parameter (defensive check)
+    const normalizedMimeType = mimeType.includes(';') 
+      ? mimeType.split(';')[0].trim().toLowerCase()
+      : mimeType.toLowerCase();
+    return SUPPORTED_OCR_TYPES.includes(normalizedMimeType);
   }
 
   /**

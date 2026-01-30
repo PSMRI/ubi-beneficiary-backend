@@ -16,6 +16,7 @@ export interface OcrMappingResult {
   confidence: number; // 0 to 1
   processing_method: 'ai' | 'keyword' | 'hybrid';
   warnings?: string[];
+  validationErrors?: Array<{ field: string; error: string; constraint: string }>;
 }
 
 /**
@@ -27,9 +28,15 @@ export interface IAiMappingAdapter {
    * @param extractedText - Raw text from OCR
    * @param schema - Target JSON schema
    * @param docType - Optional document type for context-specific processing
-   * @returns Mapped data object or null if failed
+   * @param customPromptTemplate - Optional custom prompt template from vcConfiguration
+   * @returns Mapped data object, or null if failed
    */
-  mapTextToSchema(extractedText: string, schema: Record<string, any>, docType?: string): Promise<Record<string, any> | null>;
+  mapTextToSchema(
+    extractedText: string, 
+    schema: Record<string, any>, 
+    docType?: string,
+    customPromptTemplate?: string | null
+  ): Promise<Record<string, any> | null>;
   
   /**
    * Check if the adapter is properly configured

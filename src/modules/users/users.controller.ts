@@ -1,33 +1,37 @@
 import {
-	Controller,
-	Get,
-	Post,
-	Body,
-	Param,
-	Query,
-	UseGuards,
-	Req,
-	Delete,
-	InternalServerErrorException,
-	UnauthorizedException,
-	Logger,
-	UseInterceptors,
-	UploadedFile,
-	BadRequestException,
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+  Delete,
+  InternalServerErrorException,
+  UnauthorizedException,
+  Logger,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
   ParseFilePipe,
   MaxFileSizeValidator,
+  Headers,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserService } from '../users/users.service';
-import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
+import { UPLOAD_CONFIG } from '../../config/upload.config';
 import {
   ApiBasicAuth,
+  ApiBearerAuth,
   ApiBody,
   ApiOperation,
   ApiQuery,
   ApiResponse,
   ApiTags,
   ApiConsumes,
+  ApiParam,
 } from '@nestjs/swagger';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { CreateConsentDto } from './dto/create-consent.dto';
@@ -39,13 +43,17 @@ import { FetchVcUrlDto } from './dto/fetch-vc-url.dto';
 import { WalletCallbackDto } from './dto/wallet-callback.dto';
 import { UploadDocDTO } from './dto/upload-doc.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
+import { UploadDocumentQrDto } from './dto/upload-document-qr.dto';
+import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
+import { VcCallbackDto } from './dto/vc-callback.dto';
+import { ConfigKeyDto, ConfigResponseDto } from '@modules/admin/dto';
 
 @ApiTags('Users')
 @Controller('users')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(private readonly userService: UserService) { }
 
-  
+
   /* @Post('/create')
   @ApiBasicAuth('access-token')
   @ApiOperation({ summary: 'Create a new user' })
@@ -55,18 +63,18 @@ export class UserController {
     return this.userService.create(createUserDto);
   }
  */
- /*  @UseGuards(AuthGuard)
-  @Put('/update/:userId')
-  @ApiBasicAuth('access-token')
-  @ApiOperation({ summary: 'Update an existing user' })
-  @ApiResponse({ status: 200, description: 'User successfully updated' })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  async update(
-    @Param('userId', new ParseUUIDPipe()) userId: string,
-    @Body() updateUserDto: any,
-  ) {
-    return this.userService.update(userId, updateUserDto);
-  } */
+  /*  @UseGuards(AuthGuard)
+   @Put('/update/:userId')
+   @ApiBasicAuth('access-token')
+   @ApiOperation({ summary: 'Update an existing user' })
+   @ApiResponse({ status: 200, description: 'User successfully updated' })
+   @ApiResponse({ status: 404, description: 'User not found' })
+   async update(
+     @Param('userId', new ParseUUIDPipe()) userId: string,
+     @Body() updateUserDto: any,
+   ) {
+     return this.userService.update(userId, updateUserDto);
+   } */
 
   @UseGuards(AuthGuard)
   @Get('/get_one')
@@ -81,9 +89,57 @@ export class UserController {
   })
   async findOne(
     @Req() req: Request,
+    @Headers('accept-language') acceptLanguage: string,
     @Query('decryptData') decryptData?: boolean,
   ) {
-    return await this.userService.findOne(req, decryptData);
+    if (req.headers && !req.headers['accept-language']) {
+      req.headers['accept-language'] = acceptLanguage;
+    }
+    return await this.userService.findOne(req as any, decryptData, acceptLanguage);
+  }
+
+  @Patch('/update')
+  @UseGuards(AuthGuard)
+  @ApiBasicAuth('access-token')
+  @UseInterceptors(FileInterceptor('picture'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Update user profile with phone number, whose phone number, and picture' })
+  @ApiBody({
+    description: 'User profile update data',
+    type: UpdateUserProfileDto,
+  })
+  @ApiResponse({ status: 200, description: 'User profile updated successfully' })
+  @ApiResponse({ status: 400, description: 'Bad Request' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateProfile(
+    @Req() req: Request,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: UPLOAD_CONFIG.maxProfilePictureSize }),
+        ],
+        fileIsRequired: false,
+        errorHttpStatusCode: 400,
+      })
+    ) picture: Express.Multer.File | undefined,
+    @Body() updateUserProfileDto: UpdateUserProfileDto,
+  ) {
+    try {
+      return await this.userService.updateUserProfile(req, updateUserProfileDto, picture);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
+        throw error;
+      }
+      Logger.error(
+        error?.message ?? 'Failed to update user profile',
+        error?.stack,
+        'users.controller:updateProfile',
+      );
+      throw new InternalServerErrorException(
+        'USER_PROFILE_UPDATE_FAILED',
+      );
+    }
   }
 
   @UseGuards(AuthGuard)
@@ -114,12 +170,13 @@ export class UserController {
   @UseGuards(AuthGuard)
   @Post('/wallet/user_docs')
   @ApiBasicAuth('access-token')
-    @ApiBody({ type: [UploadDocDTO] 
-    })
+  @ApiBody({
+    type: [UploadDocDTO]
+  })
   @ApiOperation({ summary: 'Save user docs' })
   @ApiResponse({ status: 200, description: 'User docs saved successfully' })
   @ApiResponse({ status: 400, description: 'Bad Request' })
-  
+
   async createUserDocs(
     @Req() req: Request,
     @Body() createUserDocDto: CreateUserDocDTO[],
@@ -174,7 +231,7 @@ export class UserController {
     status: 200,
     description: 'User application data',
     type: UserApplication,
-  }) 
+  })
   @ApiResponse({ status: 404, description: 'User application not found' })
   async findOneUserApplication(
     @Param('internal_application_id') internal_application_id: string,
@@ -214,7 +271,7 @@ export class UserController {
 
   @Delete('/delete-doc/:doc_id')
   @UseGuards(AuthGuard)
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Delete a document',
     description: 'Deletes a document from the database and removes the associated file from the uploads folder'
   })
@@ -232,7 +289,7 @@ export class UserController {
       }
       Logger.error('Failed to delete document:', error);
       throw new InternalServerErrorException(
-        'An error occurred while processing your request',
+        'APP_OPERATION_FAILED',
       );
     }
   }
@@ -262,7 +319,7 @@ export class UserController {
   @ApiBasicAuth('access-token')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Upload a document file with metadata',
     description: 'Uploads a new document or updates an existing one if a document with the same type, subtype, and name already exists for the user. Old file will be replaced with the new one.'
   })
@@ -270,8 +327,8 @@ export class UserController {
     description: 'Document upload with metadata',
     type: UploadDocumentDto,
   })
-  @ApiResponse({ 
-    status: 201, 
+  @ApiResponse({
+    status: 201,
     description: 'Document uploaded successfully (new document created)',
     schema: {
       example: {
@@ -279,23 +336,43 @@ export class UserController {
         statusCode: 201,
         message: 'Document uploaded successfully',
         data: {
-          doc_id: 'a3d8fa45-bdfa-49d1-8b3f-54bafcf3aabb',
-          doc_path: 'uploads/file-1635789456123-123456789.pdf',
-          user_id: 'b4e9gb56-cefb-5ae2-9c4g-65cbgdg4bbcc',
-          doc_type: 'associationProof',
-          doc_subtype: 'enrollmentCertificate',
-          doc_name: 'Enrollment Certificate',
+          doc_id: '0bf1e149-1dd0-4899-b42a-f77255a86fde',
+          user_id: '82192ec3-6897-4288-ab8e-f8a191b0445c',
+          doc_type: 'marksProof',
+          doc_subtype: 'marksheet',
+          doc_name: 'Marksheet',
           imported_from: 'Manual Upload',
-          doc_datatype: 'PDF',
-          uploaded_at: '2025-10-29T10:30:00.000Z',
+          doc_datatype: 'Application/JSON',
+          uploaded_at: '2025-11-12T05:42:43.345Z',
           is_update: false,
           download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-123.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
+          issue_vc: 'yes',
+          vc_creation: {
+            success: true,
+            record_id: 'vc_67890',
+            verification_url: 'https://verify.example.com/vc/67890'
+          },
+          doc_data_link: 'https://verify.example.com/vc/67890',
+          mapped_data: {
+            firstname: 'Jane Doe',
+            schoolname: 'XYZ Public School',
+            currentclass: 10,
+            markstotal: 180,
+            result: 'PASS',
+            academicyear: '2024',
+            issuedby: 'PRINCIPAL',
+            issuerauthority: 'Central Education Board',
+            issueddate: '20-05-2024',
+            issuingauthorityaddress: 'Education Block, Central District',
+            issuingauthoritystate: 'Example State',
+            issuingauthoritycountry: 'India'
+          }
         }
       }
     }
   })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Document updated successfully (existing document replaced)',
     schema: {
       example: {
@@ -304,16 +381,36 @@ export class UserController {
         message: 'Document updated successfully',
         data: {
           doc_id: 'a3d8fa45-bdfa-49d1-8b3f-54bafcf3aabb',
-          doc_path: 'uploads/file-1635789456123-987654321.pdf',
           user_id: 'b4e9gb56-cefb-5ae2-9c4g-65cbgdg4bbcc',
-          doc_type: 'associationProof',
-          doc_subtype: 'enrollmentCertificate',
-          doc_name: 'Enrollment Certificate',
+          doc_type: 'marksProof',
+          doc_subtype: 'marksheet',
+          doc_name: 'Marksheet',
           imported_from: 'Manual Upload',
-          doc_datatype: 'PDF',
+          doc_datatype: 'Application/JSON',
           uploaded_at: '2025-10-29T11:45:00.000Z',
           is_update: true,
           download_url: 'https://your-bucket.s3.amazonaws.com/prod/user-id/file-456.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&...',
+          issue_vc: 'yes',
+          vc_creation: {
+            success: true,
+            record_id: 'vc_12345',
+            verification_url: 'https://verify.example.com/vc/12345'
+          },
+          doc_data_link: 'https://verify.example.com/vc/12345',
+          mapped_data: {
+            firstname: 'John Smith',
+            schoolname: 'ABC International School',
+            currentclass: 12,
+            markstotal: 175,
+            result: 'PASS',
+            academicyear: '2024',
+            issuedby: 'PRINCIPAL',
+            issuerauthority: 'State Education Board',
+            issueddate: '15-06-2024',
+            issuingauthorityaddress: 'Education Complex, Main City',
+            issuingauthoritystate: 'State Name',
+            issuingauthoritycountry: 'India'
+          }
         }
       }
     }
@@ -326,7 +423,7 @@ export class UserController {
     @UploadedFile(
       new ParseFilePipe({
         validators: [
-          new MaxFileSizeValidator({ maxSize: FILE_UPLOAD_LIMITS.MAX_FILE_SIZE }),
+          new MaxFileSizeValidator({ maxSize: UPLOAD_CONFIG.maxFileSize }),
         ],
         errorHttpStatusCode: 400,
       })
@@ -334,19 +431,215 @@ export class UserController {
     @Body() uploadDocumentDto: UploadDocumentDto,
   ) {
     try {
-      return await this.userService.uploadDocument(req, file, uploadDocumentDto);
+      // Extract Accept-Language header for i18n support
+      const acceptLanguage = req.headers['accept-language'] as string | undefined;
+      return await this.userService.uploadDocument(req, file, uploadDocumentDto, acceptLanguage);
     } catch (error) {
       if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
         throw error;
       }
+
+      // If it's already an InternalServerErrorException from the service layer,
+      // preserve the original error message instead of overriding it
+      if (error instanceof InternalServerErrorException) {
+        Logger.error(
+          error?.message ?? 'Failed to upload document',
+          error?.stack,
+          'users.controller:uploadDocument',
+        );
+        throw error; // Re-throw the original exception with its meaningful message
+      }
+
+      // For other unexpected errors, wrap with generic message
       Logger.error(
         error?.message ?? 'Failed to upload document',
         error?.stack,
         'users.controller:uploadDocument',
       );
       throw new InternalServerErrorException(
-        'An error occurred while uploading the document',
+        'FILE_UPLOAD_FAILED',
       );
     }
   }
+
+  @Post('/upload-document-qr')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload a document with QR content directly',
+    description: 'Uploads a document by providing QR content directly (instead of extracting from a file). The QR content can be in any supported format (URL, XML, JSON, encoded JSON, VC_URL, DOC_URL, PLAIN_TEXT, etc.). The flow works exactly the same as /upload-document endpoint - only difference is that QR content is provided directly instead of being extracted from a file. File upload is optional.'
+  })
+  @ApiBody({
+    description: 'Document upload with QR content and metadata',
+    type: UploadDocumentQrDto,
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Document uploaded successfully (new document created)',
+    schema: {
+      example: {
+        success: true,
+        statusCode: 201,
+        message: 'Document uploaded successfully',
+        data: {
+          doc_id: '0bf1e149-1dd0-4899-b42a-f77255a86fde',
+          user_id: '82192ec3-6897-4288-ab8e-f8a191b0445c',
+          doc_type: 'casteProof',
+          doc_subtype: 'casteCertificate',
+          doc_name: 'Caste Certificate',
+          imported_from: 'QR Code',
+          doc_datatype: 'Application/JSON',
+          uploaded_at: '2025-11-12T05:42:43.345Z',
+          is_update: false,
+          download_url: null,
+          issue_vc: 'yes',
+          vc_creation: {
+            success: true,
+            record_id: 'vc_67890',
+            verification_url: 'https://verify.example.com/vc/67890'
+          },
+          doc_data_link: 'https://verify.example.com/vc/67890',
+          mapped_data: {
+            firstname: 'Jane Doe',
+            castename: 'OBC',
+            certificateNumber: 'CERT123456',
+            issuedDate: '2024-01-15',
+            issuedBy: 'District Magistrate'
+          }
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Document updated successfully (existing document replaced)',
+  })
+  @ApiResponse({ status: 400, description: 'Bad Request - Invalid QR content or metadata' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async uploadDocumentQr(
+    @Req() req: Request,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: UPLOAD_CONFIG.maxFileSize }),
+        ],
+        errorHttpStatusCode: 400,
+        fileIsRequired: false, // Make file optional
+      })
+    ) file: Express.Multer.File | undefined,
+    @Body() uploadDocumentQrDto: UploadDocumentQrDto,
+  ) {
+    try {
+      // Extract Accept-Language header for i18n support
+      const acceptLanguage = req.headers['accept-language'] as string | undefined;
+      return await this.userService.uploadDocumentWithQr(req, file, uploadDocumentQrDto, acceptLanguage);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof UnauthorizedException) {
+        throw error;
+      }
+
+      // If it's already an InternalServerErrorException from the service layer,
+      // preserve the original error message instead of overriding it
+      if (error instanceof InternalServerErrorException) {
+        Logger.error(
+          error?.message ?? 'Failed to upload document with QR content',
+          error?.stack,
+          'users.controller:uploadDocumentQr',
+        );
+        throw error; // Re-throw the original exception with its meaningful message
+      }
+
+      // For other unexpected errors, wrap with generic message
+      Logger.error(
+        error?.message ?? 'Failed to upload document with QR content',
+        error?.stack,
+        'users.controller:uploadDocumentQr',
+      );
+      throw new InternalServerErrorException(
+        'QR_DOCUMENT_UPLOAD_FAILED',
+      );
+    }
+  }
+
+  @Post('/vc/process-event')
+  @ApiOperation({
+    summary: 'Handle VC event',
+    description: 'Processes VC status change events (issued, revoked, deleted) and updates document data. Issuer is automatically determined from the document record using adapter approach.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'VC callback processed successfully',
+    schema: {
+      example: {
+        success: true,
+        statusCode: 200,
+        message: 'VC issued successfully',
+        data: {
+          doc_id: '0bf1e149-1dd0-4899-b42a-f77255a86fde',
+          user_id: '82192ec3-6897-4288-ab8e-f8a191b0445c',
+          public_id: 'ff8f29d1-8ba5-49a3-bcc2-0e277f7c1790',
+          status: 'issued',
+          issuer: 'dhiway',
+          verified: true,
+          verified_at: '2025-12-01T10:30:00Z'
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'No VC found for the given public ID'
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error'
+  })
+  async handleVcEvent(@Body() callbackDto: VcCallbackDto) {
+    Logger.log(`Received VC event: ${JSON.stringify(callbackDto)}`);
+
+    // Process event - issuer will be determined from document record using adapter approach
+    return await this.userService.processVcEvent(
+      callbackDto.publicId,
+      callbackDto.status,
+      callbackDto.timestamp
+    );
+  }
+
+  /**
+     * Get configuration by key
+     * @param params Parameters containing the configuration key
+     * @description Retrieves a configuration value by its key
+     */
+  @Get('config/:key')
+  @UseGuards(AuthGuard)
+  @ApiOperation({
+    summary: 'Get configuration by key',
+    description: 'Retrieves a configuration value by its key. Requires authentication.',
+  })
+  @ApiParam({
+    name: 'key',
+    type: 'string',
+    description: 'Configuration key identifier',
+    example: 'documentTypeConfig'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Configuration retrieved successfully',
+    type: ConfigResponseDto
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Configuration not found'
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing authentication token'
+  })
+  async getConfig(@Param() params: ConfigKeyDto, @Headers('accept-language') acceptLanguage: string) {
+    return await this.userService.getConfig(params.key, acceptLanguage);
+  }
+
 }

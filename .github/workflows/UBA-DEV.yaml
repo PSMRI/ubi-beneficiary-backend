@@ -1,10 +1,8 @@
-name: Deploy to Server
-
+name: Deploy to Roadmap Server
 on:
   push:
     branches:
-      - 'main'  # Trigger on any branch push
-
+      - 'phase-3-ocr'  # Trigger on any branch push
 jobs:
   Deploy:
     runs-on: ubuntu-latest

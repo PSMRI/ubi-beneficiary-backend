@@ -58,7 +58,7 @@ export class KeycloakService {
 
 		if (keycloakData.status !== 200) {
 			throw new InternalServerErrorException(
-				'Failed to get Keycloak admin token',
+				'KEYCLOAK_ADMIN_TOKEN_FAILED',
 			);
 		}
 		return keycloakData.data;
@@ -90,7 +90,7 @@ export class KeycloakService {
 
 			if (keycloakData.status !== 200) {
 				throw new InternalServerErrorException(
-					'Failed to get Keycloak user token',
+					'KEYCLOAK_USER_TOKEN_FAILED',
 				);
 			}
 
@@ -108,7 +108,7 @@ export class KeycloakService {
 				}
 			}
 
-			throw new InternalServerErrorException('Keycloak token request failed');
+			throw new InternalServerErrorException('KEYCLOAK_TOKEN_REQUEST_FAILED');
 		}
 	}
 
@@ -178,7 +178,7 @@ export class KeycloakService {
 					user,
 				};
 			} else {
-				throw new BadRequestException('User not found in keycloak !');
+				throw new BadRequestException('KEYCLOAK_USER_NOT_FOUND');
 			}
 		} catch (e) {
 			throw new HttpException(e.message, HttpStatus.CONFLICT, {
@@ -212,7 +212,7 @@ export class KeycloakService {
 					status,
 				};
 			} else {
-				throw new BadRequestException('Error while creating user !');
+				throw new BadRequestException('KEYCLOAK_USER_CREATE_FAILED');
 			}
 		} catch (e) {
 			console.log('error 105' + e.message);
@@ -249,7 +249,7 @@ export class KeycloakService {
 					data,
 				};
 			} else {
-				throw new BadRequestException('Error while deleting user!');
+				throw new BadRequestException('KEYCLOAK_USER_DELETE_FAILED');
 			}
 		} catch (e) {
 			console.log('Error deleting user: ' + e.message);
@@ -423,7 +423,7 @@ export class KeycloakService {
 							: 'Failed to update user',
 				};
 			} else {
-				throw new BadRequestException('Error while fetching admin token!');
+				throw new BadRequestException('KEYCLOAK_ADMIN_TOKEN_FETCH_FAILED');
 			}
 		} catch (error) {
 			console.log('Error updating user:', error.message, userId);

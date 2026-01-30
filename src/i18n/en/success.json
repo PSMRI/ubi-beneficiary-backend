@@ -1,0 +1,22 @@
+{
+    "_comment_01": "=== AUTHENTICATION & AUTHORIZATION SUCCESS ===",
+    "AUTH_LOGOUT_SUCCESS": "Successfully logged out",
+    "AUTH_PASSWORD_UPDATED_SUCCESSFULLY": "Password updated successfully",
+    "AUTH_REGISTRATION_SUCCESS": "Your account has been created successfully",
+    "_comment_02": "=== USER MANAGEMENT SUCCESS ===",
+    "USER_CREATED": "User created successfully",
+    "USER_UPDATED": "User updated successfully",
+    "USER_PROFILE_UPDATED": "Profile updated successfully",
+    "USER_FETCHED": "User details retrieved successfully",
+    "USER_APPLICATION_UPDATED": "Application updated successfully",
+    "USER_APPLICATION_SUBMITTED": "Application submitted successfully",
+    "_comment_03": "=== DOCUMENT MANAGEMENT SUCCESS ===",
+    "DOCUMENT_UPLOADED": "Document uploaded successfully",
+    "DOCUMENT_DELETED": "Document deleted successfully",
+    "DOCUMENT_UPLOAD_SUCCESS": "Document uploaded successfully",
+    "DOCUMENT_UPDATE_SUCCESS": "Document updated successfully",
+    "_comment_04": "=== HOUSEKEEPING SUCCESS ===",
+    "HOUSEKEEPING_WATCHER_REGISTERED": "Watcher registered successfully",
+    "_comment_05": "=== GENERAL APPLICATION SUCCESS ===",
+    "DATA_RETRIEVED": "Data retrieved successfully"
+}

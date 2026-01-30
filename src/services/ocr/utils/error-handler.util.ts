@@ -15,11 +15,11 @@ export type MappingProvider = 'bedrock' | 'gemini';
 export function handleOcrError(error: any, provider: OcrProvider): never {
   // Common network/timeout errors
   if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-    throw new Error('Request timeout while processing document. Please try with a smaller file.');
+    throw new Error('OCR_TIMEOUT');
   }
 
   if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-    throw new Error('Network connection failed. Please check your internet connection and try again.');
+    throw new Error('OCR_NETWORK_ERROR');
   }
 
   // Provider-specific error handling
@@ -34,7 +34,7 @@ export function handleOcrError(error: any, provider: OcrProvider): never {
       handleTesseractError(error);
       break;
     default:
-      throw new Error('Unable to process document text extraction. Please try again.');
+      throw new Error('OCR_TEXT_EXTRACTION_FAILED');
   }
 }
 
@@ -43,30 +43,30 @@ export function handleOcrError(error: any, provider: OcrProvider): never {
  */
 function handleAwsTextractError(error: any): never {
   if (error.name === 'AccessDeniedException') {
-    throw new Error('OCR service not properly configured. Please contact support.');
+    throw new Error('OCR_NOT_CONFIGURED');
   }
 
   if (error.name === 'InvalidImageFormatException' || error.name === 'InvalidDocumentException') {
-    throw new Error('Document format not supported for text extraction.');
+    throw new Error('OCR_UNSUPPORTED_FORMAT');
   }
 
   if (error.name === 'ThrottlingException') {
-    throw new Error('OCR service is temporarily busy. Please try again in a few minutes.');
+    throw new Error('OCR_SERVICE_BUSY');
   }
 
   if (error.name === 'UnrecognizedClientException' || error.name === 'InvalidSignatureException') {
-    throw new Error('OCR service credentials are invalid. Please check AWS access key and secret.');
+    throw new Error('OCR_INVALID_CREDENTIALS');
   }
 
   if (error.name === 'ExpiredToken') {
-    throw new Error('OCR service credentials have expired. Please update AWS credentials.');
+    throw new Error('OCR_CREDENTIALS_EXPIRED');
   }
 
   if (error.name === 'UnknownEndpoint') {
-    throw new Error('OCR service region configuration is invalid. Please check AWS region setting.');
+    throw new Error('OCR_INVALID_REGION');
   }
 
-  throw new Error('Unable to process document text extraction. Please try again.');
+  throw new Error('OCR_TEXT_EXTRACTION_FAILED');
 }
 
 /**
@@ -76,27 +76,27 @@ function handleGeminiError(error: any): never {
   if (error.response?.status === 400) {
     const msg = error.response.data?.error?.message || '';
     if (msg.includes('API key not valid')) {
-      throw new Error('Gemini API key is invalid. Please check configuration.');
+      throw new Error('OCR_GEMINI_INVALID_KEY');
     }
     if (msg.includes('unsupported MIME type')) {
-      throw new Error('Document format not supported by Gemini API.');
+      throw new Error('OCR_GEMINI_UNSUPPORTED_FORMAT');
     }
-    throw new Error(`Invalid request to Gemini API: ${msg || 'Unknown error'}`);
+    throw new Error('OCR_GEMINI_INVALID_REQUEST');
   }
 
   if (error.response?.status === 403) {
-    throw new Error('Gemini API access denied. Please check your API key permissions.');
+    throw new Error('OCR_GEMINI_ACCESS_DENIED');
   }
 
   if (error.response?.status === 429) {
-    throw new Error('Gemini API rate limit exceeded. Please try again in a few minutes.');
+    throw new Error('OCR_GEMINI_RATE_LIMIT');
   }
 
   if (error.response?.status === 500 || error.response?.status === 503) {
-    throw new Error('Gemini API service is temporarily unavailable. Please try again later.');
+    throw new Error('OCR_GEMINI_SERVICE_UNAVAILABLE');
   }
 
-  throw new Error('Unable to process document text extraction with Gemini. Please try again.');
+  throw new Error('OCR_GEMINI_PROCESSING_FAILED');
 }
 
 /**
@@ -104,14 +104,14 @@ function handleGeminiError(error: any): never {
  */
 function handleTesseractError(error: any): never {
   if (error.message?.includes('Invalid image format')) {
-    throw new Error('Document format not supported for text extraction.');
+    throw new Error('OCR_TESSERACT_UNSUPPORTED_FORMAT');
   }
 
   if (error.message?.includes('Image too large')) {
-    throw new Error('Document is too large for processing. Please try with a smaller file.');
+    throw new Error('OCR_TESSERACT_FILE_TOO_LARGE');
   }
 
-  throw new Error('Unable to process document text extraction with Tesseract. Please try again.');
+  throw new Error('OCR_TESSERACT_PROCESSING_FAILED');
 }
 
 /**
@@ -123,11 +123,11 @@ function handleTesseractError(error: any): never {
 export function handleMappingError(error: any, provider: MappingProvider): never {
   // Common network/timeout errors
   if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
-    throw new Error('Request timeout while processing document mapping. Please try again.');
+    throw new Error('OCR_MAPPING_TIMEOUT');
   }
 
   if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-    throw new Error('Network connection failed during document mapping. Please try again.');
+    throw new Error('OCR_MAPPING_NETWORK_ERROR');
   }
 
   // Provider-specific error handling
@@ -139,7 +139,7 @@ export function handleMappingError(error: any, provider: MappingProvider): never
       handleGeminiMappingError(error);
       break;
     default:
-      throw new Error('Unable to process document mapping. Please try again.');
+      throw new Error('OCR_MAPPING_PROCESSING_FAILED');
   }
 }
 
@@ -148,22 +148,22 @@ export function handleMappingError(error: any, provider: MappingProvider): never
  */
 function handleBedrockError(error: any): never {
   if (error.name === 'AccessDeniedException') {
-    throw new Error('Bedrock service not properly configured. Please contact support.');
+    throw new Error('OCR_BEDROCK_NOT_CONFIGURED');
   }
 
   if (error.name === 'ThrottlingException') {
-    throw new Error('Bedrock service is temporarily busy. Please try again in a few minutes.');
+    throw new Error('OCR_BEDROCK_SERVICE_BUSY');
   }
 
   if (error.name === 'ValidationException') {
-    throw new Error('Invalid request to Bedrock service. Please try again.');
+    throw new Error('OCR_BEDROCK_INVALID_REQUEST');
   }
 
   if (error.name === 'ModelNotReadyException') {
-    throw new Error('AI model is not ready. Please try again in a few minutes.');
+    throw new Error('OCR_BEDROCK_MODEL_NOT_READY');
   }
 
-  throw new Error('Unable to process document mapping with Bedrock. Please try again.');
+  throw new Error('OCR_BEDROCK_PROCESSING_FAILED');
 }
 
 /**

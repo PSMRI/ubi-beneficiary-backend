@@ -27,7 +27,9 @@ export class BedrockAdapter implements IAiMappingAdapter {
       },
     });
     
-    this.logger.log(`Bedrock mapping adapter initialized - model: ${this.config.modelId}, region: ${region}`);
+    this.logger.log(
+      `Bedrock initialized: ${this.config.modelId} (${this.config.modelType}) | Region: ${region}`
+    );
   }
 
   /**
@@ -44,14 +46,23 @@ export class BedrockAdapter implements IAiMappingAdapter {
   /**
    * Map extracted text to structured data using Bedrock AI
    */
-  async mapTextToSchema(extractedText: string, schema: Record<string, any>, docType?: string): Promise<Record<string, any> | null> {
+  async mapTextToSchema(
+    extractedText: string, 
+    schema: Record<string, any>, 
+    docType?: string,
+    customPromptTemplate?: string | null
+  ): Promise<Record<string, any> | null> {
     if (!this.isConfigured()) {
       this.logger.warn('Bedrock adapter not configured - missing credentials');
       return null;
     }
 
     try {
-      const prompt = buildOcrMappingPrompt(extractedText, schema);
+      const prompt = buildOcrMappingPrompt(extractedText, schema, customPromptTemplate);
+      if (customPromptTemplate) {
+        this.logger.debug(`Using custom prompt from vcConfiguration for Bedrock mapping`);
+      }
+      this.logger.debug(`Sending request to Bedrock (${Object.keys(schema.properties || {}).length} fields)`);
       const response = await this.invokeModel(prompt);
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'bedrock');
       
@@ -60,34 +71,72 @@ export class BedrockAdapter implements IAiMappingAdapter {
         return null;
       }
       
+      this.logger.debug(`Bedrock extracted ${Object.keys(parsedResult).length} fields`);
       return parsedResult;
     } catch (error: any) {
-      this.logger.error(`Bedrock mapping failed: ${error?.message || error}`, error?.stack);
+      this.logger.error(`Bedrock mapping failed: ${error?.message || error}`);
       handleMappingError(error, 'bedrock');
     }
   }
 
 
   /**
-   * Invoke the Bedrock Llama model
+   * Build request payload based on detected model type
+   * To add new model family: add case here + update detectModelFamily() in config
+   */
+  private buildRequest(prompt: string): any {
+    switch (this.config.modelType) {
+      case 'claude':
+        return {
+          anthropic_version: this.config.anthropicVersion || 'bedrock-2023-05-31',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+          top_p: this.config.topP,
+        };
+
+      case 'openai':
+        return {
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+          top_p: this.config.topP,
+        };
+
+      case 'llama':
+      default:
+        return {
+          prompt,
+          max_gen_len: this.config.maxGenLen,
+          temperature: this.config.temperature,
+          top_p: this.config.topP,
+        };
+    }
+  }
+
+  /**
+   * Invoke the Bedrock model
    */
   private async invokeModel(prompt: string): Promise<string> {
-    const input = {
-      prompt,
-      max_gen_len: this.config.maxGenLen,
-      temperature: this.config.temperature,
-      top_p: this.config.topP,
-    };
-
-    const command = new InvokeModelCommand({
-      modelId: this.config.modelId,
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: new TextEncoder().encode(JSON.stringify(input)),
-    });
-
-    const response = await this.client.send(command);
-    return new TextDecoder().decode(response.body);
+    try {
+      const command = new InvokeModelCommand({
+        modelId: this.config.modelId,
+        body: JSON.stringify(this.buildRequest(prompt)),
+      });
+      
+      const response = await this.client.send(command);
+      return new TextDecoder().decode(response.body);
+    } catch (error: any) {
+      this.logger.error(
+        `Bedrock API error: ${error?.message}`,
+        {
+          model: this.config.modelId,
+          type: this.config.modelType,
+          status: error?.$metadata?.httpStatusCode,
+        }
+      );
+      throw error;
+    }
   }
 
 }

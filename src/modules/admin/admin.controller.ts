@@ -8,6 +8,7 @@ import {
 	Param,
 	HttpStatus,
 	BadRequestException,
+	Query,
 } from '@nestjs/common';
 import {
 	ApiTags,
@@ -16,9 +17,16 @@ import {
 	ApiParam,
 	ApiBody,
 	ApiBearerAuth,
+	ApiQuery,
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
-import { ConfigKeyDto, CreateOrUpdateConfigDto, ConfigResponseDto } from './dto';
+import {
+	ConfigKeyDto,
+	CreateOrUpdateConfigDto,
+	ConfigResponseDto,
+	GetIssuersQueryDto,
+	GetIssuersResponseDto,
+} from './dto';
 import { AuthGuard } from '@modules/auth/auth.guard';
 import { validate } from 'class-validator';
 import { RoleGuard } from 'src/common/guards/role.guard';
@@ -32,7 +40,7 @@ import { UserRole } from 'src/common/enums/roles.enum';
 @Controller('admin')
 @ApiBearerAuth('access-token')
 export class AdminController {
-	constructor(private readonly adminService: AdminService) {}
+	constructor(private readonly adminService: AdminService) { }
 
 	/**
 	 * Create or update configuration
@@ -54,12 +62,12 @@ export class AdminController {
 				summary: 'Object Configuration',
 				value: {
 					key: 'documentTypeConfig',
-					value:{
+					value: {
 						"documentType": [
-						  "associationProof",
-						  "bankAccountProof",
-						  "birthProof",
-						  "casteProof",
+							"associationProof",
+							"bankAccountProof",
+							"birthProof",
+							"casteProof",
 						]
 					}
 				}
@@ -93,8 +101,8 @@ export class AdminController {
 			type: 'object',
 			properties: {
 				statusCode: { type: 'number', example: 400 },
-				error: { 
-					type: 'array', 
+				error: {
+					type: 'array',
 					items: { type: 'string' },
 					example: ['key must contain only letters, numbers, and underscores']
 				}
@@ -125,6 +133,24 @@ export class AdminController {
 			{ key: body.key, value: body.value },
 			req.user.keycloak_id,
 		);
+	}
+
+	/**
+	 * Get language configuration
+	 * @description Retrieves the language configuration. Public endpoint.
+	 */
+	@Get('config/languageConfig')
+	@ApiOperation({
+		summary: 'Get language configuration',
+		description: 'Retrieves the language configuration. Public endpoint.',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Configuration retrieved successfully',
+		type: ConfigResponseDto
+	})
+	async getLanguageConfig() {
+		return await this.adminService.getConfig('languageConfig');
 	}
 
 	/**
@@ -159,5 +185,106 @@ export class AdminController {
 	})
 	async getConfig(@Param() params: ConfigKeyDto) {
 		return await this.adminService.getConfig(params.key);
+	}
+
+	/**
+	 * Get available issuers from SDK
+	 * @param query Optional query parameters for filtering
+	 * @description Retrieves list of all supported issuers from the issuer SDK. Can be filtered by type (online/offline). Requires authentication.
+	 */
+	@Get('issuers')
+	@UseGuards(AuthGuard)
+	@ApiOperation({
+		summary: 'Get available issuers',
+		description: 'Fetches the list of all supported issuers from the issuer SDK. The SDK automatically discovers all available issuers. Results can be filtered by type (online or offline). Requires authentication.',
+	})
+	@ApiQuery({
+		name: 'type',
+		required: false,
+		enum: ['online', 'offline'],
+		description: 'Filter issuers by type',
+		example: 'online',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Issuers retrieved successfully',
+		type: GetIssuersResponseDto,
+		schema: {
+			example: {
+				statusCode: 200,
+				message: 'Issuers retrieved successfully',
+				data: {
+					success: true,
+					count: 3,
+					data: [
+						{
+							id: 'dhiway',
+							name: 'Dhiway',
+							type: 'online',
+							description: 'Dhiway credential verification',
+						},
+						{
+							id: 'jharseva',
+							name: 'JharSeva',
+							type: 'online',
+							description: 'JharSeva credential verification',
+						},
+						{
+							id: 'signature',
+							name: 'Signature',
+							type: 'offline',
+							description: 'Signature credential verification',
+						},
+					],
+				},
+			},
+		},
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Bad Request - Invalid type parameter',
+		schema: {
+			type: 'object',
+			properties: {
+				statusCode: { type: 'number', example: 400 },
+				message: {
+					type: 'string',
+					example: 'type must be either "online" or "offline"',
+				},
+			},
+		},
+	})
+	@ApiResponse({
+		status: 401,
+		description: 'Unauthorized - Invalid or missing authentication token',
+	})
+	@ApiResponse({
+		status: 503,
+		description: 'Service Unavailable - Issuer SDK service is not running',
+		schema: {
+			type: 'object',
+			properties: {
+				statusCode: { type: 'number', example: 503 },
+				errorMessage: {
+					type: 'string',
+					example:
+						'Issuer SDK service is unavailable. Please check if the service is running.',
+				},
+			},
+		},
+	})
+	async getIssuers(@Query() query: GetIssuersQueryDto) {
+		// Validate query parameters
+		const errors = await validate(query);
+		if (errors.length > 0) {
+			throw new BadRequestException({
+				statusCode: HttpStatus.BAD_REQUEST,
+				error: errors.map((error) =>
+					Object.values(error.constraints).join(', '),
+				),
+			});
+		}
+
+		return await this.adminService.getIssuers(query.type);
 	}
 }

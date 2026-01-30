@@ -5,8 +5,13 @@ import { TextExtractorFactory } from './factories/text-extractor.factory';
 import { QRCodeDetectorService } from './services/qr-code-detector.service';
 import { QRProcessingService } from './services/qr-processing.service';
 import { QRContentProcessorService } from './services/qr-content-processor.service';
+import { QRContentProcessorFactory } from './factories/qr-content-processor.factory';
+import { JharsevaQRContentProcessor } from './processors/jharseva-qr-content.processor';
+import { EOdishaQRContentProcessor } from './processors/eodisha-qr-content.processor';
+import { DhiwayQRContentProcessor } from './processors/dhiway-qr-content.processor';
 import { AdminModule } from '@modules/admin/admin.module';
 import { QRScanningService } from '../qr/qr-scanning.service';
+import { I18nService } from 'src/common/services/i18n.service';
 
 /**
  * OCR Module - Provides OCR text extraction services with QR code processing
@@ -66,11 +71,17 @@ import { QRScanningService } from '../qr/qr-scanning.service';
       provide: 'QR_CODE_DETECTOR',
       useClass: QRCodeDetectorService,
     },
+    // QR Content Processing services
     QRContentProcessorService,
+    QRContentProcessorFactory,
+    JharsevaQRContentProcessor,
+    EOdishaQRContentProcessor,
+    DhiwayQRContentProcessor,
     QRProcessingService,
     QRScanningService, // Added QRScanningService to providers
     OcrService,
+    I18nService,
   ],
-  exports: [OcrService, QRScanningService], // Exporting QRScanningService
+  exports: [OcrService, QRScanningService, QRContentProcessorService], // Exporting QRScanningService and QRContentProcessorService
 })
 export class OcrModule {}

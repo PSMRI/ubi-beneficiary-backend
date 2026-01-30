@@ -9,7 +9,7 @@ export class UserRolesService {
   constructor(
     @InjectRepository(UserRole)
     private readonly userRolesRepository: Repository<UserRole>,
-  ) {}
+  ) { }
 
   // Create a new user_role
   async create(createUserRoleDto: CreateUserRoleDto): Promise<UserRole> {
@@ -31,7 +31,7 @@ export class UserRolesService {
     });
 
     if (!userRole) {
-      throw new NotFoundException('UserRole not found');
+      throw new NotFoundException('USER_ROLE_NOT_FOUND');
     }
 
     Object.assign(userRole, updateUserRoleDto);
@@ -47,7 +47,7 @@ export class UserRolesService {
     });
 
     if (!userRole) {
-      throw new NotFoundException('UserRole not found');
+      throw new NotFoundException('USER_ROLE_NOT_FOUND');
     }
 
     return userRole;
@@ -66,7 +66,7 @@ export class UserRolesService {
     });
 
     if (result.affected === 0) {
-      throw new NotFoundException('UserRole not found');
+      throw new NotFoundException('USER_ROLE_NOT_FOUND');
     }
   }
 }
