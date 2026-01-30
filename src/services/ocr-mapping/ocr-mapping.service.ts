@@ -443,7 +443,8 @@ export class OcrMappingService {
     if (fieldType === 'string' || !fieldType) {
       // Check if value contains only punctuation, whitespace, or special characters
       // Allow hyphens only if they're part of a larger alphanumeric string (e.g., "A-123")
-      const hasAlphanumeric = /[a-zA-Z0-9]/.test(stringValue);
+      // Support Unicode letters and numbers (including Hindi/Devanagari, Arabic, Chinese, etc.)
+      const hasAlphanumeric = /[\p{L}\p{N}]/u.test(stringValue);
       if (!hasAlphanumeric) {
         return true; // Only punctuation/whitespace
       }
