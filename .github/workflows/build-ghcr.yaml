@@ -21,7 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # Dynamic environment selection
     environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'UBA-DEV' }}
 
     permissions:
@@ -48,13 +47,9 @@ jobs:
           echo "🏗️ Building image: $IMAGE_NAME:$TAG"
           docker build -t "$IMAGE_NAME:$TAG" .
 
-          echo "🏷️ Tagging image as latest"
           docker tag "$IMAGE_NAME:$TAG" "$IMAGE_NAME:latest"
 
-          echo "📤 Pushing image: $IMAGE_NAME:$TAG"
           docker push "$IMAGE_NAME:$TAG"
-
-          echo "📤 Pushing image: $IMAGE_NAME:latest"
           docker push "$IMAGE_NAME:latest"
 
           echo "$IMAGE_NAME:$TAG" > image.txt
