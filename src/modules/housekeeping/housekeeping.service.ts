@@ -11,6 +11,7 @@ import { UserDoc } from '@entities/user_docs.entity';
 import { User } from '@entities/user.entity';
 import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
+import { I18nService } from 'src/common/services/i18n.service';
 import axios from 'axios';
 
 @Injectable()
@@ -22,8 +23,9 @@ export class HousekeepingService {
 		private readonly userDocsRepository: Repository<UserDoc>,
 		@InjectRepository(User)
 		private readonly userRepository: Repository<User>,
-		private readonly configService: ConfigService
-	) {}
+		private readonly configService: ConfigService,
+		private readonly i18n: I18nService,
+	) { }
 
 	/**
 	 * Validate the secret key for housekeeping operations
@@ -45,7 +47,7 @@ export class HousekeepingService {
 		try {
 			// Validate secret key
 			if (!this.validateSecretKey(secretKey)) {
-				throw new UnauthorizedException('Invalid secret key');
+				throw new UnauthorizedException('HOUSEKEEPING_INVALID_SECRET');
 			}
 
 			this.logger.log('Starting watcher registration for existing documents');
@@ -91,7 +93,7 @@ export class HousekeepingService {
 			const batchSize = 10;
 			for (let i = 0; i < documents.length; i += batchSize) {
 				const batch = documents.slice(i, i + batchSize);
-				
+
 				// Process batch concurrently
 				const batchPromises = batch.map(async (doc) => {
 					try {
@@ -138,9 +140,10 @@ export class HousekeepingService {
 
 		} catch (error) {
 			this.logger.error('Error in registerWatchersForExistingDocuments:', error);
+			const errorMessage = error.message || this.i18n.translateError('HOUSEKEEPING_WATCHER_REGISTRATION_FAILED', 'en');
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message || 'Failed to register watchers',
+				errorMessage,
 			});
 		}
 	}
@@ -181,13 +184,21 @@ export class HousekeepingService {
 				};
 			}
 
+			// Check if wallet registration is enabled
+			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
+
 			// Get wallet token from user
 			const walletToken = user.walletToken;
 			if (!walletToken) {
+				const errorMessage = isWalletRegistrationEnabled
+					? 'No wallet token found for user'
+					: 'Wallet registration is disabled - skipping watcher registration';
+
+				this.logger.warn(`Skipping watcher registration for document ${doc.doc_id}: ${errorMessage}`);
 				return {
 					success: false,
 					docId: doc.doc_id,
-					error: 'No wallet token found for user',
+					error: errorMessage,
 				};
 			}
 
@@ -257,7 +268,7 @@ export class HousekeepingService {
 		try {
 			// Validate secret key
 			if (!this.validateSecretKey(secretKey)) {
-				throw new UnauthorizedException('Invalid secret key');
+				throw new UnauthorizedException('HOUSEKEEPING_INVALID_SECRET');
 			}
 
 			if (operation === 'register_watchers') {
@@ -270,9 +281,10 @@ export class HousekeepingService {
 			});
 		} catch (error) {
 			this.logger.error('Error in getMigrationStatus:', error);
+			const errorMessage = error.message || this.i18n.translateError('HOUSEKEEPING_MIGRATION_STATUS_FAILED', 'en');
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: error.message || 'Failed to get migration status',
+				errorMessage,
 			});
 		}
 	}
@@ -310,9 +322,10 @@ export class HousekeepingService {
 
 		} catch (error) {
 			this.logger.error('Error getting watcher registration status:', error);
+			const errorMessage = this.i18n.translateError('HOUSEKEEPING_WATCHER_STATUS_FAILED', 'en');
 			return new ErrorResponse({
 				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-				errorMessage: 'Failed to get watcher registration status',
+				errorMessage,
 			});
 		}
 	}

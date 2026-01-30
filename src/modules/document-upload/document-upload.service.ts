@@ -8,10 +8,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 import { validateFileContent } from '../../common/helper/fileValidation';
-import { FILE_UPLOAD_LIMITS } from '../../common/constants/upload.constants';
+import { UPLOAD_CONFIG } from '../../config/upload.config';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'node:path';
 import { DocumentMetadata, UploadResult } from './interfaces';
+import { I18nService } from '../../common/services/i18n.service';
 
 /**
  * Generic document upload service
@@ -26,19 +27,24 @@ export class DocumentUploadService {
     @Inject('FileStorageService')
     private readonly fileStorageService: IFileStorageService,
     private readonly configService: ConfigService,
-  ) {}
+    private readonly i18n: I18nService,
+  ) { }
 
   /**
    * Generic file upload method - can be used by any module
    * @param file The file to upload
    * @param metadata Document metadata (type, subtype, name, etc.)
    * @param ownerId The ID of the entity that owns this document (user_id, org_id, etc.)
+   * @param maxFileSize Maximum file size in bytes
+   * @param isPublic Whether the file should be publicly accessible (default: false)
    * @returns Upload result with file path and metadata
    */
   async uploadFile(
     file: Express.Multer.File,
     metadata: DocumentMetadata,
     ownerId: string,
+    maxFileSize?: number,
+    isPublic: boolean = false,
   ): Promise<UploadResult> {
     let uploadedPath: string | null = null;
 
@@ -51,24 +57,37 @@ export class DocumentUploadService {
 
       // Extract and validate file metadata
       const { fileExtension, docDatatype } =
-        this.extractAndValidateFileMetadata(file);
+        this.extractAndValidateFileMetadata(file, maxFileSize);
 
-      // Build file key and upload
-      const fileKey = this.buildFileKey(ownerId, fileExtension);
+      // Build file key and upload - pass metadata to determine if it's a profile picture
+      const fileKey = this.buildFileKey(ownerId, fileExtension, metadata);
       uploadedPath = await this.fileStorageService.uploadFile(
         fileKey,
         file.buffer,
-        false,
+        isPublic,
       );
 
       if (!uploadedPath) {
-        throw new InternalServerErrorException('Failed to upload file to storage');
+        throw new InternalServerErrorException('FILE_UPLOAD_FAILED');
       }
 
       this.logger.log(`File uploaded successfully to: ${uploadedPath}`);
 
+      // For profile pictures, return only the relative path for database storage
+      const isProfilePicture = metadata?.docType === 'profile' && metadata?.docSubType === 'picture';
+      let dbFilePath = uploadedPath;
+
+      if (isProfilePicture) {
+        const profilePicturePrefix = this.configService.get<string>(
+          'AWS_S3_PROFILE_PICTURE_PREFIX',
+          'user-profile-pictures',
+        );
+        // Remove the profile picture prefix from the path for database storage
+        dbFilePath = uploadedPath.replace(`${profilePicturePrefix}/`, '');
+      }
+
       return {
-        filePath: uploadedPath,
+        filePath: dbFilePath,
         fileExtension,
         docDatatype,
         uploadedAt: new Date(),
@@ -103,11 +122,23 @@ export class DocumentUploadService {
   }
 
   /**
-   * Generate a temporary download URL (for S3) or return path (for local)
+   * Generate a permanent public download URL (for S3) or return path (for local)
+   * Note: File must be uploaded as public for this URL to work
    * @param filePath Path to the file
-   * @returns Download URL or file path
+   * @returns Public URL or file path
    */
   async generateDownloadUrl(filePath: string): Promise<string | null> {
+    // Use generatePublicUrl for permanent URLs that can be reused
+    return this.generatePublicUrl(filePath);
+  }
+
+  /**
+   * Generate a permanent public URL (for S3) or return path (for local)
+   * Note: File must be uploaded as public for this URL to work
+   * @param filePath Path to the file
+   * @returns Public URL or file path
+   */
+  async generatePublicUrl(filePath: string): Promise<string | null> {
     if (!filePath) {
       return null;
     }
@@ -119,16 +150,41 @@ export class DocumentUploadService {
 
     if (storageProvider === 's3') {
       try {
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-        return (
-          (await this.fileStorageService.generateTemporaryUrl?.(
-            filePath,
-            expiresAt,
-          )) || null
-        );
+        // Type assertion to access generatePublicUrl if it exists
+        const storageService = this.fileStorageService as any;
+        let publicUrl: string | null = null;
+        
+        if (storageService.generatePublicUrl) {
+          publicUrl = await storageService.generatePublicUrl(filePath);
+        } else {
+          this.logger.warn(
+            `generatePublicUrl not available on storage service, falling back to manual URL construction for ${filePath}`,
+          );
+        }
+        
+        // Fallback: manually construct URL if library method didn't return one
+        if (!publicUrl) {
+          const bucketName = process.env.AWS_S3_BUCKET_NAME;
+          const region = process.env.AWS_S3_REGION;
+          
+          if (bucketName && region) {
+            // Construct URL: https://bucket-name.s3.region.amazonaws.com/key
+            // For us-east-1, use s3.amazonaws.com; for other regions use s3.region.amazonaws.com
+            const s3Domain = region === 'us-east-1' 
+              ? 's3.amazonaws.com'
+              : `s3.${region}.amazonaws.com`;
+            
+            // URL encode the key to handle special characters, but preserve slashes
+            const encodedKey = encodeURIComponent(filePath).replaceAll('%2F', '/');
+            
+            publicUrl = `https://${bucketName}.${s3Domain}/${encodedKey}`;
+          }
+        }
+        
+        return publicUrl;
       } catch (error) {
         this.logger.error(
-          `Failed to generate pre-signed URL for ${filePath}:`,
+          `Failed to generate public URL for ${filePath}:`,
           error,
         );
         return null;
@@ -146,9 +202,8 @@ export class DocumentUploadService {
    */
   validateFileSignature(buffer: Buffer, filename: string): void {
     if (!buffer || buffer.length < 4) {
-      throw new BadRequestException(
-        'Invalid file: file is too small or corrupted',
-      );
+      const errorMessage = this.i18n.t('validation.FILE_TOO_SMALL_OR_CORRUPTED');
+      throw new BadRequestException(errorMessage);
     }
 
     const firstBytes = buffer.subarray(0, 8);
@@ -184,9 +239,10 @@ export class DocumentUploadService {
 
     // If none of the signatures match, throw an error
     const detectedHex = firstBytes.subarray(0, 4).toString('hex').toUpperCase();
-    throw new BadRequestException(
-      `Invalid file signature for ${filename}. Expected PDF, JPEG, or PNG but detected signature: ${detectedHex}`,
-    );
+    const errorMessage = this.i18n.t('validation.FILE_INVALID_SIGNATURE', {
+      args: { filename, signature: detectedHex }
+    });
+    throw new BadRequestException(errorMessage);
   }
 
   // Private helper methods
@@ -196,14 +252,17 @@ export class DocumentUploadService {
    */
   private validateFilePresence(file: Express.Multer.File): void {
     if (!file?.buffer || !file?.originalname) {
-      throw new BadRequestException('No file uploaded');
+      throw new BadRequestException('FILE_UPLOAD_NO_FILE');
     }
   }
 
   /**
    * Extract and validate file metadata (extension, type, size)
    */
-  private extractAndValidateFileMetadata(file: Express.Multer.File): {
+  private extractAndValidateFileMetadata(
+    file: Express.Multer.File,
+    maxFileSize?: number,
+  ): {
     fileExtension: string;
     docDatatype: string;
   } {
@@ -219,11 +278,12 @@ export class DocumentUploadService {
       !allowedExts.has(fileExtension) ||
       (file.mimetype && !allowedMimes.has(file.mimetype))
     ) {
-      throw new BadRequestException('Unsupported file type');
+      throw new BadRequestException('FILE_UPLOAD_UNSUPPORTED_TYPE');
     }
 
-    if (file.size && file.size > FILE_UPLOAD_LIMITS.MAX_FILE_SIZE) {
-      throw new BadRequestException('File too large');
+    const fileSizeLimit = maxFileSize || UPLOAD_CONFIG.maxFileSize;
+    if (file.size && file.size > fileSizeLimit) {
+      throw new BadRequestException('FILE_UPLOAD_FILE_TOO_LARGE');
     }
 
     // Validate file signature
@@ -249,11 +309,25 @@ export class DocumentUploadService {
   /**
    * Build a unique file key for storage
    */
-  private buildFileKey(ownerId: string, fileExtension: string): string {
+  private buildFileKey(ownerId: string, fileExtension: string, metadata?: DocumentMetadata): string {
     const filePrefix = this.configService.get<string>(
       'FILE_PREFIX_ENV',
       'local',
     );
+
+    // Check if this is a profile picture upload
+    const isProfilePicture = metadata?.docType === 'profile' && metadata?.docSubType === 'picture';
+
+    if (isProfilePicture) {
+      const profilePicturePrefix = this.configService.get<string>(
+        'AWS_S3_PROFILE_PICTURE_PREFIX',
+        'user-profile-pictures',
+      );
+      // Upload with profile picture prefix but return relative path for database
+      return `${profilePicturePrefix}/${filePrefix}/${ownerId}/${uuidv4()}${fileExtension}`;
+    }
+
+    // Default behavior for all other documents
     return `${filePrefix}/${ownerId}/${uuidv4()}${fileExtension}`;
   }
 
@@ -270,4 +344,5 @@ export class DocumentUploadService {
     }
   }
 }
+
 

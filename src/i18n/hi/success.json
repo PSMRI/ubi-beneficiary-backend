@@ -1,0 +1,22 @@
+{
+    "_comment_01": "=== AUTHENTICATION & AUTHORIZATION SUCCESS ===",
+    "AUTH_LOGOUT_SUCCESS": "सफलतापूर्वक लॉग आउट हुआ",
+    "AUTH_PASSWORD_UPDATED_SUCCESSFULLY": "पासवर्ड सफलतापूर्वक अपडेट किया गया",
+    "AUTH_REGISTRATION_SUCCESS": "आपका खाता सफलतापूर्वक बनाया गया है",
+    "_comment_02": "=== USER MANAGEMENT SUCCESS ===",
+    "USER_CREATED": "उपयोगकर्ता सफलतापूर्वक बनाया गया",
+    "USER_UPDATED": "उपयोगकर्ता सफलतापूर्वक अपडेट किया गया",
+    "USER_PROFILE_UPDATED": "प्रोफ़ाइल सफलतापूर्वक अपडेट की गई",
+    "USER_FETCHED": "उपयोगकर्ता विवरण सफलतापूर्वक प्राप्त किए गए",
+    "USER_APPLICATION_UPDATED": "आवेदन सफलतापूर्वक अपडेट किया गया",
+    "USER_APPLICATION_SUBMITTED": "आवेदन सफलतापूर्वक जमा किया गया",
+    "_comment_03": "=== DOCUMENT MANAGEMENT SUCCESS ===",
+    "DOCUMENT_UPLOADED": "दस्तावेज़ सफलतापूर्वक अपलोड किया गया",
+    "DOCUMENT_DELETED": "दस्तावेज़ सफलतापूर्वक हटाया गया",
+    "DOCUMENT_UPLOAD_SUCCESS": "दस्तावेज़ सफलतापूर्वक अपलोड किया गया",
+    "DOCUMENT_UPDATE_SUCCESS": "दस्तावेज़ सफलतापूर्वक अपडेट किया गया",
+    "_comment_04": "=== HOUSEKEEPING SUCCESS ===",
+    "HOUSEKEEPING_WATCHER_REGISTERED": "वॉचर सफलतापूर्वक पंजीकृत किया गया",
+    "_comment_05": "=== GENERAL APPLICATION SUCCESS ===",
+    "DATA_RETRIEVED": "डेटा सफलतापूर्वक प्राप्त किया गया"
+}

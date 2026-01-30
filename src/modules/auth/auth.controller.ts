@@ -53,7 +53,7 @@ export class AuthController {
     description: 'Register user with OTR Certificate document. All user data (name, phone) is extracted from the certificate via OCR.',
     schema: {
       type: 'object',
-      required: ['docType', 'docSubType', 'file'],
+      required: ['docType', 'docSubType', 'docName', 'file'],
       properties: {
         docType: {
           type: 'string',
@@ -93,7 +93,7 @@ export class AuthController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad Request - Required fields could not be extracted from certificate or invalid data',
+    description: 'Bad Request - Document type mismatch, required fields could not be extracted from certificate, or invalid data',
   })
   @ApiResponse({
     status: 409,
@@ -125,7 +125,8 @@ export class AuthController {
   @Post('/logout')
   @UsePipes(ValidationPipe)
   logout(@Req() req: Request) {
-    return this.authService.logout(req);
+    const locale = req.headers['accept-language'];
+    return this.authService.logout(req, locale);
   }
 
   @Post('/update-password')

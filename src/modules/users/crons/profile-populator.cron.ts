@@ -43,15 +43,15 @@ export default class ProfilePopulatorCron {
     }
   }
 
-  @Cron('*/5 * * * *')
-  async populateProfile() {
-    try {
-      this.logger.log("Profile Populator CRON started " + new Date());
-      const users : User[] = await this.getUsers();
-      await this.profilePopulator.populateProfile(users);
-    } catch (error) {
-      this.logger.error("Error in 'Profile Populator CRON': ", error);
-      throw new Error("Error in 'Profile Populator CRON': " + error);
-    }
-  }
+  // @Cron('*/5 * * * *')
+  // async populateProfile() {
+  //   try {
+  //     this.logger.log("Profile Populator CRON started " + new Date());
+  //     const users : User[] = await this.getUsers();
+  //     await this.profilePopulator.populateProfile(users);
+  //   } catch (error) {
+  //     this.logger.error("Error in 'Profile Populator CRON': ", error);
+  //     throw new Error("Error in 'Profile Populator CRON': " + error);
+  //   }
+  // }
 }

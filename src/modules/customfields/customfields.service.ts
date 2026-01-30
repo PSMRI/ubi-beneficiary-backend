@@ -23,6 +23,7 @@ import { QueryFieldsDto } from './dto/query-fields.dto';
 import { AdminService } from '../admin/admin.service';
 import { FieldEncryptionHelper } from './helpers/field-encryption.helper';
 import { FieldValidationHelper } from './helpers/field-validation.helper';
+import { I18nService } from 'src/common/services/i18n.service';
 
 /**
  * Service for managing custom fields and field values
@@ -42,6 +43,7 @@ export class CustomFieldsService {
 		private readonly adminService: AdminService,
 		private readonly fieldEncryptionHelper: FieldEncryptionHelper,
 		private readonly fieldValidationHelper: FieldValidationHelper,
+		private readonly i18n: I18nService,
 	) { }
 
 	/**
@@ -224,20 +226,25 @@ export class CustomFieldsService {
 
 		if (isEnabling) {
 			if (!this.canEnableEncryption(field, existingValuesCount > 0)) {
-				throw new BadRequestException(
-					`Cannot enable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
-				);
+				const errorMessage = this.i18n.translateError('FIELD_CANNOT_ENABLE_ENCRYPTION_WITH_VALUES', 'en', {
+					name: field.name,
+					count: existingValuesCount
+				});
+				throw new BadRequestException(errorMessage);
 			}
 		} else if (isDisabling) {
 			if (!this.canDisableEncryption(field, existingValuesCount > 0)) {
 				if (existingValuesCount > 0) {
-					throw new BadRequestException(
-						`Cannot disable encryption for field '${field.name}' because it has ${existingValuesCount} existing values.`
-					);
+					const errorMessage = this.i18n.translateError('FIELD_CANNOT_DISABLE_ENCRYPTION_WITH_VALUES', 'en', {
+						name: field.name,
+						count: existingValuesCount
+					});
+					throw new BadRequestException(errorMessage);
 				} else {
-					throw new BadRequestException(
-						`Cannot disable encryption for field '${field.name}'. Field is not currently encrypted.`
-					);
+					const errorMessage = this.i18n.translateError('FIELD_NOT_ENCRYPTED_CANNOT_DISABLE', 'en', {
+						name: field.name
+					});
+					throw new BadRequestException(errorMessage);
 				}
 			}
 		}
@@ -254,11 +261,11 @@ export class CustomFieldsService {
 		// Check if field is mapped in settings before proceeding
 		try {
 			const mappingConfig = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
-			
+
 			if (mappingConfig?.value) {
 				const mappings = Array.isArray(mappingConfig.value) ? mappingConfig.value : [];
 				const fieldMapping = mappings.find((mapping: any) => mapping.fieldId === fieldId);
-				
+
 				if (fieldMapping) {
 					throw new ForbiddenException(
 						`Field "${fieldMapping.fieldName}" (ID: ${fieldId}) is mapped to document fields. Please remove the mapping from settings before deleting this field.`
@@ -270,7 +277,7 @@ export class CustomFieldsService {
 			if (error instanceof ForbiddenException) {
 				throw error;
 			}
-			
+
 			// Log other errors but continue with deletion
 			this.logger.warn(`Error checking field mappings: ${error.message}`);
 		}
@@ -312,7 +319,7 @@ export class CustomFieldsService {
 	 * @param customFields Array of custom field data
 	 * @returns Array of created/updated field values
 	 */
-	 async saveCustomFields(
+	async saveCustomFields(
 		itemId: string,
 		context: FieldContext,
 		customFields: CustomFieldDto[]
@@ -338,9 +345,10 @@ export class CustomFieldsService {
 		if (fields.length !== fieldIds.length) {
 			const foundIds = fields.map((f) => f.fieldId);
 			const missingIds = fieldIds.filter((id) => !foundIds.includes(id));
-			throw new BadRequestException(
-				`Invalid field IDs: ${missingIds.join(', ')}`
-			);
+			const errorMessage = this.i18n.translateError('FIELD_INVALID_IDS_LIST', 'en', {
+				ids: missingIds.join(', ')
+			});
+			throw new BadRequestException(errorMessage);
 		}
 
 		// Get all existing field values for this itemId
@@ -404,7 +412,104 @@ export class CustomFieldsService {
 		);
 		return savedValues;
 
-	} 
+	}
+
+	/**
+	 * Update specific custom fields without deleting others (merge mode)
+	 * @param itemId Entity ID (UUID)
+	 * @param context Entity context
+	 * @param customFields Array of custom field data to update
+	 * @returns Array of updated field values
+	 * @description Only updates the provided fields, preserves all other existing fields. More efficient than saveCustomFields for partial updates.
+	 */
+	async updateCustomFields(
+		itemId: string,
+		context: FieldContext,
+		customFields: CustomFieldDto[]
+	): Promise<FieldValue[]> {
+		this.logger.debug(
+			`Updating custom fields (merge mode) for item: ${itemId}, context: ${context}`
+		);
+
+		if (!customFields || customFields.length === 0) {
+			// In merge mode, empty array means no updates
+			return [];
+		}
+
+		// Validate that all fields exist and belong to the correct context
+		const fieldIds = customFields.map((cf) => cf.fieldId);
+		const fields = await this.fieldRepository.find({
+			where: {
+				fieldId: In(fieldIds),
+				context,
+			},
+		});
+
+		if (fields.length !== fieldIds.length) {
+			const foundIds = fields.map((f) => f.fieldId);
+			const missingIds = fieldIds.filter((id) => !foundIds.includes(id));
+			const errorMessage = this.i18n.translateError('FIELD_INVALID_IDS_LIST', 'en', {
+				ids: missingIds.join(', ')
+			});
+			throw new BadRequestException(errorMessage);
+		}
+
+		// Only fetch existing values for the fields being updated (not all fields)
+		const existingValues = await this.fieldValueRepository.find({
+			where: {
+				itemId,
+				fieldId: In(fieldIds) // Only fetch fields we're updating
+			},
+		});
+
+		const savedValues: FieldValue[] = [];
+
+		// Process only the incoming fields (no deletion of other fields)
+		for (const customField of customFields) {
+			const field = fields.find((f) => f.fieldId === customField.fieldId);
+			if (!field) continue;
+
+			// If exists, update; If not, insert
+			let fieldValue = existingValues.find(
+				(fv) => fv.fieldId === customField.fieldId && fv.itemId === itemId
+			);
+
+			if (!fieldValue) {
+				fieldValue = this.fieldValueRepository.create({
+					fieldId: customField.fieldId,
+					itemId,
+				});
+			}
+
+			fieldValue.field = field;
+			fieldValue.metadata = customField.metadata;
+
+			// Always validate first using centralized validation service
+			this.fieldValidationHelper.validateFieldValue(
+				customField.value,
+				field,
+				true // Throw exception on validation error
+			);
+
+			// Handle value setting using centralized serialization
+			if (field.isEncrypted()) {
+				const encryptedValue = this.fieldEncryptionHelper.encryptFieldValue(customField.value, field);
+				fieldValue.setEncryptedValue(encryptedValue);
+			} else {
+				// Use centralized serialization for consistency
+				const serializedValue = this.fieldValidationHelper.serializeValue(customField.value, field.type);
+				fieldValue.value = serializedValue;
+			}
+
+			const savedValue = await this.fieldValueRepository.save(fieldValue);
+			savedValues.push(savedValue);
+		}
+
+		this.logger.log(
+			`Updated ${savedValues.length} custom field values for item: ${itemId} (merge mode)`
+		);
+		return savedValues;
+	}
 
 	/**
 	 * Get custom fields for an entity
@@ -412,9 +517,10 @@ export class CustomFieldsService {
 	 * @param context Entity context
 	 * @returns Array of custom field response DTOs
 	 */
-	 async getCustomFields(
+	async getCustomFields(
 		itemId: string,
-		context: FieldContext
+		context: FieldContext,
+		locale?: string
 	): Promise<CustomFieldResponseDto[]> {
 		this.logger.debug(
 			`Getting custom fields for item: ${itemId}, context: ${context}`
@@ -422,9 +528,9 @@ export class CustomFieldsService {
 
 		// Get ALL fields for this context (excluding hidden fields)
 		const allFields = await this.fieldRepository.find({
-			where: { 
+			where: {
 				context,
-				isHidden: false 
+				isHidden: false
 			},
 			order: {
 				ordering: 'ASC'
@@ -454,15 +560,18 @@ export class CustomFieldsService {
 			// Get value using centralized deserialization
 			let decryptedValue = null;
 			if (fieldValue) {
-				decryptedValue = field.isEncrypted() 
-									? this.fieldEncryptionHelper.decryptFieldValue(fieldValue.value, field)
-				: this.fieldValidationHelper.deserializeValue(fieldValue.value, field.type);
+				decryptedValue = field.isEncrypted()
+					? this.fieldEncryptionHelper.decryptFieldValue(fieldValue.value, field)
+					: this.fieldValidationHelper.deserializeValue(fieldValue.value, field.type);
 			}
+
+			// Localize label
+			const localizedLabel = this.i18n.getLocalizedLabel(field.label, locale);
 
 			const response: CustomFieldResponseDto = {
 				fieldId: field.fieldId,
 				name: field.name,
-				label: field.label,
+				label: localizedLabel,
 				type: field.type,
 				value: decryptedValue,
 				fieldParams: field.fieldParams,
@@ -480,7 +589,7 @@ export class CustomFieldsService {
 			`Retrieved ${responseFields.length} custom fields for item: ${itemId} (${fieldValueMap.size} have values)`
 		);
 		return responseFields;
-	} 
+	}
 
 	/**
 	 * Delete custom fields for an entity
@@ -609,43 +718,43 @@ export class CustomFieldsService {
 		return await this.fieldRepository.findOne({ where: { name, context } });
 	}
 
-		/**
-	 * Check if a field can have encryption enabled
+	/**
+ * Check if a field can have encryption enabled
+ * @param field The field to check
+ * @param hasExistingValues Whether the field has existing values
+ * @returns true if encryption can be enabled
+ */
+	canEnableEncryption(field: Field, hasExistingValues: boolean): boolean {
+		if (field.isEncrypted()) {
+			return false; // Already encrypted
+		}
+
+		if (hasExistingValues) {
+			return false; // Cannot enable encryption for fields with existing values
+		}
+
+		return true;
+	}
+
+	/**
+	 * Check if a field can have encryption disabled
 	 * @param field The field to check
 	 * @param hasExistingValues Whether the field has existing values
-	 * @returns true if encryption can be enabled
+	 * @returns true if encryption can be disabled
 	 */
-		canEnableEncryption(field: Field, hasExistingValues: boolean): boolean {
-			if (field.isEncrypted()) {
-				return false; // Already encrypted
-			}
-	
-			if (hasExistingValues) {
-				return false; // Cannot enable encryption for fields with existing values
-			}
-	
-			return true;
+	canDisableEncryption(field: Field, hasExistingValues: boolean): boolean {
+		// Encryption can only be disabled if the field is currently encrypted
+		if (!field.isEncrypted()) {
+			return false; // Not encrypted, so nothing to disable
 		}
-	
-		/**
-		 * Check if a field can have encryption disabled
-		 * @param field The field to check
-		 * @param hasExistingValues Whether the field has existing values
-		 * @returns true if encryption can be disabled
-		 */
-		canDisableEncryption(field: Field, hasExistingValues: boolean): boolean {
-			// Encryption can only be disabled if the field is currently encrypted
-			if (!field.isEncrypted()) {
-				return false; // Not encrypted, so nothing to disable
-			}
-	
-			// Encryption can only be disabled if there are no existing values
-			if (hasExistingValues) {
-				return false; // Cannot disable encryption for fields with existing values
-			}
-	
-			return true; // Can disable encryption if no existing values
+
+		// Encryption can only be disabled if there are no existing values
+		if (hasExistingValues) {
+			return false; // Cannot disable encryption for fields with existing values
 		}
+
+		return true; // Can disable encryption if no existing values
+	}
 
 
 }

@@ -5,7 +5,6 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { ConfigService } from '@nestjs/config';
 import { KeycloakService } from '@services/keycloak/keycloak.service';
-import { UserService } from '@modules/users/users.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '@entities/user.entity';
 import { UserDoc } from '@entities/user_docs.entity';
@@ -24,11 +23,14 @@ import { DocumentUploadModule } from '@modules/document-upload/document-upload.m
 import { OcrMappingModule } from '@services/ocr-mapping/ocr-mapping.module';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { VcFieldsService } from '../../common/helper/vcFieldService';
+import { VcAdaptersModule } from '@services/vc-adapters/vc-adapters.module';
+import { UserModule } from '@modules/users/users.module';
 
 @Module({
   imports: [
     HttpModule,
     KeycloakModule,
+    UserModule,
     TypeOrmModule.forFeature([
       User,
       UserDoc,
@@ -41,13 +43,13 @@ import { VcFieldsService } from '../../common/helper/vcFieldService';
     AdminModule,
     DocumentUploadModule,
     OcrMappingModule,
+    VcAdaptersModule,
   ],
   controllers: [AuthController],
   providers: [
     AuthService,
     ConfigService,
     KeycloakService,
-    UserService,
     EncryptionService,
     LoggerService,
     ProfilePopulator,
@@ -56,6 +58,6 @@ import { VcFieldsService } from '../../common/helper/vcFieldService';
     ProxyService,
     VcFieldsService,
   ],
-  exports: [AuthService, UserService, EncryptionService, WalletService, RoleGuard],
+  exports: [AuthService, EncryptionService, WalletService, RoleGuard],
 })
 export class AuthModule {}

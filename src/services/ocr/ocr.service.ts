@@ -11,6 +11,7 @@ import { IFileStorageService } from '@services/storage-providers/file-storage.se
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { QRProcessingService } from './services/qr-processing.service';
 import { SUPPORTED_OCR_TYPES } from './constants/mime-types.constants';
+import { I18nService } from 'src/common/services/i18n.service';
 
 /**
  * OCR Service for document text extraction
@@ -27,6 +28,7 @@ export class OcrService {
     private readonly fileStorageService: IFileStorageService,
     private readonly configService: ConfigService,
     private readonly qrProcessingService: QRProcessingService,
+    private readonly i18n: I18nService,
   ) {
     this.logger.log(
       `OCR Service initialized with provider: ${this.textExtractor.getProviderName()}`,
@@ -49,14 +51,16 @@ export class OcrService {
     try {
       // Validate file buffer
       if (!fileBuffer || fileBuffer.length === 0) {
-        throw new BadRequestException('File buffer is empty or invalid');
+        throw new BadRequestException('OCR_FILE_BUFFER_EMPTY');
       }
 
       // Check if file type is supported
       if (!this.textExtractor.supportsFileType(mimeType)) {
-        throw new BadRequestException(
-          `File type '${mimeType}' is not supported by ${this.textExtractor.getProviderName()}`,
-        );
+        const errorMessage = this.i18n.translateError('OCR_FILE_TYPE_NOT_SUPPORTED', 'en', {
+          mimeType,
+          providerName: this.textExtractor.getProviderName()
+        });
+        throw new BadRequestException(errorMessage);
       }
 
       this.logger.log(
@@ -73,7 +77,7 @@ export class OcrService {
       // If QR processing found a document, extract text from the downloaded document
       if (qrProcessingResult?.downloadedDocument) {
         this.logger.log('QR code found with document URL - processing downloaded document');
-        
+
         const qrResult = await this.textExtractor.extractText(
           qrProcessingResult.downloadedDocument.buffer,
           qrProcessingResult.downloadedDocument.mimeType,
@@ -89,7 +93,7 @@ export class OcrService {
       // Return the QR content as text without trying to OCR the image
       if (qrProcessingResult?.qrCodeDetected && qrProcessingResult?.qrCodeContent) {
         this.logger.log('QR code detected with data content (no document URL) - returning QR content');
-        
+
         return {
           fullText: qrProcessingResult.qrCodeContent,
           confidence: 100, // QR detection is certain
@@ -105,7 +109,7 @@ export class OcrService {
       // Check if QR processing was required but failed
       if (qrProcessingResult?.error && qrProcessingResult?.isRequired) {
         this.logger.error(`QR processing failed for required document: ${qrProcessingResult.error}`);
-        
+
         // Provide user-friendly error messages based on error type
         let userMessage = '';
         if (qrProcessingResult.errorType === 'QR_NOT_FOUND') {
@@ -115,8 +119,8 @@ export class OcrService {
         } else {
           userMessage = 'This document requires a valid QR code for processing';
         }
-        
-        throw new BadRequestException(userMessage);
+
+        throw new BadRequestException('OCR_TEXT_EXTRACTION_FAILED');
       }
 
       // Log QR processing issues but don't fail - allow fallback to original document
@@ -160,14 +164,16 @@ export class OcrService {
     try {
       // Validate file buffer
       if (!fileBuffer || fileBuffer.length === 0) {
-        throw new BadRequestException('File buffer is empty or invalid');
+        throw new BadRequestException('OCR_FILE_BUFFER_EMPTY');
       }
 
       // Check if file type is supported
       if (!this.textExtractor.supportsFileType(mimeType)) {
-        throw new BadRequestException(
-          `File type '${mimeType}' is not supported by ${this.textExtractor.getProviderName()}`,
-        );
+        const errorMessage = this.i18n.translateError('OCR_FILE_TYPE_NOT_SUPPORTED', 'en', {
+          mimeType,
+          providerName: this.textExtractor.getProviderName()
+        });
+        throw new BadRequestException(errorMessage);
       }
 
       this.logger.log(
@@ -251,9 +257,8 @@ export class OcrService {
       return await this.extractTextFromS3(filePath, mimeType);
     } else {
       // For local storage, you would read the file from disk
-      throw new BadRequestException(
-        'Local file extraction not implemented yet. Use extractTextFromBuffer instead.',
-      );
+      const errorMessage = this.i18n.translateError('OCR_LOCAL_EXTRACTION_NOT_IMPLEMENTED', 'en');
+      throw new BadRequestException(errorMessage);
     }
   }
 

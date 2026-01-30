@@ -1,15 +1,15 @@
 import {
-  HttpStatus,
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-  InternalServerErrorException,
-  Logger,
-  BadRequestException,
-  Inject,
+	HttpStatus,
+	Injectable,
+	NotFoundException,
+	UnauthorizedException,
+	InternalServerErrorException,
+	Logger,
+	BadRequestException,
+	Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository, QueryRunner, In, Not } from 'typeorm';
+import { ILike, Repository, QueryRunner, In, Not, IsNull } from 'typeorm';
 import { User } from '../../entity/user.entity';
 import { CreateUserDocDTO } from './dto/user_docs.dto';
 import { UserDoc } from '@entities/user_docs.entity';
@@ -28,2157 +28,4808 @@ import { AdminService } from '@modules/admin/admin.service';
 import axios from 'axios';
 import { FieldContext } from '@modules/customfields/entities/field.entity';
 import { ConfigService } from '@nestjs/config';
+import { UPLOAD_CONFIG } from '../../config/upload.config';
 import { ProxyService } from '@services/proxy/proxy.service';
 import { v4 as uuidv4 } from 'uuid';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { IFileStorageService } from '@services/storage-providers/file-storage.service.interface';
 import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
+import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { OcrService } from '@services/ocr/ocr.service';
 import { OcrMappingService } from '@services/ocr-mapping/ocr-mapping.service';
-import { VcFieldsService } from '../../common/helper/vcFieldService';
+import { VcFieldsService, VcFields } from '../../common/helper/vcFieldService';
+import { VcAdapterFactory } from '@services/vc-adapters/vc-adapter.factory';
+import * as stringSimilarity from 'string-similarity';
+import { I18nService } from 'src/common/services/i18n.service';
+import { VcProcessingService } from './services/vc-processing.service';
+import { QRContentProcessorService } from '@services/ocr/services/qr-content-processor.service';
+import { UploadDocumentQrDto } from './dto/upload-document-qr.dto';
+import { DocumentValidationService } from '@services/document-validation/document-validation.service';
 
 type StatusUpdateInfo = {
-  attempted: boolean;
-  success: boolean;
-  processedCount: number;
-  error: string | null;
-  skipped?: boolean;
-  skipReason?: string | null;
+	attempted: boolean;
+	success: boolean;
+	processedCount: number;
+	error: string | null;
+	skipped?: boolean;
+	skipReason?: string | null;
 };
+
+interface UserRequest {
+	user?: {
+		keycloak_id?: string;
+	};
+}
+
+interface CustomField {
+	name: string;
+	value: any;
+}
+
+interface UserDocument {
+	doc_path: string;
+	doc_subtype: string;
+	is_uploaded?: boolean;
+	download_url?: string;
+}
+
+interface UserResponseData {
+	user_id: string;
+	firstName: string;
+	middleName?: string;
+	lastName: string;
+	email: string;
+	phoneNumber?: string;
+	dob?: Date;
+	sso_provider: string;
+	sso_id: string;
+	image?: string;
+	fieldsVerified: boolean;
+	fieldsVerifiedAt?: Date;
+	fieldsVerificationData: any;
+	walletToken?: string;
+	created_at: Date;
+	updated_at?: Date;
+	whosePhoneNumber?: string | null;
+	pictureUrl?: string | null;
+	docs: UserDocument[];
+	customFields: CustomField[];
+}
+
 @Injectable()
 export class UserService {
-  constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(UserDoc)
-    private readonly userDocsRepository: Repository<UserDoc>,
-    @InjectRepository(Consent)
-    private readonly consentRepository: Repository<Consent>,
-    @InjectRepository(UserApplication)
-    private readonly userApplicationRepository: Repository<UserApplication>,
-    private readonly keycloakService: KeycloakService,
-    private readonly profilePopulator: ProfilePopulator,
-    private readonly customFieldsService: CustomFieldsService,
-    private readonly configService: ConfigService,
-    private readonly proxyService: ProxyService,
-    private readonly adminService: AdminService,
-    @Inject('FileStorageService')
-    private readonly fileStorageService: IFileStorageService,
-    private readonly documentUploadService: DocumentUploadService,
-    private readonly ocrService: OcrService,
-    private readonly ocrMappingService: OcrMappingService,
-    private readonly vcFieldsService: VcFieldsService,
-  ) { }
-
-
-  /*  async create(createUserDto: CreateUserDto) {
-     const user = this.userRepository.create(createUserDto);
-     try {
-       const savedUser = await this.userRepository.save(user);
- 
-       return new SuccessResponse({
-         statusCode: HttpStatus.OK, // Created
-         message: 'User created successfully.',
-         data: savedUser,
-       });
-     } catch (error) {
-       return new ErrorResponse({
-         statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
-         errorMessage: error.message,
-       });
-     }
-   } */
-
-  async update(userId: string, updateUserDto: any) {
-    // Destructure userInfo from the payload
-    const { userInfo, ...userData } = updateUserDto;
-
-    // Check for existing user in the user table
-    const existingUser = await this.userRepository.findOne({
-      where: { user_id: userId },
-    });
-
-    if (!existingUser) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.NOT_FOUND,
-        errorMessage: `User with ID '${userId}' not found`,
-      });
-    }
-
-    // Update the user information in userRepository
-    Object.assign(existingUser, userData);
-
-    try {
-      const updatedUser: User = await this.userRepository.save(existingUser);
-
-      const existingUserInfo = await this.customFieldsService.saveCustomFields(updatedUser.user_id, FieldContext.USERS, userInfo);
-
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User and associated info updated successfully',
-        data: {
-          ...updatedUser,
-          userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
-        },
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message ?? 'An error occurred while updating user',
-      });
-    }
-  }
-
-  async findOne(req: any, decryptData?: boolean) {
-    try {
-      const sso_id = req?.user?.keycloak_id;
-      if (!sso_id) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'Invalid or missing Keycloak ID',
-        });
-      }
-
-      const userDetails = await this.userRepository.findOne({
-        where: { sso_id },
-      });
-
-      if (!userDetails) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `User with ID '${sso_id}' not found`,
-        });
-      }
-
-      const user = await this.findOneUser(userDetails.user_id);
-      const customFields = await this.customFieldsService.getCustomFields(userDetails.user_id, FieldContext.USERS);
-      const userDoc = await this.findUserDocs(userDetails.user_id, decryptData);
-
-      const final = {
-        ...user,
-        docs: userDoc || [],
-        customFields: customFields || [],
-      };
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User retrieved successfully.',
-        data: final,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message,
-      });
-    }
-  }
-
-  async findConsentByUser(req: any) {
-    try {
-      const sso_id = req?.user?.keycloak_id;
-      if (!sso_id) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'Invalid or missing Keycloak ID',
-        });
-      }
-
-      const userDetails = await this.userRepository.findOne({
-        where: { sso_id },
-      });
-
-      if (!userDetails) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.NOT_FOUND,
-          errorMessage: `User with ID '${sso_id}' not found`,
-        });
-      }
-
-      const consent = await this.findUserConsent(userDetails.user_id);
-
-      const final = {
-        ...consent,
-      };
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User consent retrieved successfully.',
-        data: final,
-      });
-    } catch (error) {
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message,
-      });
-    }
-  }
-
-  async findOneUser(user_id: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-      where: { user_id },
-    });
-
-    return user;
-  }
-
-  async findUserDocs(user_id: string, decryptData: boolean) {
-    const userDocs = await this.userDocsRepository.find({ where: { user_id } });
-
-    // Retrieve supported document subtypes from settings (vcConfiguration)
-    let docTypes = [];
-    try {
-      const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
-      docTypes = Array.isArray(vcConfig?.value) ? vcConfig.value : [];
-    } catch (error) {
-      Logger.error('Failed to fetch vcConfiguration:', error);
-      docTypes = [];
-    }
-
-    // Generate pre-signed URLs for documents if using S3
-    const docsWithUrls = await Promise.all(
-      userDocs.map(async (doc) => {
-        const downloadUrl = await this.documentUploadService.generateDownloadUrl(doc.doc_path);
-        return {
-          ...doc,
-          is_uploaded: docTypes.some(obj => obj.documentSubType === doc.doc_subtype),
-          download_url: downloadUrl,
-        };
-      })
-    );
-
-    return docsWithUrls;
-  }
-
-
-  async findUserConsent(user_id: string): Promise<any> {
-    const consents = await this.consentRepository.find({
-      where: { user_id },
-    });
-
-    // Format the response
-    return {
-      statusCode: 200,
-      message: 'User consent retrieved successfully.',
-      data: consents.map((consent) => ({
-        id: consent.id,
-        user_id: consent.user_id,
-        purpose: consent.purpose,
-        purpose_text: consent.purpose_text,
-        accepted: consent.accepted,
-        consent_date: consent.consent_date,
-      })),
-    };
-  }
-
-  // Method to check if mobile number exists
-  async findByMobile(mobile: string): Promise<User | undefined> {
-    return await this.userRepository.findOne({
-      where: { phoneNumber: mobile },
-    });
-  }
-
-  async findBySsoId(ssoId: string): Promise<User | undefined> {
-    return await this.userRepository.findOne({
-      where: { sso_id: ssoId }
-    });
-  }
-
-  async createKeycloakData(body: any): Promise<User> {
-    const user = this.userRepository.create({
-      firstName: body.firstName,
-      lastName: body.lastName,
-      email: body.email ?? '',
-      phoneNumber: body.phoneNumber ?? '',
-      sso_provider: 'keycloak',
-      sso_id: body.keycloak_id,
-      walletToken: body.walletToken ?? null,
-      created_at: new Date(),
-    });
-    return await this.userRepository.save(user);
-  }
-  private preprocessDocData(doc_data: any): any {
-    if (typeof doc_data === 'object') {
-      try {
-        return JSON.stringify(doc_data);
-      } catch (error) {
-        Logger.error('Error stringifying doc_data:', error);
-        throw new BadRequestException('Invalid doc_data format: Unable to stringify JSON');
-      }
-    }
-    return doc_data;
-  }
-
-  // User docs save
-  /*   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
-      try {
-        // Stringify the JSON doc_data before encryption
-        const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
-  
-        const newUserDoc = this.userDocsRepository.create({
-          ...createUserDocDto,
-          doc_data: stringifiedDocData,
-        });
-  
-        const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
-        return new SuccessResponse({
-          statusCode: HttpStatus.OK,
-          message: 'User docs added to DB successfully.',
-          data: savedUserDoc,
-        });
-      } catch (error) {
-        if (error.code == '23505') {
-          return new ErrorResponse({
-            statusCode: HttpStatus.BAD_REQUEST,
-            errorMessage: error.detail,
-          });
-        }
-        return new ErrorResponse({
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          errorMessage: error,
-        });
-      }
-    } */
-
-  async getDoc(createUserDocDto: CreateUserDocDTO) {
-    const existingDoc = await this.userDocsRepository.findOne({
-      where: {
-        user_id: createUserDocDto.user_id,
-        doc_type: createUserDocDto.doc_type,
-        doc_subtype: createUserDocDto.doc_subtype,
-      },
-    });
-
-    return existingDoc;
-  }
-
-  async saveDoc(createUserDocDto: CreateUserDocDTO) {
-    // Stringify the JSON doc_data before saving (encryption happens via entity transformer)
-    const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
-
-    const newUserDoc = this.userDocsRepository.create({
-      ...createUserDocDto,
-      doc_data: stringifiedDocData,
-    });
-
-    // Save to the database
-    const savedDoc = await this.userDocsRepository.save(newUserDoc);
-    return savedDoc;
-  }
-
-  async writeToFile(
-    createUserDocDto: CreateUserDocDTO,
-    userFilePath: any,
-    savedDoc: any,
-  ) {
-    try {
-      // Initialize the file with empty array if it doesn't exist
-      let currentData = [];
-      if (fs.existsSync(userFilePath)) {
-        try {
-          currentData = JSON.parse(fs.readFileSync(userFilePath, 'utf-8'));
-        } catch (err) {
-          console.error('Error reading/parsing file, reinitializing:', err);
-        }
-      }
-
-      currentData.push(savedDoc);
-
-      // Write the updated data to the file
-      fs.writeFileSync(userFilePath, JSON.stringify(currentData, null, 2));
-      console.log(
-        `File written successfully for user_id: ${createUserDocDto.user_id}`,
-      );
-    } catch (err) {
-      console.error('Error writing to file:', err);
-    }
-  }
-
-  async getSavedAndExistingDocs(
-    createUserDocsDto: CreateUserDocDTO[],
-    baseFolder: any,
-  ) {
-    const savedDocs: UserDoc[] = [];
-    const existingDocs: UserDoc[] = [];
-
-    for (const createUserDocDto of createUserDocsDto) {
-      const userFilePath = path.join(
-        baseFolder,
-        `${createUserDocDto.user_id}.json`,
-      );
-
-      // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
-      const existingDoc = await this.getDoc(createUserDocDto);
-
-      if (existingDoc) {
-        existingDocs.push(existingDoc);
-        console.log(
-          `Document already exists for user_id: ${createUserDocDto.user_id}, doc_type: ${createUserDocDto.doc_type}, doc_subtype: ${createUserDocDto.doc_subtype}`,
-        );
-      } else {
-
-        // Create the new document entity for the database
-        const savedDoc = await this.saveDoc(createUserDocDto);
-        savedDocs.push(savedDoc);
-        await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
-      }
-    }
-
-    return { savedDocs, existingDocs };
-  }
-
-  async createUserDocs(
-    createUserDocsDto: CreateUserDocDTO[],
-  ): Promise<UserDoc[]> {
-    const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
-
-    // Ensure the `userData` folder exists
-    if (!fs.existsSync(baseFolder)) {
-      fs.mkdirSync(baseFolder, { recursive: true });
-    }
-
-    const { savedDocs, existingDocs } = await this.getSavedAndExistingDocs(
-      createUserDocsDto,
-      baseFolder,
-    );
-
-    if (existingDocs.length > 0) return existingDocs;
-
-    return savedDocs;
-  }
-
-  async getUserDetails(req: any): Promise<User> {
-    const sso_id = req?.user?.keycloak_id;
-    if (!sso_id) {
-      throw new UnauthorizedException('Invalid or missing Keycloak ID');
-    }
-
-    const userDetails = await this.userRepository.findOne({
-      where: { sso_id },
-    });
-
-    if (!userDetails) {
-      throw new NotFoundException(`User with ID '${sso_id}' not found`);
-    }
-
-    return userDetails;
-  }
-
-  async updateProfile(userDetails: User) {
-    try {
-      // Get all docs
-      const allDocs = await this.userDocsRepository.find({
-        where: { user_id: userDetails.user_id },
-      });
-
-      // Build VCs
-      const VCs: any[] = await this.profilePopulator.buildVCs(allDocs);
-
-      // // build profile data
-      const { userProfile, validationData } =
-        await this.profilePopulator.buildProfile(VCs);
-
-      const adminResultData = await this.keycloakService.getAdminKeycloakToken();
-
-      // Update database entries
-      await this.profilePopulator.updateDatabase(
-        userProfile,
-        validationData,
-        userDetails,
-        adminResultData
-      );
-    } catch (error) {
-      Logger.error('Error in updating fields: ', error);
-      throw new InternalServerErrorException(
-        'An unexpected error occurred while updating profile.',
-      );
-    }
-  }
-
-  async deleteDoc(doc: UserDoc) {
-    const queryRunner =
-      this.userDocsRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    try {
-      await queryRunner.startTransaction();
-      await queryRunner.manager.remove(doc);
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      Logger.error('Error while deleting the document: ', error);
-      await queryRunner.rollbackTransaction();
-      throw new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: `Error while deleting the document: ${error}`,
-      });
-    } finally {
-      await queryRunner.release();
-    }
-  }
-
-  async createUserDocsNew(
-    req,
-    createUserDocsDto: CreateUserDocDTO[],
-  ): Promise<UserDoc[]> {
-    const userDetails = await this.getUserDetails(req);
-    const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
-    const savedDocs: UserDoc[] = [];
-
-    // Ensure the `userData` folder exists
-    if (!fs.existsSync(baseFolder)) {
-      fs.mkdirSync(baseFolder, { recursive: true });
-    }
-
-    for (const createUserDocDto of createUserDocsDto) {
-      try {
-        const savedDoc = await this.processSingleUserDoc(
-          createUserDocDto,
-          userDetails,
-          baseFolder
-        );
-
-        if (savedDoc) {
-          savedDocs.push(savedDoc);
-        }
-      } catch (error) {
-        Logger.error('Error processing document:', error);
-        throw error;
-      }
-    }
-
-    // Update profile based on documents
-    try {
-      await this.updateProfile(userDetails);
-    } catch (error) {
-      Logger.error('Profile update failed:', error);
-    }
-
-    return savedDocs;
-  }
-
-  private async processSingleUserDoc(
-    createUserDocDto: CreateUserDocDTO,
-    userDetails: any,
-    baseFolder: string
-  ): Promise<UserDoc | null> {
-    // Call the verification method before further processing
-    let verificationResult;
-    try {
-      verificationResult = await this.verifyVcWithApi(createUserDocDto.doc_data);
-    } catch (error) {
-      // Extract a user-friendly message
-      let message =
-        (error?.response?.data?.message ??
-          error?.message) ??
-        'VC Verification failed';
-      throw new BadRequestException({
-        message: message,
-        error: 'Bad Request',
-        statusCode: 400
-      });
-    }
-
-    if (!verificationResult.success) {
-      throw new BadRequestException({
-        message: verificationResult.message ?? 'VC Verification failed',
-        errors: verificationResult.errors ?? [],
-        statusCode: 400,
-        error: 'Bad Request',
-      });
-    }
-
-    const userFilePath = path.join(
-      baseFolder,
-      `${createUserDocDto.user_id}.json`,
-    );
-
-    // Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
-    const existingDoc = await this.userDocsRepository.findOne({
-      where: {
-        user_id: userDetails.user_id,
-        doc_type: createUserDocDto.doc_type,
-        doc_subtype: createUserDocDto.doc_subtype,
-      },
-    });
-
-    if (existingDoc) await this.deleteDoc(existingDoc);
-
-    if (!createUserDocDto?.user_id) {
-      createUserDocDto.user_id = userDetails?.user_id;
-    }
-
-    // Create the new document entity for the database
-    try {
-      const savedDoc = await this.saveDoc(createUserDocDto);
-      await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
-
-      // Register watcher if imported_from is e-wallet or QR Code
-      await this.handleWatcherRegistrationIfNeeded(createUserDocDto, savedDoc, userDetails);
-
-      return savedDoc;
-    } catch (error) {
-      Logger.error('Error processing document:', error);
-      return null;
-    }
-  }
-
-  // Create a new consent record
-  async createUserConsent(
-    createConsentDto: CreateConsentDto,
-  ): Promise<Consent> {
-    const consent = this.consentRepository.create(createConsentDto);
-    return await this.consentRepository.save(consent);
-  }
-  async createUserApplication(
-    createUserApplicationDto: CreateUserApplicationDto,
-  ) {
-    try {
-      // Check if an application already exists for the given benefit_id and user_id
-      const existingApplication = await this.userApplicationRepository.findOne({
-        where: {
-          benefit_id: createUserApplicationDto.benefit_id,
-          user_id: createUserApplicationDto.user_id,
-        },
-      });
-
-      if (existingApplication) {
-        // Update the existing application with new values from the DTO
-        Object.assign(existingApplication, createUserApplicationDto);
-        const updated = await this.userApplicationRepository.save(existingApplication);
-        return new SuccessResponse({
-          statusCode: HttpStatus.OK,
-          message: 'User application resubmitted successfully.',
-          data: updated,
-        });
-      } else {
-        // Create a new application
-        const userApplication = this.userApplicationRepository.create(
-          createUserApplicationDto,
-        );
-        const response = await this.userApplicationRepository.save(
-          userApplication,
-        );
-        return new SuccessResponse({
-          statusCode: HttpStatus.OK,
-          message: 'User application submitted successfully.',
-          data: response,
-        });
-      }
-    } catch (error) {
-      console.error('Error while creating/updating user application:', error);
-      throw new InternalServerErrorException('Failed to create or update user application');
-    }
-  }
-
-  async findOneUserApplication(internal_application_id: string) {
-    const userApplication = await this.userApplicationRepository.findOne({
-      where: { internal_application_id },
-    });
-    if (!userApplication) {
-      throw new NotFoundException(
-        `Application with ID '${internal_application_id}' not found`,
-      );
-    }
-    return new SuccessResponse({
-      statusCode: HttpStatus.OK,
-      message: 'User application retrieved successfully.',
-      data: userApplication,
-    });
-  }
-
-  async findAllApplicationsByUserId(requestBody: {
-    filters?: any;
-    search?: string;
-    page?: number;
-    limit?: number;
-  }) {
-    const { filters = {}, search, page = 1, limit = 10 } = requestBody;
-
-    let statusUpdateInfo: StatusUpdateInfo;
-    if (filters.benefit_id) {
-      // skipped due to benefit_id filter
-      statusUpdateInfo = {
-        attempted: false,
-        success: true,
-        processedCount: 0,
-        error: null,
-        skipped: true,
-        skipReason: 'Skipped status update due to benefit_id filter',
-      };
-    } else {
-      statusUpdateInfo = await this.performStatusUpdate(filters.user_id);
-    }
-
-    // Now fetch the applications list with updated statuses
-    try {
-      const whereClause = this.buildWhereClause(filters, search);
-      const [userApplication, total] = await this.userApplicationRepository.findAndCount({
-        where: whereClause,
-        skip: (page - 1) * limit,
-        take: limit,
-      });
-
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: 'User applications list retrieved successfully.',
-        data: {
-          applications: userApplication,
-          total,
-          statusUpdate: statusUpdateInfo
-        },
-      });
-    } catch (error) {
-      console.error('Error while fetching user applications:', error);
-      throw new InternalServerErrorException('Failed to fetch user applications');
-    }
-  }
-
-  private async performStatusUpdate(userId?: string) {
-    const statusUpdateInfo = {
-      attempted: false,
-      success: false,
-      processedCount: 0,
-      error: null
-    };
-
-    try {
-      statusUpdateInfo.attempted = true;
-      const applicationsForUpdate = await this.getApplications(userId);
-
-      if (applicationsForUpdate.length > 0) {
-        await this.processApplications(applicationsForUpdate);
-        statusUpdateInfo.success = true;
-        statusUpdateInfo.processedCount = applicationsForUpdate.length;
-        Logger.log(`Status update completed for ${applicationsForUpdate.length} applications'}`);
-      } else {
-        statusUpdateInfo.success = true;
-        Logger.log(`No applications found requiring status updates`);
-      }
-    } catch (statusUpdateError) {
-      statusUpdateInfo.error = statusUpdateError.message;
-      Logger.error(
-        `Status update failed during user applications list retrieval: ${statusUpdateError.message}`,
-        statusUpdateError.stack
-      );
-    }
-
-    return statusUpdateInfo;
-  }
-
-  private buildWhereClause(filters: any, search?: string) {
-    const whereClause = {};
-    const filterKeys = this.userApplicationRepository.metadata.columns.map(
-      (column) => column.propertyName,
-    );
-
-    // Handle filters
-    if (filters && Object.keys(filters).length > 0) {
-      this.applyFilters(whereClause, filters, filterKeys);
-    }
-
-    // Handle search for `application_name`
-    if (search && search.trim().length > 0) {
-      const sanitizedSearch = search.replace(/[%_]/g, '\\$&');
-      whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
-    }
-
-    return whereClause;
-  }
-
-  private applyFilters(whereClause: any, filters: any, filterKeys: string[]) {
-    for (const [key, value] of Object.entries(filters)) {
-      if (filterKeys.includes(key) && value !== null && value !== undefined) {
-        whereClause[key] = value;
-      }
-    }
-  }
-
-  public async registerUserWithUsername(body) {
-    // Replace spaces with underscores in first name and last name
-    const firstPartOfFirstName = body?.firstName
-      ?.split(' ')[0]
-      ?.replace(/\s+/g, '_');
-    const lastNameWithUnderscore = body?.lastName?.replace(/\s+/g, '_');
-
-    // Extract the last 2 digits of Aadhar
-    const lastTwoDigits = body?.aadhaar?.slice(-2);
-
-    // Concatenate the processed first name, last name, and last 2 digits of Aadhar
-    const username =
-      firstPartOfFirstName?.toLowerCase() +
-      '_' +
-      lastNameWithUnderscore?.toLowerCase() +
-      lastTwoDigits;
-
-    const data_to_create_user = {
-      enabled: 'true',
-      firstName: body?.firstName,
-      lastName: body?.lastName,
-      username: username,
-      credentials: [
-        {
-          type: 'password',
-          value: body?.password,
-          temporary: false,
-        },
-      ],
-    };
-
-    // Step 3: Get Keycloak admin token
-    const token = await this.keycloakService.getAdminKeycloakToken();
-
-    try {
-      // Step 4: Register user in Keycloak
-      const registerUserRes = await this.keycloakService.registerUser(
-        data_to_create_user,
-        token.access_token,
-      );
-
-      if (registerUserRes.error) {
-        if (
-          registerUserRes.error.message == 'Request failed with status code 409'
-        ) {
-          console.log('User already exists!');
-        } else {
-          console.log(registerUserRes.error.message);
-        }
-      } else if (registerUserRes.headers.location) {
-        const split = registerUserRes.headers.location.split('/');
-        const keycloak_id = split[split.length - 1];
-        body.keycloak_id = keycloak_id;
-        body.username = data_to_create_user.username;
-
-        // Step 5: Try to create user in PostgreSQL
-        const result = await this.createKeycloakData(body);
-
-        // If successful, return success response
-        const userResponse = {
-          user: result,
-          keycloak_id: keycloak_id,
-          username: data_to_create_user.username,
-        };
-        return userResponse;
-      } else {
-        console.log('Unable to create user in Keycloak');
-      }
-    } catch (error) {
-      console.error('Error during user registration:', error);
-
-      // Step 6: Rollback - delete user from Keycloak if PostgreSQL insertion fails
-      if (body?.keycloak_id) {
-        await this.keycloakService.deleteUser(body.keycloak_id);
-        console.log(
-          'Keycloak user deleted due to failure in PostgreSQL creation',
-        );
-      }
-    }
-  }
-
-  async resetInUsers(
-    field: string,
-    existingDoc: UserDoc,
-    queryRunner: QueryRunner,
-  ) {
-    await queryRunner.manager
-      .getRepository(User)
-      .createQueryBuilder()
-      .update(User)
-      .set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
-      .where('user_id = :id', { id: existingDoc.user_id })
-      .execute();
-  }
-
-  async resetFields(
-    field: string,
-    existingDoc: UserDoc,
-  ) {
-    try {
-      const fieldData = await this.customFieldsService.getFieldByName(field, FieldContext.USERS);
-
-      if (!fieldData?.fieldId) {
-        Logger.warn(`Field '${field}' not found in custom fields`);
-        return;
-      }
-
-      await this.customFieldsService.setFieldValueToNull(existingDoc.user_id, fieldData.fieldId);
-    } catch (error) {
-      Logger.error(`Error resetting field '${field}' for user ${existingDoc.user_id}:`, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get fields to reset from database configuration based on document type
-   * @param docSubtype Document subtype (e.g., 'casteCertificate', 'disabilityCertificate')
-   * @returns Array of field names to reset
-   */
-  private async getFieldsToResetFromConfig(docSubtype: string): Promise<string[]> {
-    try {
-      // Get profile fields configuration from settings table
-      const configResponse = await this.adminService.getConfigByKey('profileFieldToDocumentFieldMapping');
-
-      if (!configResponse?.value) {
-        Logger.warn('profileFieldToDocumentFieldMapping configuration not found');
-        return [];
-      }
-
-      const profileFields = Array.isArray(configResponse.value) ? configResponse.value : [];
-      const fieldsToReset: string[] = [];
-
-      // Find all fields that have mappings to this document type
-      for (const fieldConfig of profileFields) {
-        const documentMappings = fieldConfig.documentMappings || [];
-
-        // Check if this field has a mapping for the given document type
-        const hasMapping = documentMappings.some((mapping: any) => mapping.document === docSubtype);
-
-        if (hasMapping && fieldConfig.fieldName) {
-          fieldsToReset.push(fieldConfig.fieldName);
-        }
-      }
-
-      Logger.debug(`Fields to reset for document type '${docSubtype}': [${fieldsToReset.join(', ')}]`);
-      return fieldsToReset;
-    } catch (error) {
-      Logger.error(`Error getting fields to reset for document type '${docSubtype}':`, error);
-      return [];
-    }
-  }
-
-  async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
-    try {
-      // Get fields to reset from database configuration instead of hardcoded array
-      const fields = await this.getFieldsToResetFromConfig(existingDoc.doc_subtype);
-
-      if (fields.length === 0) {
-        Logger.warn(`No field mappings found for document type '${existingDoc.doc_subtype}'`);
-        return;
-      }
-
-      for (const field of fields) {
-        try {
-          if (field === 'middleName') {
-            // Special handling for middleName field (updates users table directly)
-            await this.resetInUsers(field, existingDoc, queryRunner);
-          } else {
-            // Reset custom field values
-            await this.resetFields(field, existingDoc);
-          }
-        } catch (error) {
-          Logger.error(`Error resetting field '${field}' for user ${existingDoc.user_id}:`, error);
-          // Continue with other fields even if one fails
-        }
-      }
-    } catch (error) {
-      Logger.error(`Error in resetField for document ${existingDoc.doc_id}:`, error);
-      throw error;
-    }
-  }
-
-  private async handleWatcherRegistrationIfNeeded(createUserDocDto: CreateUserDocDTO, savedDoc: UserDoc, userDetails: any): Promise<void> {
-    const importSource = createUserDocDto.imported_from?.trim().toLowerCase();
-    if (!importSource || (importSource !== 'e-wallet' && importSource !== 'qr code')) {
-      return;
-    }
-
-    // Validate doc_data_link exists
-    if (!createUserDocDto.doc_data_link) {
-      Logger.warn(`No doc_data_link for watcher registration: ${savedDoc.doc_id}`);
-      return;
-    }
-
-    // Use provided email and callback URL or defaults
-    const email = process.env.DHIWAY_WATCHER_EMAIL;
-    if (!email) {
-      Logger.warn(`No watcher email configured, skipping registration for: ${savedDoc.doc_id}`);
-      return;
-    }
-
-    const callbackUrl = createUserDocDto.watcher_callback_url ||
-      `${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
-
-    try {
-      const watcherResult = await this.registerWatcher(
-        createUserDocDto.imported_from,
-        createUserDocDto.doc_data,
-        createUserDocDto.doc_data_link,
-        email,
-        callbackUrl,
-        userDetails,
-      );
-
-      if (watcherResult.success) {
-        // Update the saved document with watcher information
-        savedDoc.watcher_registered = true;
-        savedDoc.watcher_email = email;
-        savedDoc.watcher_callback_url = callbackUrl;
-
-        // Save the updated document
-        await this.userDocsRepository.save(savedDoc);
-
-        Logger.log(`Watcher registered successfully for document: ${savedDoc.doc_id}`);
-      } else {
-        Logger.warn(`Watcher registration failed for document: ${savedDoc.doc_id}, Error: ${watcherResult.message}`);
-      }
-    } catch (watcherError) {
-      Logger.error(`Error during watcher registration for document: ${savedDoc.doc_id}`, watcherError);
-    }
-  }
-
-  async delete(req: any, doc_id: string) {
-    const IsValidUser = req?.user;
-    if (!IsValidUser) {
-      throw new UnauthorizedException('User is not authenticated');
-    }
-    const sso_id = IsValidUser.keycloak_id;
-
-    // Get user_id of logged in user
-    const user = await this.userRepository.findOne({
-      where: { sso_id: sso_id },
-    });
-
-    if (!user)
-      return new ErrorResponse({
-        statusCode: HttpStatus.NOT_FOUND,
-        errorMessage: 'User with given sso_id not found',
-      });
-
-    const user_id = user.user_id;
-
-    // Check if document exists or not, if not then send erorr response
-    const existingDoc = await this.userDocsRepository.findOne({
-      where: {
-        doc_id: doc_id,
-      },
-    });
-
-    if (!existingDoc) {
-      Logger.error(`Document with id ${doc_id} does not exists`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: `Document with id ${doc_id} does not exists`,
-      });
-    }
-
-    // Check if logged in user is allowed to delete this document or not
-    if (existingDoc.user_id !== user_id)
-      return new ErrorResponse({
-        statusCode: HttpStatus.UNAUTHORIZED,
-        errorMessage:
-          'You are not authorized to modify or delete this resourse',
-      });
-
-    // Store the file path before deleting from database
-    const filePath = existingDoc.doc_path;
-
-    // Delete the document
-    const queryRunner =
-      this.userDocsRepository.manager.connection.createQueryRunner();
-    await queryRunner.connect();
-    try {
-      await queryRunner.startTransaction();
-      await queryRunner.manager.remove(existingDoc);
-      // Reset the field along with deleting the document
-      await this.resetField(existingDoc, queryRunner);
-      await queryRunner.commitTransaction();
-
-      // Delete the physical file using document upload service
-      if (filePath) {
-        try {
-          await this.documentUploadService.deleteFile(filePath);
-        } catch (fileError) {
-          Logger.error(`Failed to delete file from storage: ${fileError}`);
-          // Don't fail the entire operation if file deletion fails
-        }
-      }
-    } catch (error) {
-      Logger.error('Error while deleting the document: ', error);
-      await queryRunner.rollbackTransaction();
-      await queryRunner.release();
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: `Error while deleting the document: ${error}`,
-      });
-    } finally {
-      await queryRunner.release();
-    }
-
-    return new SuccessResponse({
-      statusCode: HttpStatus.OK,
-      message: 'Document deleted successfully',
-    });
-  }
-
-  /**
-   * Private helper method to fetch and validate VC JSON from a URL
-   * @param url The VC URL to fetch data from
-   * @returns Promise containing validated VC data or error
-   */
-  private async fetchAndValidateVcJson(url: string): Promise<any> {
-    try {
-      // Validate URL scheme to prevent SSRF attacks
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        return { error: true, message: 'Invalid VC URL scheme', status: 400 };
-      }
-
-      // Fetch the VC JSON with proper headers
-      const vcResponse = await axios.get(url, {
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        timeout: 8000,
-      });
-
-      // Validate that we received JSON data
-      let vcData;
-      try {
-        if (typeof vcResponse.data === 'string') {
-          vcData = JSON.parse(vcResponse.data);
-        } else {
-          vcData = vcResponse.data;
-        }
-      } catch (_parseError) {
-        Logger.error('Invalid JSON response from VC endpoint', _parseError);
-        return {
-          error: true,
-          message: 'Invalid JSON response from VC endpoint',
-          status: 422,
-        };
-      }
-
-      // Basic validation that it looks like a VC
-      if (!vcData || typeof vcData !== 'object') {
-        return {
-          error: true,
-          message: 'Invalid VC data structure received',
-          status: 422,
-        };
-      }
-
-      // Return in format expected by frontend
-      return {
-        data: {
-          vcData: vcData,
-          url: url,
-        },
-      };
-    }
-    catch (error) {
-      // Handle errors and return a meaningful message
-      if (axios.isAxiosError(error)) {
-        const msg = typeof error.response?.data === 'string'
-          ? error.response.data
-          : error.message;
-        return {
-          error: true,
-          message: msg,
-          status: error.response?.status ?? 500,
-        };
-      }
-      return {
-        error: true,
-        message: 'Unknown error occurred while fetching VC data',
-        status: 500,
-      };
-    }
-  }
-
-  /**
-   * Fetches a Verifiable Credential JSON from a URL that already ends with .vc
-   * Used for wallet callbacks and direct VC URLs
-   * @param vcUrl The direct VC URL (already ending with .vc)
-   * @returns Object containing vcData and vcUrl in format expected by frontend
-   */
-  async fetchVcJsonFromVcUrl(vcUrl: string): Promise<any> {
-    return this.fetchAndValidateVcJson(vcUrl);
-  }
-
-  /**
-   * Fetches a Verifiable Credential JSON from a given URL.
-   * Handles both dway.io and haqdarshak.com style URLs.
-   * Follows redirects and appends .vc if needed.
-   * @param url The URL from the QR code
-   * @returns Object containing vcData and vcUrl in format expected by frontend
-   */
-  async fetchVcJsonFromUrl(url: string): Promise<any> {
-    try {
-      // Basic scheme validation before the first network call
-      const initialParsed = new URL(url);
-      if (initialParsed.protocol !== 'http:' && initialParsed.protocol !== 'https:') {
-        return { error: true, message: 'Invalid URL scheme', status: 400 };
-      }
-
-      // 1. Follow redirects to get the final URL (without downloading the VC yet)
-      const response = await axios.get(url, {
-        maxRedirects: 5,
-        timeout: 8000,
-        validateStatus: (status) => status >= 200 && status < 400, // allow redirects
-      });
-      // Try multiple known locations for the resolved URL (follow-redirects runtime)
-      let finalUrl = url;
-      if (response.request?.res?.responseUrl) {
-        finalUrl = response.request.res.responseUrl;
-      } else if (response.request?._redirectable?._currentUrl) {
-        finalUrl = response.request._redirectable._currentUrl;
-      }
-
-      // 2. Append/normalize to .vc while preserving query and hash
-      const parsedFinal = new URL(finalUrl);
-      if (!parsedFinal.pathname.endsWith('.vc')) {
-        if (parsedFinal.pathname.endsWith('.json')) {
-          parsedFinal.pathname = parsedFinal.pathname.replace(/\.json$/, '.vc');
-        } else {
-          parsedFinal.pathname = parsedFinal.pathname.replace(/\/$/, '') + '.vc';
-        }
-      }
-      finalUrl = parsedFinal.toString();
-
-      // 3. Use the common method to fetch and validate VC data
-      return this.fetchAndValidateVcJson(finalUrl);
-    }
-    catch (error) {
-      // Handle errors and return a meaningful message
-      if (axios.isAxiosError(error)) {
-        const msg = typeof error.response?.data === 'string'
-          ? error.response.data
-          : error.message;
-        return {
-          error: true,
-          message: msg,
-          status: error.response?.status ?? 500,
-        };
-      }
-      return {
-        error: true,
-        message: 'Unknown error occurred',
-        status: 500,
-      };
-    }
-  }
-
-  private async verifyVcWithApi(vcData: any): Promise<{ success: boolean; message?: string; errors?: any[] }> {
-    try {
-      const verificationPayload = {
-        credential: vcData,
-        config: {
-          method: 'online',
-          issuerName: process.env.VC_DEFAULT_ISSUER_NAME ?? 'dhiway',
-        },
-      };
-
-      const verificationUrl = process.env.VC_VERIFICATION_SERVICE_URL;
-      if (!verificationUrl) {
-        return {
-          success: false,
-          message: 'VC_VERIFICATION_SERVICE_URL env variable not set',
-          errors: [],
-        };
-      }
-
-      const response = await axios.post(verificationUrl, verificationPayload, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 8000,
-      });
-
-      // Use the API's response format directly
-      return {
-        success: response.data?.success,
-        message: response.data?.message,
-        errors: response.data?.errors,
-      };
-    } catch (error) {
-      Logger.error('VC Verification error:', error?.response?.data ?? error.message);
-      return {
-        success: false,
-        message:
-          error?.response?.data?.message ??
-          error.message ??
-          'VC Verification failed',
-        errors: error?.response?.data?.errors,
-      };
-    }
-  }
-
-  // Register watcher for e-wallet
-  private async registerWatcherForEWallet(
-    identifier: string,
-    recordPublicId: string,
-    email: string,
-    callbackUrl: string,
-    userDetails: any,
-  ): Promise<{ success: boolean; message?: string; data?: any }> {
-    try {
-      const walletUrl = process.env.WALLET_BASE_URL + '/api/wallet/vcs/watch';
-      const authToken = userDetails.walletToken || '';
-
-      if (!authToken) {
-        return {
-          success: false,
-          message: 'Wallet token not found',
-          data: null,
-        };
-      }
-
-      const payload = {
-        vcPublicId: recordPublicId,
-        email: email,
-        callbackUrl: callbackUrl
-      };
-
-      const response = await axios.post(walletUrl, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        timeout: 10000,
-      });
-
-      return {
-        success: true,
-        message: 'Watcher registered successfully',
-        data: response.data
-      };
-    } catch (error) {
-      Logger.error('E-Wallet watcher registration error:', error?.response?.data ?? error.message);
-      return {
-        success: false,
-        message: error?.response?.data?.message ?? error.message ?? 'Watcher registration failed',
-        data: error?.response?.data
-      };
-    }
-  }
-
-  // Register watcher for QR Code (Dhiway)
-  private async registerWatcherForQRCode(
-    identifier: string,
-    recordPublicId: string,
-    email: string,
-    callbackUrl: string
-  ): Promise<{ success: boolean; message?: string; data?: any }> {
-    try {
-      const dhiwayUrl = process.env.DHIWAY_WATCHER_URL;
-
-      if (!dhiwayUrl) {
-        return { success: false, message: 'DHIWAY_WATCHER_URL env variable not set' };
-      }
-
-      const payload = {
-        identifier: identifier,
-        recordPublicId: recordPublicId,
-        email: email,
-        callbackUrl: callbackUrl
-      };
-
-      const response = await axios.post(dhiwayUrl, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        timeout: 10000,
-      });
-
-      return {
-        success: true,
-        message: 'Watcher registered successfully',
-        data: response.data
-      };
-    } catch (error) {
-      Logger.error('QR Code watcher registration error:', error?.response?.data ?? error.message);
-      return {
-        success: false,
-        message: error?.response?.data?.message ?? error.message ?? 'Watcher registration failed',
-        data: error?.response?.data
-      };
-    }
-  }
-
-  // Register watcher based on imported_from
-  private async registerWatcher(
-    importedFrom: string,
-    docData: any,
-    docPath: string,
-    email: string,
-    callbackUrl: string,
-    userDetails: any,
-  ): Promise<{ success: boolean; message?: string; data?: any }> {
-    try {
-      // Normalize docPath to ensure it ends with .json
-      let normalizedDocPath = docPath;
-      if (normalizedDocPath.endsWith('.vc')) {
-        normalizedDocPath = normalizedDocPath.replace('.vc', '.json');
-      } else if (!normalizedDocPath.endsWith('.json')) {
-        normalizedDocPath = normalizedDocPath + '.json';
-      }
-
-      // Fetch document details from the path
-      let fetchedDocData;
-      try {
-        const response = await axios.get(normalizedDocPath, {
-          timeout: 10000,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-        fetchedDocData = response.data;
-      } catch (fetchError) {
-        Logger.error('Failed to fetch document from path:', normalizedDocPath, fetchError);
-        return {
-          success: false,
-          message: `Failed to fetch document from path: ${normalizedDocPath}`
-        };
-      }
-
-      // Extract vcPublicId from fetched document data
-      const identifier = fetchedDocData?.identifier || '';
-      const recordPublicId = fetchedDocData?.publicId || '';
-      const walletCallbackUrl = process.env.BASE_URL + '/users/wallet-callback';
-
-      if (!identifier || !recordPublicId) {
-        return {
-          success: false,
-          message: 'identifier or recordPublicId not found in fetched document data'
-        };
-      }
-
-      if (importedFrom.toLowerCase() === 'e-wallet') {
-        return await this.registerWatcherForEWallet(identifier, recordPublicId, email, walletCallbackUrl, userDetails);
-      } else if (importedFrom.toLowerCase() === 'qr code') {
-        return await this.registerWatcherForQRCode(identifier, recordPublicId, email, walletCallbackUrl);
-      } else {
-        return {
-          success: false,
-          message: `Watcher registration not supported for imported_from: ${importedFrom}`
-        };
-      }
-    } catch (error) {
-      Logger.error('Watcher registration error:', error);
-      return {
-        success: false,
-        message: error.message || 'Watcher registration failed'
-      };
-    }
-  }
-
-  async deleteUser(userId: string): Promise<void> {
-    const user = await this.userRepository.findOne({
-      where: { user_id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException(`User with ID '${userId}' not found`);
-    }
-
-    await this.userRepository.delete(userId);
-  }
-
-  // Application Status Update Methods
-
-  async getApplications(userId?: string) {
-    try {
-      const whereCondition: any = {
-        status: Not(In(['amount received', 'rejected', 'disbursed'])),
-      };
-
-      if (userId) {
-        whereCondition.user_id = userId;
-      }
-
-      const applications = await this.userApplicationRepository.find({
-        where: whereCondition,
-      });
-
-      return applications;
-    } catch (error) {
-      Logger.error(`Error while getting user applications: ${error}`);
-      throw new InternalServerErrorException('Failed to fetch user applications');
-    }
-  }
-
-  async updateStatus(
-    application: any,
-    statusData: { status: string; comment: string },
-  ) {
-    try {
-      if (!statusData?.status) return;
-
-      application.status = statusData.status.toLowerCase(); // e.g., "approved"
-      application.remark = statusData.comment || ''; // Save the comment
-
-      const queryRunner =
-        this.userApplicationRepository.manager.connection.createQueryRunner();
-      await queryRunner.connect();
-      try {
-        await queryRunner.startTransaction();
-        await queryRunner.manager.save(application);
-        await queryRunner.commitTransaction();
-      } catch (error) {
-        await queryRunner.rollbackTransaction();
-        Logger.error(`Error in query runner: ${error}`);
-        throw new Error('Error in query runner');
-      } finally {
-        await queryRunner.release();
-      }
-    } catch (error) {
-      Logger.error(`Error while updating application status: ${error}`);
-    }
-  }
-
-  async getStatus(orderId: string) {
-    const bapId = this.configService.get<string>('BAP_ID');
-    const bapUri = this.configService.get<string>('BAP_URI');
-
-
-    // Fetch BPP info from userApplication table
-    const userApplication = await this.userApplicationRepository.findOne({
-      where: { bpp_application_id: orderId },
-      select: [
-        'benefit_provider_id',
-        'benefit_provider_uri',
-        'transaction_id'
-      ],
-    });
-
-    if (!userApplication) {
-      throw new Error(`UserApplication not found for orderId: ${orderId}`);
-    }
-
-    const bppId = userApplication.benefit_provider_id;
-    const bppUri = userApplication.benefit_provider_uri;
-    const transactionId = userApplication.transaction_id;
-    if (!bapId || !bapUri || !bppId || !bppUri || !transactionId) {
-      throw new Error('Missing required configuration for BAP/BPP or transaction_id not found in database');
-    }
-
-    const body = {
-      context: {
-        domain: this.configService.get<string>('DOMAIN'),
-        action: 'status',
-        timestamp: new Date().toISOString(),
-        ttl: 'PT10M',
-        version: '1.1.0',
-        bap_id: bapId,
-        bap_uri: bapUri,
-        bpp_id: bppId,
-        bpp_uri: bppUri,
-        transaction_id: transactionId,
-        message_id: uuidv4(),
-        location: {
-          country: {
-            name: 'India',
-            code: 'IND',
-          },
-          city: {
-            name: 'Bangalore',
-            code: 'std:080',
-          },
-        },
-      },
-      message: {
-        order_id: orderId,
-      },
-    };
-
-    const response = await this.proxyService.bapCLientApi2('status', body);
-
-    try {
-      const rawStatus =
-        response?.responses[0]?.message?.order?.fulfillments[0]?.state
-          ?.descriptor?.name;
-      if (!rawStatus) return null;
-
-      // Parse status stringified JSON
-      const parsedStatus = JSON.parse(rawStatus);
-      return parsedStatus; // { status: '...', comment: '...' }
-    } catch (error) {
-      console.error(`Error while getting status from response: ${error}`);
-      throw new Error('Error while getting status from response');
-    }
-  }
-
-  async processApplications(applications: any) {
-    try {
-      const results = await Promise.allSettled(
-        applications.map(async (application: any) => {
-          const statusData = await this.getStatus(
-            application.bpp_application_id,
-          );
-          await this.updateStatus(application, statusData);
-        }),
-      );
-      const failures = results.filter(r => r.status === 'rejected');
-      if (failures.length > 0) {
-        Logger.error(`Failed to process ${failures.length} out of ${applications.length} applications`);
-      }
-      return {
-        total: applications.length,
-        succeeded: results.filter(r => r.status === 'fulfilled').length,
-      };
-    } catch (error) {
-      Logger.error(`Error while processing applications: ${error}`);
-      throw new InternalServerErrorException(
-        'Failed to process applications',
-      );
-    }
-  }
-
-  async updateApplicationStatuses(req?: any) {
-    try {
-      let userId: string | undefined;
-
-      // If req is provided, extract user_id from token
-      if (req) {
-        userId = req.mw_userid;
-      }
-
-      // Get user application records from database
-      const applications = await this.getApplications(userId);
-
-      if (applications.length === 0) {
-        Logger.log(`No applications found for user: ${userId || 'all users'}`);
-        return {
-          success: true,
-          message: `No applications found for ${userId ? 'user' : 'any users'}`,
-          processedCount: 0,
-        };
-      }
-
-      // Update status of each application
-      await this.processApplications(applications);
-
-      Logger.log(
-        `Successfully processed ${applications.length} applications for ${userId || 'all users'}`,
-      );
-
-      return {
-        success: true,
-        message: `Successfully processed ${applications.length} applications`,
-        processedCount: applications.length,
-      };
-    } catch (error) {
-      Logger.error(`Error in update application statuses: ${error}`);
-      throw new InternalServerErrorException(
-        'Failed to update application statuses',
-      );
-    }
-  }
-
-  private async validateUserDocuments(userDocs: any[], recordPublicId: string) {
-    if (!userDocs || userDocs.length === 0) {
-      Logger.warn(`No user documents found for recordPublicId: ${recordPublicId}`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.NOT_FOUND,
-        errorMessage: `No documents found for recordPublicId: ${recordPublicId}`,
-      });
-    }
-
-    // Check if any document has empty doc_data_link
-    const invalidDocs = userDocs.filter(doc =>
-      !doc.doc_data_link || doc.doc_data_link === '' || doc.doc_data_link === null
-    );
-
-    if (invalidDocs.length > 0) {
-      Logger.warn(`Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: `Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`,
-      });
-    }
-
-    return null; // No error
-  }
-
-  private async fetchAndValidateWalletData(docDataLink: string) {
-    let updatedDocData;
-
-    try {
-      updatedDocData = await this.fetchVcJsonFromVcUrl(docDataLink);
-    } catch (error) {
-      Logger.error(`Failed to fetch updated data from wallet: ${error}`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: 'Failed to fetch updated data from wallet',
-      });
-    }
-
-    updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
-
-    if (!updatedDocData?.credentialSubject) {
-      Logger.error(`Not a valid VC: ${updatedDocData}`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: 'Not a valid VC',
-      });
-    }
-
-    return updatedDocData;
-  }
-
-  private async verifyVcData(vcData: any) {
-    let verificationResult;
-    try {
-      verificationResult = await this.verifyVcWithApi(vcData);
-    } catch (error) {
-      Logger.error(`VC Verification failed for wallet callback: ${error}`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: 'VC Verification failed for updated data',
-      });
-    }
-
-    if (!verificationResult.success) {
-      Logger.error(`VC Verification failed for wallet callback: ${verificationResult.message}`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: verificationResult.message ?? 'VC Verification failed for updated data',
-      });
-    }
-
-    return null; // No error
-  }
-
-  private async updateDocumentsData(userDocs: any[], updatedDocData: any) {
-    const updatedUserDocs = [];
-    for (const userDoc of userDocs) {
-      userDoc.doc_data = JSON.stringify(updatedDocData) as any;
-      userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
-
-      // Save the updated document
-      const updatedUserDoc = await this.userDocsRepository.save(userDoc);
-      updatedUserDocs.push(updatedUserDoc);
-    }
-    return updatedUserDocs;
-  }
-
-  private async writeDocumentsToFiles(updatedUserDocs: any[], updatedDocData: any) {
-    const baseFolder = path.join(__dirname, 'userData');
-
-    for (const updatedUserDoc of updatedUserDocs) {
-      const userFilePath = path.join(baseFolder, "undefined.json");
-
-      try {
-        await this.writeToFile(
-          {
-            user_id: updatedUserDoc.user_id,
-            doc_type: updatedUserDoc.doc_type,
-            doc_subtype: updatedUserDoc.doc_subtype,
-            doc_name: updatedUserDoc.doc_name,
-            imported_from: updatedUserDoc.imported_from,
-            doc_path: updatedUserDoc.doc_path,
-            doc_data_link: updatedUserDoc.doc_data_link,
-            doc_data: updatedDocData,
-            doc_datatype: updatedUserDoc.doc_datatype,
-            watcher_registered: updatedUserDoc.watcher_registered,
-            watcher_email: updatedUserDoc.watcher_email,
-            watcher_callback_url: updatedUserDoc.watcher_callback_url,
-          },
-          userFilePath,
-          updatedUserDoc
-        );
-        Logger.log(`Successfully wrote updated data to file for user: ${updatedUserDoc.user_id}`);
-      } catch (fileError) {
-        Logger.error(`Error writing updated data to file: ${fileError}`);
-        // Don't fail the entire operation if file writing fails
-      }
-    }
-  }
-
-  private async updateUserProfiles(updatedUserDocs: any[]) {
-    // Get unique user IDs to avoid duplicate profile updates
-    const uniqueUserIds = [...new Set(updatedUserDocs.map(doc => doc.user_id))];
-
-    for (const userId of uniqueUserIds) {
-      try {
-        const userDetails = await this.userRepository.findOne({
-          where: { user_id: userId },
-        });
-
-        if (userDetails) {
-          await this.updateProfile(userDetails);
-          Logger.log(`Successfully updated profile for user: ${userId}`);
-        } else {
-          Logger.warn(`User not found for profile update: ${userId}`);
-        }
-      } catch (profileError) {
-        Logger.error(`Error updating user profile for wallet callback: ${profileError}`);
-        // Don't fail the entire operation if profile update fails
-      }
-    }
-  }
-
-  async handleWalletCallback(callbackData: {
-    identifier: string;
-    message: string;
-    type: string;
-    recordPublicId: string;
-  }) {
-    try {
-      Logger.log(`Processing wallet callback for recordPublicId: ${callbackData.recordPublicId}`);
-
-      // Find all user documents that match the recordPublicId
-      const userDocs = await this.userDocsRepository.find({
-        where: {
-          doc_data_link: ILike(`%/${callbackData.recordPublicId}.json`),
-        },
-      });
-
-      // Validate user documents
-      const validationError = await this.validateUserDocuments(userDocs, callbackData.recordPublicId);
-      if (validationError) return validationError;
-
-      Logger.log(`Found ${userDocs.length} documents to update for recordPublicId: ${callbackData.recordPublicId}`);
-
-      // Fetch and validate wallet data
-      const updatedDocData = await this.fetchAndValidateWalletData(userDocs[0].doc_data_link);
-      if (updatedDocData instanceof ErrorResponse) return updatedDocData;
-
-      // Verify VC data
-      const verificationError = await this.verifyVcData(updatedDocData);
-      if (verificationError) return verificationError;
-
-      // Update all documents with the new data
-      const updatedUserDocs = await this.updateDocumentsData(userDocs, updatedDocData);
-
-      // Write updated data to files for all documents
-      await this.writeDocumentsToFiles(updatedUserDocs, updatedDocData);
-
-      // Update user profiles based on updated documents
-      await this.updateUserProfiles(updatedUserDocs);
-
-      Logger.log(`Successfully updated ${updatedUserDocs.length} documents with wallet callback data`);
-
-      return new SuccessResponse({
-        statusCode: HttpStatus.OK,
-        message: `${updatedUserDocs.length} documents updated successfully from wallet callback`,
-        data: {
-          updated_documents_count: updatedUserDocs.length,
-          documents: updatedUserDocs.map(doc => ({
-            doc_id: doc.doc_id,
-            doc_name: doc.doc_name,
-            doc_type: doc.doc_type,
-            doc_subtype: doc.doc_subtype,
-            user_id: doc.user_id,
-          })),
-        },
-      });
-    } catch (error) {
-      Logger.error(`Error processing wallet callback: ${error}`);
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: 'Failed to process wallet callback',
-      });
-    }
-  }
-
-
-  /**
-   * Upload a document file with metadata and store it in the database
-   * If a document with the same type, subtype, and name exists for the user, it will be updated
-   * @param req The request object containing authenticated user information
-   * @param file The uploaded file (from multer)
-   * @param uploadDocumentDto Metadata for the document
-   * @returns Success response with document details
-   */
-  async uploadDocument(
-    req: any,
-    file: Express.Multer.File,
-    uploadDocumentDto: UploadDocumentDto,
-  ) {
-    try {
-      const userDetails = await this.getUserDetails(req);
-
-      const existingDoc = await this.userDocsRepository.findOne({
-        where: {
-          user_id: userDetails.user_id,
-          doc_type: uploadDocumentDto.docType,
-          doc_subtype: uploadDocumentDto.docSubType,
-          doc_name: uploadDocumentDto.docName,
-        },
-      });
-
-      // Validate document type and subtype
-      this.validateDocumentType(uploadDocumentDto);
-
-      // Determine document config and whether QR processing is required
-      const { requiresQRProcessing } = await this.getDocumentConfig(uploadDocumentDto);
-
-      // Validate file type for QR processing
-      this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
-
-      // Perform OCR extraction (throws on failure)
-      const ocrResult = await this.performOcr(file, uploadDocumentDto, requiresQRProcessing);
-
-      // Get vcFields configuration for the document type
-      const vcFields = await this.vcFieldsService.getVcFields(
-        uploadDocumentDto.docType,
-        uploadDocumentDto.docSubType,
-      );
-
-      // Map OCR text to structured data based on vcFields configuration
-      let vcMapping = null;
-      if (vcFields) {
-        vcMapping = await this.ocrMappingService.mapAfterOcr({
-          text: ocrResult.extractedText,
-          docType: uploadDocumentDto.docType,
-          docSubType: uploadDocumentDto.docSubType,
-        }, vcFields);
-      } else {
-        Logger.warn(`No vcFields configuration found for docType: ${uploadDocumentDto.docType}, docSubType: ${uploadDocumentDto.docSubType}`);
-        vcMapping = {
-          mapped_data: {},
-          missing_fields: [],
-          confidence: 0,
-          processing_method: 'keyword' as const,
-          warnings: ['No vcFields configuration found'],
-        };
-      }
-
-      // Upload file to storage
-      const uploadResult = await this.documentUploadService.uploadFile(
-        file,
-        {
-          docType: uploadDocumentDto.docType,
-          docSubType: uploadDocumentDto.docSubType,
-          docName: uploadDocumentDto.docName,
-          importedFrom: uploadDocumentDto.importedFrom,
-        },
-        userDetails.user_id,
-      );
-
-      // Save or update the document record
-      const { savedDoc, isUpdate } = existingDoc
-        ? await this.updateExistingDoc(existingDoc, uploadResult, uploadDocumentDto, vcMapping)
-        : await this.createNewDoc(userDetails.user_id, uploadResult, uploadDocumentDto, vcMapping);
-
-      // Generate download URL and return standardized response
-      const downloadUrl = await this.documentUploadService.generateDownloadUrl(savedDoc.doc_path);
-
-      return new SuccessResponse({
-        statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
-        message: isUpdate ? 'Document updated successfully' : 'Document uploaded successfully',
-        data: {
-          doc_id: savedDoc.doc_id,
-          doc_path: savedDoc.doc_path,
-          user_id: savedDoc.user_id,
-          doc_type: savedDoc.doc_type,
-          doc_subtype: savedDoc.doc_subtype,
-          doc_name: savedDoc.doc_name,
-          imported_from: savedDoc.imported_from,
-          doc_datatype: savedDoc.doc_datatype,
-          uploaded_at: savedDoc.uploaded_at,
-          is_update: isUpdate,
-          download_url: downloadUrl,
-          ocr: ocrResult,
-          vc_mapping: vcMapping,
-        },
-      });
-    } catch (error) {
-      Logger.error(
-        'users.service:uploadDocument',
-        error?.message ?? error,
-        error?.stack,
-      );
-
-      if (error?.code === '23505') {
-        return new ErrorResponse({
-          statusCode: HttpStatus.BAD_REQUEST,
-          errorMessage: 'Duplicate document entry',
-        });
-      }
-
-      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
-        return new ErrorResponse({
-          statusCode: error.getStatus(),
-          errorMessage: error.message,
-        });
-      }
-
-      // Handle nested service errors
-      if (error?.response?.statusCode && error?.response?.message) {
-        return new ErrorResponse({
-          statusCode: error.response.statusCode,
-          errorMessage: error.response.message,
-        });
-      }
-
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error?.message || 'Failed to upload document',
-      });
-    }
-  }
-
-  // Wrapper method to get vcFields for a document type
-  public async getVcFieldsForDocument(docType: string, docSubType: string) {
-    return await this.vcFieldsService.getVcFields(docType, docSubType);
-  }
-
-  // Expose ocrMapping service for external use
-  public get ocrMapping() {
-    return this.ocrMappingService;
-  }
-
-  // Helper to get document configuration and QR processing requirement
-  public async getDocumentConfig(uploadDocumentDto: UploadDocumentDto): Promise<{ requiresQRProcessing: boolean; documentConfig?: any }> {
-    let requiresQRProcessing = false;
-    let documentConfig = null;
-
-    if (!uploadDocumentDto.docSubType) {
-      return { requiresQRProcessing, documentConfig };
-    }
-
-    try {
-      const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
-      if (vcConfig?.value && Array.isArray(vcConfig.value)) {
-        documentConfig = vcConfig.value.find(
-          (doc: any) => doc.documentSubType === uploadDocumentDto.docSubType
-        );
-
-        if (documentConfig) {
-          requiresQRProcessing = documentConfig.issueVC?.toLowerCase() === 'no';
-          Logger.log(
-            `Document config for ${uploadDocumentDto.docSubType}: issueVC=${documentConfig.issueVC}, ` +
-            `requiresQRProcessing=${requiresQRProcessing}`
-          );
-        }
-      }
-    } catch (configError) {
-      Logger.warn(`Failed to fetch document configuration: ${configError.message}`);
-    }
-
-    return { requiresQRProcessing, documentConfig };
-  }
-
-  // Helper to validate document type and subtype
-  public async validateDocumentType(uploadDocumentDto: UploadDocumentDto) {
-    if (!uploadDocumentDto.docType || uploadDocumentDto.docType.trim() === '') {
-      throw new BadRequestException('Document type is required and cannot be empty.');
-    }
-
-    if (!uploadDocumentDto.docSubType || uploadDocumentDto.docSubType.trim() === '') {
-      throw new BadRequestException('Document subtype is required and cannot be empty.');
-    }
-  }
-
-  // Helper to validate file type when QR processing is required
-  public async validateFileTypeForQr(requiresQRProcessing: boolean, mimetype: string) {
-    if (requiresQRProcessing && mimetype === 'application/pdf') {
-      throw new BadRequestException(
-        'QR processing failed: PDF QR code extraction is not supported. Please upload an image with a QR code.'
-      );
-    }
-  }
-
-  // Helper to perform OCR extraction and validations
-  public async performOcr(file: Express.Multer.File, uploadDocumentDto: UploadDocumentDto, requiresQRProcessing: boolean) {
-    try {
-      Logger.log(
-        `Starting OCR extraction ${requiresQRProcessing ? 'with QR processing' : 'without QR processing'} for document validation`
-      );
-
-      const extractedData = requiresQRProcessing
-        ? await this.ocrService.extractTextFromBufferWithQR(
-          file.buffer,
-          file.mimetype,
-          uploadDocumentDto.docSubType,
-        )
-        : await this.ocrService.extractTextFromBuffer(
-          file.buffer,
-          file.mimetype,
-        );
-
-      const ocrResult = {
-        extractedText: extractedData.fullText,
-        confidence: extractedData.confidence,
-        metadata: extractedData.metadata,
-        qrProcessing: requiresQRProcessing && 'qrProcessing' in extractedData
-          ? extractedData.qrProcessing
-          : undefined,
-      };
-
-      Logger.log(
-        `OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
-        (requiresQRProcessing && 'qrProcessing' in extractedData && extractedData.qrProcessing && (extractedData.qrProcessing as any)?.qrCodeDetected
-          ? ` (QR code processed)` : '')
-      );
-
-      if (extractedData.fullText.length === 0) {
-        Logger.error(`OCR validation failed: No text extracted from document`);
-        throw new BadRequestException(
-          'Document validation failed: No readable text found in the uploaded document. Please ensure the document contains clear, readable text and try again.'
-        );
-      }
-
-      if (extractedData.confidence < 10) {
-        Logger.error(`OCR validation failed: Very low confidence (${extractedData.confidence}%)`);
-        throw new BadRequestException(
-          'Document validation failed: The document quality is too poor for reliable text extraction. Please upload a clearer, higher-quality image or document.'
-        );
-      }
-
-      return ocrResult;
-    } catch (ocrError) {
-      Logger.error(`OCR processing failed: ${ocrError.message}`);
-
-      // If it's already a BadRequestException (like QR processing errors), preserve the user-friendly message
-      if (ocrError instanceof BadRequestException) {
-        throw ocrError;
-      }
-
-      // For other errors, wrap in InternalServerErrorException
-      throw new InternalServerErrorException(
-        `Document processing failed: ${ocrError.message}`
-      );
-    }
-  }
-
-  // Helper methods for document management
-
-  private async updateExistingDoc(
-    existingDoc: UserDoc,
-    uploadResult: any,
-    uploadDocumentDto: UploadDocumentDto,
-    vcMapping: any,
-  ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
-    const previousPath = existingDoc.doc_path;
-    existingDoc.doc_path = uploadResult.filePath;
-    existingDoc.imported_from = uploadDocumentDto.importedFrom;
-    existingDoc.doc_datatype = uploadResult.docDatatype;
-    existingDoc.uploaded_at = uploadResult.uploadedAt;
-
-    // Store vc_mapping data in doc_data column (will be automatically encrypted)
-    if (vcMapping) {
-      existingDoc.doc_data = JSON.stringify(vcMapping) as any;
-    }
-
-    const savedDoc = await this.userDocsRepository.save(existingDoc);
-    if (previousPath) {
-      await this.documentUploadService.deleteFile(previousPath);
-    }
-    Logger.log(`Document updated successfully: ${savedDoc.doc_id}`);
-    return { savedDoc, isUpdate: true };
-  }
-
-  public async createNewDoc(
-    userId: string,
-    uploadResult: any,
-    uploadDocumentDto: UploadDocumentDto,
-    vcMapping: any,
-  ): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
-    const newUserDoc = this.userDocsRepository.create({
-      user_id: userId,
-      doc_type: uploadDocumentDto.docType,
-      doc_subtype: uploadDocumentDto.docSubType,
-      doc_name: uploadDocumentDto.docName,
-      imported_from: uploadDocumentDto.importedFrom,
-      doc_path: uploadResult.filePath,
-      doc_data: vcMapping ? JSON.stringify(vcMapping) as any : null,
-      doc_datatype: uploadResult.docDatatype,
-      doc_verified: null,
-      watcher_registered: false,
-      watcher_email: null,
-      watcher_callback_url: null,
-      doc_data_link: null,
-    });
-
-    const savedDoc = await this.userDocsRepository.save(newUserDoc);
-    Logger.log(`Document uploaded successfully: ${savedDoc.doc_id}`);
-    return { savedDoc, isUpdate: false };
-  }
+	constructor(
+		@InjectRepository(User)
+		private readonly userRepository: Repository<User>,
+		@InjectRepository(UserDoc)
+		private readonly userDocsRepository: Repository<UserDoc>,
+		@InjectRepository(Consent)
+		private readonly consentRepository: Repository<Consent>,
+		@InjectRepository(UserApplication)
+		private readonly userApplicationRepository: Repository<UserApplication>,
+		private readonly keycloakService: KeycloakService,
+		private readonly profilePopulator: ProfilePopulator,
+		private readonly customFieldsService: CustomFieldsService,
+		private readonly configService: ConfigService,
+		private readonly proxyService: ProxyService,
+		private readonly adminService: AdminService,
+		@Inject('FileStorageService')
+		private readonly fileStorageService: IFileStorageService,
+		private readonly documentUploadService: DocumentUploadService,
+		private readonly ocrService: OcrService,
+		private readonly ocrMappingService: OcrMappingService,
+		private readonly vcFieldsService: VcFieldsService,
+		private readonly vcAdapterFactory: VcAdapterFactory,
+		private readonly i18n: I18nService,
+		private readonly vcProcessingService: VcProcessingService,
+		private readonly qrContentProcessor: QRContentProcessorService,
+		private readonly documentValidationService: DocumentValidationService,
+	) { }
+
+	/*  async create(createUserDto: CreateUserDto) {
+	   const user = this.userRepository.create(createUserDto);
+	   try {
+		 const savedUser = await this.userRepository.save(user);
+   
+		return new SuccessResponse({
+		  statusCode: HttpStatus.OK, // Created
+		  message: 'USER_CREATED',
+		  data: savedUser,
+		});
+	   } catch (error) {
+		 return new ErrorResponse({
+		   statusCode: HttpStatus.INTERNAL_SERVER_ERROR, // Created
+		   errorMessage: error.message,
+		 });
+	   }
+	 } */
+
+	async update(userId: string, updateUserDto: any) {
+		// Destructure userInfo from the payload
+		const { userInfo, ...userData } = updateUserDto;
+
+		// Check for existing user in the user table
+		const existingUser = await this.userRepository.findOne({
+			where: { user_id: userId },
+		});
+
+		if (!existingUser) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.NOT_FOUND,
+				errorMessage: `User with ID '${userId}' not found`,
+			});
+		}
+
+		// Update the user information in userRepository
+		Object.assign(existingUser, userData);
+
+		try {
+			const updatedUser: User = await this.userRepository.save(existingUser);
+
+			// Only update custom fields if userInfo is provided and not empty
+			let existingUserInfo = null;
+			if (userInfo && Array.isArray(userInfo) && userInfo.length > 0) {
+				existingUserInfo = await this.customFieldsService.saveCustomFields(
+					updatedUser.user_id,
+					FieldContext.USERS,
+					userInfo,
+				);
+			} else {
+				// If userInfo is not provided, fetch existing custom fields instead of deleting them
+				existingUserInfo = await this.customFieldsService.getCustomFields(
+					updatedUser.user_id,
+					FieldContext.USERS
+				);
+			}
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'USER_UPDATED',
+				data: {
+					...updatedUser,
+					userInfo: userInfo ?? existingUserInfo, // Combine updated user with userInfo
+				},
+			});
+		} catch (error) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message ?? 'An error occurred while updating user',
+			});
+		}
+	}
+
+	async findOne(req: UserRequest, decryptData?: boolean, locale?: string): Promise<SuccessResponse | ErrorResponse> {
+		try {
+			const ssoId = this.extractSsoIdFromRequest(req);
+			const userDetails = await this.getUserBySsoId(ssoId);
+
+			// Always sanitize/extract locale
+			const reqAny = req as any;
+			const rawLocale = locale || reqAny.headers?.['accept-language'];
+			const sanitizedLocale = this.i18n.getLocaleFromHeader(rawLocale);
+
+			const userData = await this.buildUserResponse(userDetails.user_id, decryptData, sanitizedLocale);
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'USER_FETCHED',
+				data: userData,
+			});
+		} catch (error) {
+			Logger.error(`Error in findOne: ${error.message}`, error.stack);
+			return new ErrorResponse({
+				statusCode: error.statusCode || HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message,
+			});
+		}
+	}
+
+	/**
+	 * Extracts and validates SSO ID from request
+	 * @private
+	 */
+	private extractSsoIdFromRequest(req: UserRequest): string {
+		const ssoId = req?.user?.keycloak_id;
+		if (!ssoId) {
+			const error = new UnauthorizedException('Invalid or missing Keycloak ID') as any;
+			error.statusCode = HttpStatus.UNAUTHORIZED;
+			throw error;
+		}
+		return ssoId;
+	}
+
+	/**
+	 * Retrieves user details by SSO ID
+	 * @private
+	 */
+	private async getUserBySsoId(ssoId: string): Promise<User> {
+		const userDetails = await this.userRepository.findOne({
+			where: { sso_id: ssoId },
+		});
+
+		if (!userDetails) {
+			const error = new NotFoundException(`User with ID '${ssoId}' not found`) as any;
+			error.statusCode = HttpStatus.NOT_FOUND;
+			throw error;
+		}
+
+		return userDetails;
+	}
+
+	/**
+	 * Builds complete user response with all related data
+	 * @private
+	 */
+	private async buildUserResponse(userId: string, decryptData?: boolean, locale?: string): Promise<UserResponseData> {
+		const [user, customFields, userDoc] = await Promise.all([
+			this.findOneUser(userId),
+			this.customFieldsService.getCustomFields(userId, FieldContext.USERS, locale),
+			this.findUserDocs(userId, decryptData),
+		]);
+
+		const whosePhoneNumber = this.extractWhosePhoneNumber(customFields);
+		const pictureUrl = await this.generatePictureUrl(user?.image);
+
+		return {
+			...user,
+			whosePhoneNumber,
+			pictureUrl,
+			docs: userDoc || [],
+			customFields: customFields || [],
+		};
+	}
+
+	/**
+	 * Extracts whosePhoneNumber from custom fields
+	 * @private
+	 */
+	private extractWhosePhoneNumber(customFields: CustomField[]): string | null {
+		Logger.debug(`Custom fields count: ${customFields?.length || 0}`);
+
+		if (!customFields || customFields.length === 0) {
+			Logger.warn('No custom fields found for user');
+			return null;
+		}
+
+		const fieldNames = customFields.map(f => f.name);
+		Logger.debug(`Available custom fields: ${fieldNames.join(', ')}`);
+
+		const whosePhoneNumberField = customFields.find(
+			(field) => field.name === 'whosePhoneNumber',
+		);
+
+		if (!whosePhoneNumberField) {
+			Logger.warn('whosePhoneNumber field not found in custom fields');
+			return null;
+		}
+
+		Logger.debug(`Found whosePhoneNumber field with value: ${whosePhoneNumberField.value}`);
+
+		if (whosePhoneNumberField.value == null) {
+			return null;
+		}
+
+		const value = String(whosePhoneNumberField.value).trim();
+		const result = value || null;
+		Logger.debug(`Processed whosePhoneNumber value: ${result}`);
+
+		return result;
+	}
+
+	/**
+	 * Generates download URL for user picture
+	 * @private
+	 */
+	private async generatePictureUrl(imagePath?: string): Promise<string | null> {
+		if (!imagePath) {
+			return null;
+		}
+
+		try {
+			// For profile pictures, prepend the profile picture prefix
+			const profilePicturePrefix = this.configService.get<string>(
+				'AWS_S3_PROFILE_PICTURE_PREFIX',
+				'user-profile-pictures',
+			);
+			const fullPath = `${profilePicturePrefix}/${imagePath}`;
+			return await this.documentUploadService.generateDownloadUrl(fullPath);
+		} catch (error) {
+			Logger.warn(`Failed to generate download URL for user image: ${error.message}`);
+			return null;
+		}
+	}
+
+	async findConsentByUser(req: any) {
+		try {
+			const sso_id = req?.user?.keycloak_id;
+			if (!sso_id) {
+				const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+				const errorMessage = this.i18n.translateError('USER_INVALID_KEYCLOAK_ID', locale);
+				return new ErrorResponse({
+					statusCode: HttpStatus.UNAUTHORIZED,
+					errorMessage,
+				});
+			}
+
+			const userDetails = await this.userRepository.findOne({
+				where: { sso_id },
+			});
+
+			if (!userDetails) {
+				return new ErrorResponse({
+					statusCode: HttpStatus.NOT_FOUND,
+					errorMessage: `User with ID '${sso_id}' not found`,
+				});
+			}
+
+			const consent = await this.findUserConsent(userDetails.user_id);
+
+			const final = {
+				...consent,
+			};
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'DATA_RETRIEVED',
+				data: final,
+			});
+		} catch (error) {
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: error.message,
+			});
+		}
+	}
+
+	async findOneUser(user_id: string): Promise<User> {
+		const user = await this.userRepository.findOne({
+			where: { user_id },
+		});
+
+		return user;
+	}
+
+	async findUserDocs(user_id: string, decryptData: boolean) {
+		const userDocs = await this.userDocsRepository.find({ where: { user_id } });
+
+		// Retrieve supported document subtypes from settings (vcConfiguration)
+		let docTypes = [];
+		try {
+			const vcConfig =
+				await this.adminService.getConfigByKey('vcConfiguration');
+			docTypes = Array.isArray(vcConfig?.value) ? vcConfig.value : [];
+		} catch (error) {
+			Logger.error('Failed to fetch vcConfiguration:', error);
+			docTypes = [];
+		}
+
+		// Generate pre-signed URLs for documents if using S3
+		const docsWithUrls = await Promise.all(
+			userDocs.map(async (doc) => {
+				let downloadUrl = null;
+
+				// Generate download URL if doc_path exists
+				if (doc.doc_path) {
+					downloadUrl = await this.documentUploadService.generateDownloadUrl(doc.doc_path);
+				}
+
+				return {
+					...doc,
+					is_uploaded: docTypes.some(
+						(obj) => obj.documentSubType === doc.doc_subtype,
+					),
+					download_url: downloadUrl,
+				};
+			}),
+		);
+
+		return docsWithUrls;
+	}
+
+	async findUserConsent(user_id: string): Promise<any> {
+		const consents = await this.consentRepository.find({
+			where: { user_id },
+		});
+
+		// Format the response
+		return {
+			statusCode: 200,
+			message: 'DATA_RETRIEVED',
+			data: consents.map((consent) => ({
+				id: consent.id,
+				user_id: consent.user_id,
+				purpose: consent.purpose,
+				purpose_text: consent.purpose_text,
+				accepted: consent.accepted,
+				consent_date: consent.consent_date,
+			})),
+		};
+	}
+
+	// Method to check if mobile number exists
+	async findByMobile(mobile: string): Promise<User | undefined> {
+		return await this.userRepository.findOne({
+			where: { phoneNumber: mobile },
+		});
+	}
+
+	async findBySsoId(ssoId: string): Promise<User | undefined> {
+		return await this.userRepository.findOne({
+			where: { sso_id: ssoId },
+		});
+	}
+
+	async createKeycloakData(body: any): Promise<User> {
+		const user = this.userRepository.create({
+			name: body.name,
+			email: body.email ?? '',
+			phoneNumber: body.phoneNumber ?? '',
+			sso_provider: 'keycloak',
+			sso_id: body.keycloak_id,
+			walletToken: body.walletToken ?? null,
+			created_at: new Date(),
+		});
+		return await this.userRepository.save(user);
+	}
+	private preprocessDocData(doc_data: any): any {
+		if (typeof doc_data === 'object') {
+			try {
+				return JSON.stringify(doc_data);
+			} catch (error) {
+				Logger.error('Error stringifying doc_data:', error);
+				throw new BadRequestException(
+					'USER_DOC_DATA_INVALID_FORMAT',
+				);
+			}
+		}
+		return doc_data;
+	}
+
+	// User docs save
+	/*   async createUserDoc(createUserDocDto: CreateUserDocDTO) {
+		try {
+		  // Stringify the JSON doc_data before encryption
+		  const stringifiedDocData = this.preprocessDocData(createUserDocDto.doc_data);
+	
+		  const newUserDoc = this.userDocsRepository.create({
+			...createUserDocDto,
+			doc_data: stringifiedDocData,
+		  });
+	
+		  const savedUserDoc = await this.userDocsRepository.save(newUserDoc);
+		  return new SuccessResponse({
+			statusCode: HttpStatus.OK,
+			message: 'DOCUMENT_UPLOADED',
+			data: savedUserDoc,
+		  });
+		} catch (error) {
+		  if (error.code == '23505') {
+			return new ErrorResponse({
+			  statusCode: HttpStatus.BAD_REQUEST,
+			  errorMessage: error.detail,
+			});
+		  }
+		  return new ErrorResponse({
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			errorMessage: error,
+		  });
+		}
+	  } */
+
+	async getDoc(createUserDocDto: CreateUserDocDTO) {
+		const existingDoc = await this.userDocsRepository.findOne({
+			where: {
+				user_id: createUserDocDto.user_id,
+				doc_type: createUserDocDto.doc_type,
+				doc_subtype: createUserDocDto.doc_subtype,
+			},
+		});
+
+		return existingDoc;
+	}
+
+	async saveDoc(createUserDocDto: CreateUserDocDTO) {
+		// Stringify the JSON doc_data before saving (encryption happens via entity transformer)
+		const stringifiedDocData = this.preprocessDocData(
+			createUserDocDto.doc_data,
+		);
+
+		const newUserDoc = this.userDocsRepository.create({
+			...createUserDocDto,
+			doc_data: stringifiedDocData,
+		});
+
+		// Save to the database
+		const savedDoc = await this.userDocsRepository.save(newUserDoc);
+		return savedDoc;
+	}
+
+	async writeToFile(
+		createUserDocDto: CreateUserDocDTO,
+		userFilePath: any,
+		savedDoc: any,
+	) {
+		try {
+			// Initialize the file with empty array if it doesn't exist
+			let currentData = [];
+			if (fs.existsSync(userFilePath)) {
+				try {
+					currentData = JSON.parse(fs.readFileSync(userFilePath, 'utf-8'));
+				} catch (err) {
+					console.error('Error reading/parsing file, reinitializing:', err);
+				}
+			}
+
+			currentData.push(savedDoc);
+
+			// Write the updated data to the file
+			fs.writeFileSync(userFilePath, JSON.stringify(currentData, null, 2));
+			console.log(
+				`File written successfully for user_id: ${createUserDocDto.user_id}`,
+			);
+		} catch (err) {
+			console.error('Error writing to file:', err);
+		}
+	}
+
+	async getSavedAndExistingDocs(
+		createUserDocsDto: CreateUserDocDTO[],
+		baseFolder: any,
+	) {
+		const savedDocs: UserDoc[] = [];
+		const existingDocs: UserDoc[] = [];
+
+		for (const createUserDocDto of createUserDocsDto) {
+			const userFilePath = path.join(
+				baseFolder,
+				`${createUserDocDto.user_id}.json`,
+			);
+
+			// Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
+			const existingDoc = await this.getDoc(createUserDocDto);
+
+			if (existingDoc) {
+				existingDocs.push(existingDoc);
+				console.log(
+					`Document already exists for user_id: ${createUserDocDto.user_id}, doc_type: ${createUserDocDto.doc_type}, doc_subtype: ${createUserDocDto.doc_subtype}`,
+				);
+			} else {
+				// Create the new document entity for the database
+				const savedDoc = await this.saveDoc(createUserDocDto);
+				savedDocs.push(savedDoc);
+				await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+			}
+		}
+
+		return { savedDocs, existingDocs };
+	}
+
+	async createUserDocs(
+		createUserDocsDto: CreateUserDocDTO[],
+	): Promise<UserDoc[]> {
+		const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
+
+		// Ensure the `userData` folder exists
+		if (!fs.existsSync(baseFolder)) {
+			fs.mkdirSync(baseFolder, { recursive: true });
+		}
+
+		const { savedDocs, existingDocs } = await this.getSavedAndExistingDocs(
+			createUserDocsDto,
+			baseFolder,
+		);
+
+		if (existingDocs.length > 0) return existingDocs;
+
+		return savedDocs;
+	}
+
+	async getUserDetails(req: any): Promise<User> {
+		const sso_id = req?.user?.keycloak_id;
+		if (!sso_id) {
+			throw new UnauthorizedException('USER_INVALID_KEYCLOAK_ID');
+		}
+
+		const userDetails = await this.userRepository.findOne({
+			where: { sso_id },
+		});
+
+		if (!userDetails) {
+			throw new NotFoundException(`User with ID '${sso_id}' not found`);
+		}
+
+		return userDetails;
+	}
+
+	async updateUserProfile(
+		req: any,
+		updateUserProfileDto: UpdateUserProfileDto,
+		picture?: Express.Multer.File,
+	): Promise<SuccessResponse | ErrorResponse> {
+		try {
+			const userDetails = await this.getUserDetails(req);
+
+			// Update basic user fields
+			this.updateBasicUserFields(userDetails, updateUserProfileDto);
+
+			// Handle picture upload if provided
+			if (picture) {
+				await this.handlePictureUpload(userDetails, picture);
+			}
+
+			// Save updated user
+			const updatedUser = await this.userRepository.save(userDetails);
+
+			// Handle whosePhoneNumber custom field
+			const whosePhoneNumberValue = await this.handleWhosePhoneNumberField(
+				updatedUser,
+				updateUserProfileDto.whosePhoneNumber,
+			);
+
+			// Generate picture URL
+			const pictureUrl = await this.generatePictureUrl(updatedUser.image);
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'USER_PROFILE_UPDATED',
+				data: {
+					user_id: updatedUser.user_id,
+					phoneNumber: updatedUser.phoneNumber,
+					whosePhoneNumber: whosePhoneNumberValue,
+					image: updatedUser.image,
+					pictureUrl: pictureUrl,
+					updated_at: updatedUser.updated_at,
+				},
+			});
+		} catch (error) {
+			return this.handleUpdateProfileError(error, req);
+		}
+	}
+
+	/**
+	 * Updates basic user fields from DTO
+	 * @private
+	 */
+	private updateBasicUserFields(
+		userDetails: User,
+		updateUserProfileDto: UpdateUserProfileDto,
+	): void {
+		if (updateUserProfileDto.phoneNumber !== undefined) {
+			userDetails.phoneNumber = updateUserProfileDto.phoneNumber;
+		}
+	}
+
+	/**
+	 * Handles picture upload and deletion of old picture
+	 * @private
+	 */
+	private async handlePictureUpload(
+		userDetails: User,
+		picture: Express.Multer.File,
+	): Promise<void> {
+		try {
+			// Delete old picture if exists
+			if (userDetails.image) {
+				await this.deleteOldPicture(userDetails.image);
+			}
+
+			// Upload new picture as public to enable permanent URL access
+			const uploadResult = await this.documentUploadService.uploadFile(
+				picture,
+				{
+					docType: 'profile',
+					docSubType: 'picture',
+					docName: 'Profile Picture',
+					importedFrom: 'Manual Upload',
+				},
+				userDetails.user_id,
+				UPLOAD_CONFIG.maxProfilePictureSize,
+				true, // Upload as public for permanent URL access
+			);
+
+			userDetails.image = uploadResult.filePath;
+		} catch (uploadError) {
+			Logger.error(
+				`Failed to upload picture: ${uploadError.message}`,
+				uploadError.stack,
+			);
+			throw new BadRequestException(
+				`Failed to upload picture: ${uploadError.message}`,
+			);
+		}
+	}
+
+	/**
+	 * Deletes old picture file
+	 * @private
+	 */
+	private async deleteOldPicture(imagePath: string): Promise<void> {
+		try {
+			// For profile pictures, add the profile picture prefix when deleting
+			const profilePicturePrefix = this.configService.get<string>(
+				'AWS_S3_PROFILE_PICTURE_PREFIX',
+				'user-profile-pictures',
+			);
+			const fullPath = `${profilePicturePrefix}/${imagePath}`;
+			await this.documentUploadService.deleteFile(fullPath);
+		} catch (deleteError) {
+			Logger.warn(`Failed to delete old picture: ${deleteError.message}`);
+			// Continue even if deletion fails
+		}
+	}
+
+	/**
+	 * Handles whosePhoneNumber custom field save and retrieval
+	 * @private
+	 */
+	private async handleWhosePhoneNumberField(
+		user: User,
+		whosePhoneNumber?: string,
+	): Promise<string | null> {
+		// Try to save new value if provided
+		if (this.shouldSaveWhosePhoneNumber(whosePhoneNumber)) {
+			const savedValue = await this.saveWhosePhoneNumberField(user.user_id, whosePhoneNumber);
+			if (savedValue !== null) {
+				return savedValue;
+			}
+		}
+
+		// Retrieve existing value if no new value was saved
+		return await this.retrieveExistingWhosePhoneNumber(user.user_id);
+	}
+
+	/**
+	 * Checks if whosePhoneNumber should be saved
+	 * @private
+	 */
+	private shouldSaveWhosePhoneNumber(whosePhoneNumber?: string): boolean {
+		return Boolean(whosePhoneNumber?.trim());
+	}
+
+	/**
+	 * Saves whosePhoneNumber as custom field
+	 * @private
+	 */
+	private async saveWhosePhoneNumberField(
+		userId: string,
+		whosePhoneNumber: string,
+	): Promise<string | null> {
+		try {
+			const whosePhoneNumberField = await this.customFieldsService.getFieldByName(
+				'whosePhoneNumber',
+				FieldContext.USERS,
+			);
+
+			if (!whosePhoneNumberField) {
+				Logger.error(
+					'whosePhoneNumber field not found in custom fields. Please create the field first in the fields table.',
+				);
+				throw new BadRequestException(
+					'USER_WHOSE_PHONE_NUMBER_FIELD_NOT_FOUND',
+				);
+			}
+
+			const valueToSave = String(whosePhoneNumber).trim();
+			Logger.log(
+				`Saving whosePhoneNumber: "${valueToSave}" for user: ${userId} with fieldId: ${whosePhoneNumberField.fieldId}`,
+			);
+
+			const customFieldPayload = {
+				fieldId: whosePhoneNumberField.fieldId,
+				value: valueToSave,
+			};
+			Logger.log(`Custom field payload: ${JSON.stringify(customFieldPayload)}`);
+
+			// Use updateCustomFields to preserve other custom fields when updating whosePhoneNumber
+			const savedValues = await this.customFieldsService.updateCustomFields(
+				userId,
+				FieldContext.USERS,
+				[customFieldPayload]
+			);
+
+			this.logSavedCustomFieldValues(savedValues);
+			return valueToSave;
+		} catch (fieldError) {
+			Logger.error(
+				`Failed to save whosePhoneNumber custom field: ${fieldError.message}`,
+				fieldError.stack,
+			);
+
+			if (fieldError instanceof BadRequestException) {
+				throw fieldError;
+			}
+
+			// For other errors, return null to try retrieving existing value
+			return null;
+		}
+	}
+
+	/**
+	 * Logs saved custom field values for debugging
+	 * @private
+	 */
+	private logSavedCustomFieldValues(savedValues: any[]): void {
+		Logger.log(
+			`Successfully saved whosePhoneNumber custom field. Saved values count: ${savedValues.length}`,
+		);
+
+		if (savedValues.length > 0) {
+			for (const [index, savedValue] of savedValues.entries()) {
+				Logger.log(
+					`Saved value ${index + 1}: id=${savedValue.id}, value="${savedValue.value}", itemId=${savedValue.itemId}`,
+				);
+			}
+		}
+	}
+
+	/**
+	 * Retrieves existing whosePhoneNumber value from custom fields
+	 * @private
+	 */
+	private async retrieveExistingWhosePhoneNumber(userId: string): Promise<string | null> {
+		try {
+			const customFields = await this.customFieldsService.getCustomFields(
+				userId,
+				FieldContext.USERS,
+			);
+
+			const whosePhoneNumberField = customFields.find(
+				(field) => field.name === 'whosePhoneNumber',
+			);
+
+			if (whosePhoneNumberField?.value != null) {
+				const value = String(whosePhoneNumberField.value).trim();
+				const result = value || null;
+				Logger.log(`Retrieved existing whosePhoneNumber value: ${result}`);
+				return result;
+			}
+
+			Logger.debug('No whosePhoneNumber value found in custom fields');
+			return null;
+		} catch (fieldError) {
+			Logger.warn(
+				`Failed to retrieve whosePhoneNumber custom field: ${fieldError.message}`,
+			);
+			return null;
+		}
+	}
+
+	/**
+	 * Handles errors in updateUserProfile
+	 * @private
+	 */
+	private handleUpdateProfileError(error: any, req?: any): ErrorResponse | never {
+		if (
+			error instanceof UnauthorizedException ||
+			error instanceof NotFoundException ||
+			error instanceof BadRequestException
+		) {
+			throw error;
+		}
+
+		Logger.error(
+			`Error updating user profile: ${error.message}`,
+			error.stack,
+		);
+		const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+		const errorMessage = this.i18n.translateError('USER_PROFILE_UPDATE_FAILED', locale);
+		return new ErrorResponse({
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			errorMessage,
+		});
+	}
+
+	async updateProfile(userDetails: User) {
+		try {
+			// Get all docs
+			const allDocs = await this.userDocsRepository.find({
+				where: { user_id: userDetails.user_id },
+			});
+
+			// Normalize document data for profile processing
+			const normalizedDocuments: any[] = await this.profilePopulator.normalizeDocumentDataForProfile(allDocs);
+
+			// // build profile data
+			const { userProfile, validationData } =
+				await this.profilePopulator.buildProfile(normalizedDocuments);
+
+			const adminResultData =
+				await this.keycloakService.getAdminKeycloakToken();
+
+			// Update database entries
+			await this.profilePopulator.updateDatabase(
+				userProfile,
+				validationData,
+				userDetails,
+				adminResultData,
+			);
+		} catch (error) {
+			Logger.error('Error in updating fields: ', error);
+			throw new InternalServerErrorException(
+				'USER_PROFILE_UPDATE_FAILED',
+			);
+		}
+	}
+
+	async deleteDoc(doc: UserDoc) {
+		const queryRunner =
+			this.userDocsRepository.manager.connection.createQueryRunner();
+		await queryRunner.connect();
+		try {
+			await queryRunner.startTransaction();
+			await queryRunner.manager.remove(doc);
+			await queryRunner.commitTransaction();
+		} catch (error) {
+			Logger.error('Error while deleting the document: ', error);
+			await queryRunner.rollbackTransaction();
+			throw new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: `Error while deleting the document: ${error}`,
+			});
+		} finally {
+			await queryRunner.release();
+		}
+	}
+
+	async createUserDocsNew(
+		req,
+		createUserDocsDto: CreateUserDocDTO[],
+	): Promise<UserDoc[]> {
+		const userDetails = await this.getUserDetails(req);
+		const baseFolder = path.join(__dirname, 'userData'); // Base folder for storing user files
+		const savedDocs: UserDoc[] = [];
+
+		// Ensure the `userData` folder exists
+		if (!fs.existsSync(baseFolder)) {
+			fs.mkdirSync(baseFolder, { recursive: true });
+		}
+
+		for (const createUserDocDto of createUserDocsDto) {
+			try {
+				const savedDoc = await this.processSingleUserDoc(
+					createUserDocDto,
+					userDetails,
+					baseFolder,
+				);
+
+				if (savedDoc) {
+					savedDocs.push(savedDoc);
+				}
+			} catch (error) {
+				Logger.error('Error processing document:', error);
+				throw error;
+			}
+		}
+
+		// Update profile based on documents
+		try {
+			await this.updateProfile(userDetails);
+		} catch (error) {
+			Logger.error('Profile update failed:', error);
+		}
+
+		return savedDocs;
+	}
+
+	private async processSingleUserDoc(
+		createUserDocDto: CreateUserDocDTO,
+		userDetails: any,
+		baseFolder: string,
+	): Promise<UserDoc | null> {
+		// Call the verification method before further processing
+		let verificationResult;
+		try {
+			// Extract issuer from doc_data if available, otherwise use undefined (will fallback to default)
+			const issuer = (createUserDocDto as any).issuer || undefined;
+			verificationResult = await this.verifyVcWithApi(
+				createUserDocDto.doc_data,
+				issuer,
+			);
+		} catch (error) {
+			// Extract a user-friendly message
+			let message =
+				error?.response?.data?.message ??
+				error?.message ??
+				'VC Verification failed';
+			throw new BadRequestException({
+				message: message,
+				error: 'Bad Request',
+				statusCode: 400,
+			});
+		}
+
+		if (!verificationResult.success) {
+			throw new BadRequestException({
+				message: verificationResult.message ?? 'VC Verification failed',
+				errors: verificationResult.errors ?? [],
+				statusCode: 400,
+				error: 'Bad Request',
+			});
+		}
+
+		const userFilePath = path.join(
+			baseFolder,
+			`${createUserDocDto.user_id}.json`,
+		);
+
+		// Check if a record with the same user_id, doc_type, and doc_subtype exists in DB
+		const existingDoc = await this.userDocsRepository.findOne({
+			where: {
+				user_id: userDetails.user_id,
+				doc_type: createUserDocDto.doc_type,
+				doc_subtype: createUserDocDto.doc_subtype,
+			},
+		});
+
+		if (existingDoc) await this.deleteDoc(existingDoc);
+
+		if (!createUserDocDto?.user_id) {
+			createUserDocDto.user_id = userDetails?.user_id;
+		}
+
+		// Create the new document entity for the database
+		try {
+			const savedDoc = await this.saveDoc(createUserDocDto);
+			await this.writeToFile(createUserDocDto, userFilePath, savedDoc);
+
+			// Register watcher if imported_from is e-wallet or QR Code
+			await this.handleWatcherRegistrationIfNeeded(
+				createUserDocDto,
+				savedDoc,
+				userDetails,
+			);
+
+			return savedDoc;
+		} catch (error) {
+			Logger.error('Error processing document:', error);
+			return null;
+		}
+	}
+
+	// Create a new consent record
+	async createUserConsent(
+		createConsentDto: CreateConsentDto,
+	): Promise<Consent> {
+		const consent = this.consentRepository.create(createConsentDto);
+		return await this.consentRepository.save(consent);
+	}
+	async createUserApplication(
+		createUserApplicationDto: CreateUserApplicationDto,
+	) {
+		try {
+			// Check if an application already exists for the given benefit_id and user_id
+			const existingApplication = await this.userApplicationRepository.findOne({
+				where: {
+					benefit_id: createUserApplicationDto.benefit_id,
+					user_id: createUserApplicationDto.user_id,
+				},
+			});
+
+			if (existingApplication) {
+				// Update the existing application with new values from the DTO
+				Object.assign(existingApplication, createUserApplicationDto);
+				const updated =
+					await this.userApplicationRepository.save(existingApplication);
+				return new SuccessResponse({
+					statusCode: HttpStatus.OK,
+					message: 'USER_APPLICATION_UPDATED',
+					data: updated,
+				});
+			} else {
+				// Create a new application
+				const userApplication = this.userApplicationRepository.create(
+					createUserApplicationDto,
+				);
+				const response =
+					await this.userApplicationRepository.save(userApplication);
+				return new SuccessResponse({
+					statusCode: HttpStatus.OK,
+					message: 'USER_APPLICATION_SUBMITTED',
+					data: response,
+				});
+			}
+		} catch (error) {
+			console.error('Error while creating/updating user application:', error);
+			throw new InternalServerErrorException(
+				'USER_APPLICATIONS_UPDATE_FAILED',
+			);
+		}
+	}
+
+	async findOneUserApplication(internal_application_id: string) {
+		const userApplication = await this.userApplicationRepository.findOne({
+			where: { internal_application_id },
+		});
+		if (!userApplication) {
+			throw new NotFoundException(
+				`Application with ID '${internal_application_id}' not found`,
+			);
+		}
+		return new SuccessResponse({
+			statusCode: HttpStatus.OK,
+			message: 'DATA_RETRIEVED',
+			data: userApplication,
+		});
+	}
+
+	async findAllApplicationsByUserId(requestBody: {
+		filters?: any;
+		search?: string;
+		page?: number;
+		limit?: number;
+	}) {
+		const { filters = {}, search, page = 1, limit = 10 } = requestBody;
+
+		let statusUpdateInfo: StatusUpdateInfo;
+		if (filters.benefit_id) {
+			// skipped due to benefit_id filter
+			statusUpdateInfo = {
+				attempted: false,
+				success: true,
+				processedCount: 0,
+				error: null,
+				skipped: true,
+				skipReason: 'Skipped status update due to benefit_id filter',
+			};
+		} else {
+			statusUpdateInfo = await this.performStatusUpdate(filters.user_id);
+		}
+
+		// Now fetch the applications list with updated statuses
+		try {
+			const whereClause = this.buildWhereClause(filters, search);
+			const [userApplication, total] =
+				await this.userApplicationRepository.findAndCount({
+					where: whereClause,
+					skip: (page - 1) * limit,
+					take: limit,
+				});
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'DATA_RETRIEVED',
+				data: {
+					applications: userApplication,
+					total,
+					statusUpdate: statusUpdateInfo,
+				},
+			});
+		} catch (error) {
+			console.error('Error while fetching user applications:', error);
+			throw new InternalServerErrorException(
+				'USER_APPLICATIONS_FETCH_FAILED',
+			);
+		}
+	}
+
+	private async performStatusUpdate(userId?: string) {
+		const statusUpdateInfo = {
+			attempted: false,
+			success: false,
+			processedCount: 0,
+			error: null,
+		};
+
+		try {
+			statusUpdateInfo.attempted = true;
+			const applicationsForUpdate = await this.getApplications(userId);
+
+			if (applicationsForUpdate.length > 0) {
+				await this.processApplications(applicationsForUpdate);
+				statusUpdateInfo.success = true;
+				statusUpdateInfo.processedCount = applicationsForUpdate.length;
+				Logger.log(
+					`Status update completed for ${applicationsForUpdate.length} applications'}`,
+				);
+			} else {
+				statusUpdateInfo.success = true;
+				Logger.log(`No applications found requiring status updates`);
+			}
+		} catch (statusUpdateError) {
+			statusUpdateInfo.error = statusUpdateError.message;
+			Logger.error(
+				`Status update failed during user applications list retrieval: ${statusUpdateError.message}`,
+				statusUpdateError.stack,
+			);
+		}
+
+		return statusUpdateInfo;
+	}
+
+	private buildWhereClause(filters: any, search?: string) {
+		const whereClause = {};
+		const filterKeys = this.userApplicationRepository.metadata.columns.map(
+			(column) => column.propertyName,
+		);
+
+		// Handle filters
+		if (filters && Object.keys(filters).length > 0) {
+			this.applyFilters(whereClause, filters, filterKeys);
+		}
+
+		// Handle search for `application_name`
+		if (search && search.trim().length > 0) {
+			const sanitizedSearch = search.replaceAll(/[%_]/g, String.raw`\\$&`);
+			whereClause['application_name'] = ILike(`%${sanitizedSearch}%`);
+		}
+
+		return whereClause;
+	}
+
+	private applyFilters(whereClause: any, filters: any, filterKeys: string[]) {
+		for (const [key, value] of Object.entries(filters)) {
+			if (filterKeys.includes(key) && value !== null && value !== undefined) {
+				whereClause[key] = value;
+			}
+		}
+	}
+
+	public async registerUserWithUsername(body) {
+		// Replace spaces with underscores in first name and last name
+		const firstPartOfFirstName = body?.firstName
+			?.split(' ')[0]
+			?.replaceAll(/\s+/g, '_');
+		const lastNameWithUnderscore = body?.lastName?.replaceAll(/\s+/g, '_');
+
+		// Extract the last 2 digits of Aadhar
+		const lastTwoDigits = body?.aadhaar?.slice(-2);
+
+		// Concatenate the processed first name, last name, and last 2 digits of Aadhar
+		const username =
+			firstPartOfFirstName?.toLowerCase() +
+			'_' +
+			lastNameWithUnderscore?.toLowerCase() +
+			lastTwoDigits;
+
+		const data_to_create_user = {
+			enabled: 'true',
+			firstName: body?.firstName,
+			lastName: body?.lastName,
+			username: username,
+			credentials: [
+				{
+					type: 'password',
+					value: body?.password,
+					temporary: false,
+				},
+			],
+		};
+
+		// Step 3: Get Keycloak admin token
+		const token = await this.keycloakService.getAdminKeycloakToken();
+
+		try {
+			// Step 4: Register user in Keycloak
+			const registerUserRes = await this.keycloakService.registerUser(
+				data_to_create_user,
+				token.access_token,
+			);
+
+			if (registerUserRes.error) {
+				if (
+					registerUserRes.error.message == 'Request failed with status code 409'
+				) {
+					console.log('User already exists!');
+				} else {
+					console.log(registerUserRes.error.message);
+				}
+			} else if (registerUserRes.headers.location) {
+				const split = registerUserRes.headers.location.split('/');
+				const keycloak_id = split[split.length - 1];
+				body.keycloak_id = keycloak_id;
+				body.username = data_to_create_user.username;
+
+				// Step 5: Try to create user in PostgreSQL
+				const result = await this.createKeycloakData(body);
+
+				// If successful, return success response
+				const userResponse = {
+					user: result,
+					keycloak_id: keycloak_id,
+					username: data_to_create_user.username,
+				};
+				return userResponse;
+			} else {
+				console.log('Unable to create user in Keycloak');
+			}
+		} catch (error) {
+			console.error('Error during user registration:', error);
+
+			// Step 6: Rollback - delete user from Keycloak if PostgreSQL insertion fails
+			if (body?.keycloak_id) {
+				await this.keycloakService.deleteUser(body.keycloak_id);
+				console.log(
+					'Keycloak user deleted due to failure in PostgreSQL creation',
+				);
+			}
+		}
+	}
+
+	async resetInUsers(
+		field: string,
+		existingDoc: UserDoc,
+		queryRunner: QueryRunner,
+	) {
+		await queryRunner.manager
+			.getRepository(User)
+			.createQueryBuilder()
+			.update(User)
+			.set({ [field]: () => 'NULL' }) // Use a raw SQL expression for setting NULL.
+			.where('user_id = :id', { id: existingDoc.user_id })
+			.execute();
+	}
+
+	async resetFields(field: string, existingDoc: UserDoc) {
+		try {
+			const fieldData = await this.customFieldsService.getFieldByName(
+				field,
+				FieldContext.USERS,
+			);
+
+			if (!fieldData?.fieldId) {
+				Logger.warn(`Field '${field}' not found in custom fields`);
+				return;
+			}
+
+			await this.customFieldsService.setFieldValueToNull(
+				existingDoc.user_id,
+				fieldData.fieldId,
+			);
+		} catch (error) {
+			Logger.error(
+				`Error resetting field '${field}' for user ${existingDoc.user_id}:`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get fields to reset from database configuration based on document type
+	 * @param docSubtype Document subtype (e.g., 'casteCertificate', 'disabilityCertificate')
+	 * @returns Array of field names to reset
+	 */
+	private async getFieldsToResetFromConfig(
+		docSubtype: string,
+	): Promise<string[]> {
+		try {
+			// Get profile fields configuration from settings table
+			const configResponse = await this.adminService.getConfigByKey(
+				'profileFieldToDocumentFieldMapping',
+			);
+
+			if (!configResponse?.value) {
+				Logger.warn(
+					'profileFieldToDocumentFieldMapping configuration not found',
+				);
+				return [];
+			}
+
+			const profileFields = Array.isArray(configResponse.value)
+				? configResponse.value
+				: [];
+			const fieldsToReset: string[] = [];
+
+			// Find all fields that have mappings to this document type
+			for (const fieldConfig of profileFields) {
+				const documentMappings = fieldConfig.documentMappings || [];
+
+				// Check if this field has a mapping for the given document type
+				const hasMapping = documentMappings.some(
+					(mapping: any) => mapping.document === docSubtype,
+				);
+
+				if (hasMapping && fieldConfig.fieldName) {
+					fieldsToReset.push(fieldConfig.fieldName);
+				}
+			}
+
+			Logger.debug(
+				`Fields to reset for document type '${docSubtype}': [${fieldsToReset.join(', ')}]`,
+			);
+			return fieldsToReset;
+		} catch (error) {
+			Logger.error(
+				`Error getting fields to reset for document type '${docSubtype}':`,
+				error,
+			);
+			return [];
+		}
+	}
+
+	async resetField(existingDoc: UserDoc, queryRunner: QueryRunner) {
+		try {
+			// Get fields to reset from database configuration instead of hardcoded array
+			const fields = await this.getFieldsToResetFromConfig(
+				existingDoc.doc_subtype,
+			);
+
+			if (fields.length === 0) {
+				Logger.warn(
+					`No field mappings found for document type '${existingDoc.doc_subtype}'`,
+				);
+				return;
+			}
+
+			for (const field of fields) {
+				try {
+					if (field === 'middleName') {
+						// Special handling for middleName field (updates users table directly)
+						await this.resetInUsers(field, existingDoc, queryRunner);
+					} else {
+						// Reset custom field values
+						await this.resetFields(field, existingDoc);
+					}
+				} catch (error) {
+					Logger.error(
+						`Error resetting field '${field}' for user ${existingDoc.user_id}:`,
+						error,
+					);
+					// Continue with other fields even if one fails
+				}
+			}
+		} catch (error) {
+			Logger.error(
+				`Error in resetField for document ${existingDoc.doc_id}:`,
+				error,
+			);
+			throw error;
+		}
+	}
+
+	private async handleWatcherRegistrationIfNeeded(
+		createUserDocDto: CreateUserDocDTO,
+		savedDoc: UserDoc,
+		userDetails: any,
+	): Promise<void> {
+		const importSource = createUserDocDto.imported_from?.trim().toLowerCase();
+		if (
+			!importSource ||
+			(importSource !== 'e-wallet' && importSource !== 'qr code')
+		) {
+			return;
+		}
+
+		// Validate doc_data_link exists
+		if (!createUserDocDto.doc_data_link) {
+			Logger.warn(
+				`No doc_data_link for watcher registration: ${savedDoc.doc_id}`,
+			);
+			return;
+		}
+
+		// Use provided email and callback URL or defaults
+		const email = process.env.DHIWAY_WATCHER_EMAIL;
+		if (!email) {
+			Logger.warn(
+				`No watcher email configured, skipping registration for: ${savedDoc.doc_id}`,
+			);
+			return;
+		}
+
+		const callbackUrl =
+			createUserDocDto.watcher_callback_url ||
+			`${process.env.BASE_URL || 'http://localhost:3000'}/users/wallet-callback`;
+
+		try {
+			const watcherResult = await this.registerWatcher(
+				createUserDocDto.imported_from,
+				createUserDocDto.doc_data,
+				createUserDocDto.doc_data_link,
+				email,
+				callbackUrl,
+				userDetails,
+			);
+
+			if (watcherResult.success) {
+				// Update the saved document with watcher information
+				savedDoc.watcher_registered = true;
+				savedDoc.watcher_email = email;
+				savedDoc.watcher_callback_url = callbackUrl;
+
+				// Save the updated document
+				await this.userDocsRepository.save(savedDoc);
+
+				Logger.log(
+					`Watcher registered successfully for document: ${savedDoc.doc_id}`,
+				);
+			} else {
+				Logger.warn(
+					`Watcher registration failed for document: ${savedDoc.doc_id}, Error: ${watcherResult.message}`,
+				);
+			}
+		} catch (watcherError) {
+			Logger.error(
+				`Error during watcher registration for document: ${savedDoc.doc_id}`,
+				watcherError,
+			);
+		}
+	}
+
+	async delete(req: any, doc_id: string) {
+		const IsValidUser = req?.user;
+		if (!IsValidUser) {
+			throw new UnauthorizedException('AUTH_USER_NOT_AUTHENTICATED');
+		}
+		const sso_id = IsValidUser.keycloak_id;
+
+		// Get user_id of logged in user
+		const user = await this.userRepository.findOne({
+			where: { sso_id: sso_id },
+		});
+
+		if (!user) {
+			const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+			const errorMessage = this.i18n.translateError('USER_NOT_FOUND', locale);
+			return new ErrorResponse({
+				statusCode: HttpStatus.NOT_FOUND,
+				errorMessage,
+			});
+		}
+
+		const user_id = user.user_id;
+
+		// Check if document exists or not, if not then send erorr response
+		const existingDoc = await this.userDocsRepository.findOne({
+			where: {
+				doc_id: doc_id,
+			},
+		});
+
+		if (!existingDoc) {
+			Logger.error(`Document with id ${doc_id} does not exists`);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage: `Document with id ${doc_id} does not exists`,
+			});
+		}
+
+		// Check if logged in user is allowed to delete this document or not
+		if (existingDoc.user_id !== user_id)
+			return new ErrorResponse({
+				statusCode: HttpStatus.UNAUTHORIZED,
+				errorMessage:
+					'You are not authorized to modify or delete this resourse',
+			});
+
+		// Store the file path before deleting from database
+		const filePath = existingDoc.doc_path;
+
+		// Delete the document
+		const queryRunner =
+			this.userDocsRepository.manager.connection.createQueryRunner();
+		await queryRunner.connect();
+		try {
+			await queryRunner.startTransaction();
+			await queryRunner.manager.remove(existingDoc);
+			// Reset the field along with deleting the document
+			await this.resetField(existingDoc, queryRunner);
+			await queryRunner.commitTransaction();
+
+			// Delete the physical file using document upload service
+			if (filePath) {
+				try {
+					await this.documentUploadService.deleteFile(filePath);
+				} catch (fileError) {
+					Logger.error(`Failed to delete file from storage: ${fileError}`);
+					// Don't fail the entire operation if file deletion fails
+				}
+			}
+		} catch (error) {
+			Logger.error('Error while deleting the document: ', error);
+			await queryRunner.rollbackTransaction();
+			await queryRunner.release();
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: `Error while deleting the document: ${error}`,
+			});
+		} finally {
+			await queryRunner.release();
+		}
+
+		return new SuccessResponse({
+			statusCode: HttpStatus.OK,
+			message: 'DOCUMENT_DELETED',
+		});
+	}
+
+	/**
+	 * Private helper method to fetch and validate VC JSON from a URL
+	 * @param url The VC URL to fetch data from
+	 * @returns Promise containing validated VC data or error
+	 */
+	private async fetchAndValidateVcJson(url: string): Promise<any> {
+		try {
+			// Validate URL scheme to prevent SSRF attacks
+			const parsed = new URL(url);
+			if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+				const errorMessage = this.i18n.translateError('VC_URL_INVALID_SCHEME', 'en');
+				return { error: true, message: errorMessage, status: 400 };
+			}
+
+			// Fetch the VC JSON with proper headers
+			const vcResponse = await axios.get(url, {
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				timeout: 8000,
+			});
+
+			// Validate that we received JSON data
+			let vcData;
+			try {
+				if (typeof vcResponse.data === 'string') {
+					vcData = JSON.parse(vcResponse.data);
+				} else {
+					vcData = vcResponse.data;
+				}
+			} catch (_parseError) {
+				Logger.error('Invalid JSON response from VC endpoint', _parseError);
+				return {
+					error: true,
+					message: 'Invalid JSON response from VC endpoint',
+					status: 422,
+				};
+			}
+
+			// Basic validation that it looks like a VC
+			if (!vcData || typeof vcData !== 'object') {
+				return {
+					error: true,
+					message: 'Invalid VC data structure received',
+					status: 422,
+				};
+			}
+
+			// Return in format expected by frontend
+			return {
+				data: {
+					vcData: vcData,
+					url: url,
+				},
+			};
+		} catch (error) {
+			// Handle errors and return a meaningful message
+			if (axios.isAxiosError(error)) {
+				const msg =
+					typeof error.response?.data === 'string'
+						? error.response.data
+						: error.message;
+				return {
+					error: true,
+					message: msg,
+					status: error.response?.status ?? 500,
+				};
+			}
+			return {
+				error: true,
+				message: 'Unknown error occurred while fetching VC data',
+				status: 500,
+			};
+		}
+	}
+
+	/**
+	 * Fetches a Verifiable Credential JSON from a URL that already ends with .vc
+	 * Used for wallet callbacks and direct VC URLs
+	 * @param vcUrl The direct VC URL (already ending with .vc)
+	 * @returns Object containing vcData and vcUrl in format expected by frontend
+	 */
+	async fetchVcJsonFromVcUrl(vcUrl: string): Promise<any> {
+		return this.fetchAndValidateVcJson(vcUrl);
+	}
+
+	/**
+	 * Fetches a Verifiable Credential JSON from a given URL.
+	 * Handles both dway.io and haqdarshak.com style URLs.
+	 * Follows redirects and appends .vc if needed.
+	 * @param url The URL from the QR code
+	 * @returns Object containing vcData and vcUrl in format expected by frontend
+	 */
+	async fetchVcJsonFromUrl(url: string): Promise<any> {
+		try {
+			// Basic scheme validation before the first network call
+			const initialParsed = new URL(url);
+			if (
+				initialParsed.protocol !== 'http:' &&
+				initialParsed.protocol !== 'https:'
+			) {
+				const errorMessage = this.i18n.translateError('URL_INVALID_SCHEME', 'en');
+				return { error: true, message: errorMessage, status: 400 };
+			}
+
+			// 1. Follow redirects to get the final URL (without downloading the VC yet)
+			const response = await axios.get(url, {
+				maxRedirects: 5,
+				timeout: 8000,
+				validateStatus: (status) => status >= 200 && status < 400, // allow redirects
+			});
+			// Try multiple known locations for the resolved URL (follow-redirects runtime)
+			let finalUrl = url;
+			if (response.request?.res?.responseUrl) {
+				finalUrl = response.request.res.responseUrl;
+			} else if (response.request?._redirectable?._currentUrl) {
+				finalUrl = response.request._redirectable._currentUrl;
+			}
+
+			// 2. Append/normalize to .vc while preserving query and hash
+			const parsedFinal = new URL(finalUrl);
+			if (!parsedFinal.pathname.endsWith('.vc')) {
+				if (parsedFinal.pathname.endsWith('.json')) {
+					parsedFinal.pathname = parsedFinal.pathname.replace(/\.json$/, '.vc');
+				} else {
+					parsedFinal.pathname =
+						parsedFinal.pathname.replace(/\/$/, '') + '.vc';
+				}
+			}
+			finalUrl = parsedFinal.toString();
+
+			// 3. Use the common method to fetch and validate VC data
+			return this.fetchAndValidateVcJson(finalUrl);
+		} catch (error) {
+			// Handle errors and return a meaningful message
+			if (axios.isAxiosError(error)) {
+				const msg =
+					typeof error.response?.data === 'string'
+						? error.response.data
+						: error.message;
+				return {
+					error: true,
+					message: msg,
+					status: error.response?.status ?? 500,
+				};
+			}
+			return {
+				error: true,
+				message: 'Unknown error occurred',
+				status: 500,
+			};
+		}
+	}
+
+	private async verifyVcWithApi(
+		vcData: any,
+		issuer?: string,
+		acceptLanguage?: string,
+	): Promise<{ success: boolean; message?: string; errors?: any[] }> {
+		try {
+			// Try to extract issuer from VC data if not provided
+			// VC data may have issuer as a string (DID) or object with id property
+
+			const issuerName =
+				issuer || process.env.VC_DEFAULT_ISSUER_NAME || 'dhiway';
+
+			const verificationPayload = {
+				credential: vcData,
+				config: {
+					method: 'online',
+					issuerName: issuerName,
+				},
+			};
+
+			const verificationUrl = process.env.VC_VERIFICATION_SERVICE_URL;
+			if (!verificationUrl) {
+				return {
+					success: false,
+					message: 'VC_VERIFICATION_SERVICE_URL env variable not set',
+					errors: [],
+				};
+			}
+
+			// Prepare headers with Accept-Language if provided
+			const headers: Record<string, string> = {
+				'Content-Type': 'application/json',
+			};
+			if (acceptLanguage) {
+				headers['Accept-Language'] = acceptLanguage;
+			}
+
+			const response = await axios.post(
+				`${verificationUrl}/verification`,
+				verificationPayload,
+				{
+					headers,
+					timeout: 8000,
+				},
+			);
+
+			// Use the API's response format directly
+			return {
+				success: response.data?.success,
+				message: response.data?.message,
+				errors: response.data?.errors,
+			};
+		} catch (error) {
+			Logger.error(
+				'VC Verification error:',
+				error?.response?.data ?? error.message,
+			);
+			return {
+				success: false,
+				message:
+					error?.response?.data?.message ??
+					error.message ??
+					'VC Verification failed',
+				errors: error?.response?.data?.errors,
+			};
+		}
+	}
+
+	// Register watcher for e-wallet
+	private async registerWatcherForEWallet(
+		identifier: string,
+		recordPublicId: string,
+		email: string,
+		callbackUrl: string,
+		userDetails: any,
+	): Promise<{ success: boolean; message?: string; data?: any }> {
+		try {
+			const walletUrl = process.env.WALLET_BASE_URL + '/api/wallet/vcs/watch';
+			const authToken = userDetails.walletToken || '';
+			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
+
+			if (!authToken) {
+				const message = isWalletRegistrationEnabled
+					? 'Wallet token not found - user may not be registered with wallet'
+					: 'Wallet registration is disabled - skipping watcher registration';
+
+				Logger.warn(`E-Wallet watcher registration skipped: ${message}`);
+				return {
+					success: false,
+					message: message,
+					data: null,
+				};
+			}
+
+			const payload = {
+				vcPublicId: recordPublicId,
+				email: email,
+				callbackUrl: callbackUrl,
+			};
+
+			const response = await axios.post(walletUrl, payload, {
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${authToken}`,
+				},
+				timeout: 10000,
+			});
+
+			return {
+				success: true,
+				message: 'HOUSEKEEPING_WATCHER_REGISTERED',
+				data: response.data,
+			};
+		} catch (error) {
+			Logger.error(
+				'E-Wallet watcher registration error:',
+				error?.response?.data ?? error.message,
+			);
+			return {
+				success: false,
+				message:
+					error?.response?.data?.message ??
+					error.message ??
+					'Watcher registration failed',
+				data: error?.response?.data,
+			};
+		}
+	}
+
+	// Register watcher for QR Code (Dhiway)
+	private async registerWatcherForQRCode(
+		identifier: string,
+		recordPublicId: string,
+		email: string,
+		callbackUrl: string,
+	): Promise<{ success: boolean; message?: string; data?: any }> {
+		try {
+			const dhiwayUrl = process.env.DHIWAY_WATCHER_URL;
+
+			if (!dhiwayUrl) {
+				return {
+					success: false,
+					message: 'DHIWAY_WATCHER_URL env variable not set',
+				};
+			}
+
+			const payload = {
+				identifier: identifier,
+				recordPublicId: recordPublicId,
+				email: email,
+				callbackUrl: callbackUrl,
+			};
+
+			const response = await axios.post(dhiwayUrl, payload, {
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				timeout: 10000,
+			});
+
+			return {
+				success: true,
+				message: 'HOUSEKEEPING_WATCHER_REGISTERED',
+				data: response.data,
+			};
+		} catch (error) {
+			Logger.error(
+				'QR Code watcher registration error:',
+				error?.response?.data ?? error.message,
+			);
+			return {
+				success: false,
+				message:
+					error?.response?.data?.message ??
+					error.message ??
+					'Watcher registration failed',
+				data: error?.response?.data,
+			};
+		}
+	}
+
+	// Register watcher based on imported_from
+	private async registerWatcher(
+		importedFrom: string,
+		docData: any,
+		docPath: string,
+		email: string,
+		callbackUrl: string,
+		userDetails: any,
+	): Promise<{ success: boolean; message?: string; data?: any }> {
+		try {
+			// Normalize docPath to ensure it ends with .json
+			let normalizedDocPath = docPath;
+			if (normalizedDocPath.endsWith('.vc')) {
+				normalizedDocPath = normalizedDocPath.replace('.vc', '.json');
+			} else if (!normalizedDocPath.endsWith('.json')) {
+				normalizedDocPath = normalizedDocPath + '.json';
+			}
+
+			// Fetch document details from the path
+			let fetchedDocData;
+			try {
+				const response = await axios.get(normalizedDocPath, {
+					timeout: 10000,
+					headers: {
+						'Content-Type': 'application/json',
+					},
+				});
+				fetchedDocData = response.data;
+			} catch (fetchError) {
+				Logger.error(
+					'Failed to fetch document from path:',
+					normalizedDocPath,
+					fetchError,
+				);
+				return {
+					success: false,
+					message: `Failed to fetch document from path: ${normalizedDocPath}`,
+				};
+			}
+
+			// Extract vcPublicId from fetched document data
+			const identifier = fetchedDocData?.identifier || '';
+			const recordPublicId = fetchedDocData?.publicId || '';
+			const walletCallbackUrl = process.env.BASE_URL + '/users/wallet-callback';
+
+			if (!identifier || !recordPublicId) {
+				return {
+					success: false,
+					message:
+						'identifier or recordPublicId not found in fetched document data',
+				};
+			}
+
+			if (importedFrom.toLowerCase() === 'e-wallet') {
+				return await this.registerWatcherForEWallet(
+					identifier,
+					recordPublicId,
+					email,
+					walletCallbackUrl,
+					userDetails,
+				);
+			} else if (importedFrom.toLowerCase() === 'qr code') {
+				return await this.registerWatcherForQRCode(
+					identifier,
+					recordPublicId,
+					email,
+					walletCallbackUrl,
+				);
+			} else {
+				return {
+					success: false,
+					message: `Watcher registration not supported for imported_from: ${importedFrom}`,
+				};
+			}
+		} catch (error) {
+			Logger.error('Watcher registration error:', error);
+			return {
+				success: false,
+				message: error.message || 'Watcher registration failed',
+			};
+		}
+	}
+
+	async deleteUser(userId: string): Promise<void> {
+		const user = await this.userRepository.findOne({
+			where: { user_id: userId },
+		});
+
+		if (!user) {
+			throw new NotFoundException(`User with ID '${userId}' not found`);
+		}
+
+		await this.userRepository.delete(userId);
+	}
+
+	// Application Status Update Methods
+
+	async getApplications(userId?: string) {
+		try {
+			const whereCondition: any = {
+				status: Not(In(['amount received', 'rejected', 'disbursed'])),
+				bpp_application_id: Not(IsNull()), // Only fetch applications with order_id
+			};
+
+			if (userId) {
+				whereCondition.user_id = userId;
+			}
+
+			const applications = await this.userApplicationRepository.find({
+				where: whereCondition,
+			});
+
+			return applications;
+		} catch (error) {
+			Logger.error(`Error while getting user applications: ${error}`);
+			throw new InternalServerErrorException(
+				'USER_APPLICATIONS_FETCH_FAILED',
+			);
+		}
+	}
+
+	async updateStatus(
+		application: any,
+		statusData: { status: string; comment: string },
+	) {
+		try {
+			// Skip update if statusData is null or status is not present
+			if (!statusData?.status) {
+				Logger.log(
+					`Skipping status update for application ${application.id}: No status data received from BPP`,
+				);
+				return;
+			}
+
+			application.status = statusData.status.toLowerCase(); // e.g., "approved"
+			application.remark = statusData.comment || ''; // Save the comment
+
+			const queryRunner =
+				this.userApplicationRepository.manager.connection.createQueryRunner();
+			await queryRunner.connect();
+			try {
+				await queryRunner.startTransaction();
+				await queryRunner.manager.save(application);
+				await queryRunner.commitTransaction();
+			} catch (error) {
+				await queryRunner.rollbackTransaction();
+				Logger.error(`Error in query runner: ${error}`);
+				throw new Error('Error in query runner');
+			} finally {
+				await queryRunner.release();
+			}
+		} catch (error) {
+			Logger.error(`Error while updating application status: ${error}`);
+		}
+	}
+
+	async getStatus(orderId: string) {
+		// Skip if orderId is null or empty
+		if (!orderId) {
+			Logger.warn('Skipping status check: order_id is null or empty');
+			return null;
+		}
+		const bapId = this.configService.get<string>('BAP_ID');
+		const bapUri = this.configService.get<string>('BAP_URI');
+
+		// Fetch BPP info from userApplication table
+		const userApplication = await this.userApplicationRepository.findOne({
+			where: { bpp_application_id: orderId },
+			select: ['benefit_provider_id', 'benefit_provider_uri', 'transaction_id'],
+		});
+
+		if (!userApplication) {
+			throw new Error(JSON.stringify({ key: 'USER_APPLICATION_NOT_FOUND', params: { orderId } }));
+		}
+
+		const bppId = userApplication.benefit_provider_id;
+		const bppUri = userApplication.benefit_provider_uri;
+		const transactionId = userApplication.transaction_id;
+		if (!bapId || !bapUri || !bppId || !bppUri || !transactionId) {
+			throw new Error(
+				'USER_ERROR_IN_QUERY_RUNNER',
+			);
+		}
+
+		const body = {
+			context: {
+				domain: this.configService.get<string>('DOMAIN'),
+				action: 'status',
+				timestamp: new Date().toISOString(),
+				ttl: 'PT10M',
+				version: '1.1.0',
+				bap_id: bapId,
+				bap_uri: bapUri,
+				bpp_id: bppId,
+				bpp_uri: bppUri,
+				transaction_id: transactionId,
+				message_id: uuidv4(),
+				location: {
+					country: {
+						name: 'India',
+						code: 'IND',
+					},
+					city: {
+						name: 'Bangalore',
+						code: 'std:080',
+					},
+				},
+			},
+			message: {
+				order_id: orderId,
+			},
+		};
+
+		const response = await this.proxyService.bapCLientApi2('status', body);
+
+		try {
+			const rawStatus =
+				response?.responses[0]?.message?.order?.fulfillments[0]?.state
+					?.descriptor?.name;
+			if (!rawStatus) {
+				Logger.warn(
+					`No fulfillments received in status response for order_id: ${orderId}`,
+				);
+				return null;
+			}
+
+			// Parse status stringified JSON
+			const parsedStatus = JSON.parse(rawStatus);
+			return parsedStatus; // { status: '...', comment: '...' }
+		} catch (error) {
+			console.error(`Error while getting status from response: ${error}`);
+			throw new Error('USER_STATUS_FETCH_FAILED');
+		}
+	}
+
+	async processApplications(applications: any) {
+		try {
+			const results = await Promise.allSettled(
+				applications.map(async (application: any) => {
+					const statusData = await this.getStatus(
+						application.bpp_application_id,
+					);
+					await this.updateStatus(application, statusData);
+				}),
+			);
+			const failures = results.filter((r) => r.status === 'rejected');
+			if (failures.length > 0) {
+				Logger.error(
+					`Failed to process ${failures.length} out of ${applications.length} applications`,
+				);
+			}
+			return {
+				total: applications.length,
+				succeeded: results.filter((r) => r.status === 'fulfilled').length,
+			};
+		} catch (error) {
+			Logger.error(`Error while processing applications: ${error}`);
+			throw new InternalServerErrorException('USER_APPLICATIONS_FETCH_FAILED');
+		}
+	}
+
+	async updateApplicationStatuses(req?: any) {
+		try {
+			let userId: string | undefined;
+
+			// If req is provided, extract user_id from token
+			if (req) {
+				userId = req.mw_userid;
+			}
+
+			// Get user application records from database
+			const applications = await this.getApplications(userId);
+
+			if (applications.length === 0) {
+				Logger.log(`No applications found for user: ${userId || 'all users'}`);
+				return {
+					success: true,
+					message: `No applications found for ${userId ? 'user' : 'any users'}`,
+					processedCount: 0,
+				};
+			}
+
+			// Update status of each application
+			await this.processApplications(applications);
+
+			Logger.log(
+				`Successfully processed ${applications.length} applications for ${userId || 'all users'}`,
+			);
+
+			return {
+				success: true,
+				message: `Successfully processed ${applications.length} applications`,
+				processedCount: applications.length,
+			};
+		} catch (error) {
+			Logger.error(`Error in update application statuses: ${error}`);
+			throw new InternalServerErrorException(
+				'USER_APPLICATIONS_UPDATE_FAILED',
+			);
+		}
+	}
+
+	private async validateUserDocuments(userDocs: any[], recordPublicId: string) {
+		if (!userDocs || userDocs.length === 0) {
+			Logger.warn(
+				`No user documents found for recordPublicId: ${recordPublicId}`,
+			);
+			return new ErrorResponse({
+				statusCode: HttpStatus.NOT_FOUND,
+				errorMessage: `No documents found for recordPublicId: ${recordPublicId}`,
+			});
+		}
+
+		// Check if any document has empty doc_data_link
+		const invalidDocs = userDocs.filter(
+			(doc) =>
+				!doc.doc_data_link ||
+				doc.doc_data_link === '' ||
+				doc.doc_data_link === null,
+		);
+
+		if (invalidDocs.length > 0) {
+			Logger.warn(
+				`Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`,
+			);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage: `Some documents have invalid doc_data_link for recordPublicId: ${recordPublicId}`,
+			});
+		}
+
+		return null; // No error
+	}
+
+	private async fetchAndValidateWalletData(docDataLink: string, locale: string = 'en') {
+		let updatedDocData;
+
+		try {
+			updatedDocData = await this.fetchVcJsonFromVcUrl(docDataLink);
+		} catch (error) {
+			Logger.error(`Failed to fetch updated data from wallet: ${error}`);
+			const errorMessage = this.i18n.translateError('WALLET_DATA_FETCH_FAILED', locale);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage,
+			});
+		}
+
+		updatedDocData = updatedDocData?.data?.vcData?.details?.vc;
+
+		if (!updatedDocData?.credentialSubject) {
+			Logger.error(`Not a valid VC: ${updatedDocData}`);
+			const errorMessage = this.i18n.translateError('VC_INVALID_DATA', locale);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage,
+			});
+		}
+
+		return updatedDocData;
+	}
+
+	private async verifyVcData(vcData: any, issuer?: string, locale: string = 'en') {
+		let verificationResult;
+		try {
+			verificationResult = await this.verifyVcWithApi(vcData, issuer);
+		} catch (error) {
+			Logger.error(`VC Verification failed for wallet callback: ${error}`);
+			const errorMessage = this.i18n.translateError('VC_VERIFICATION_FAILED_UPDATED_DATA', locale);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage,
+			});
+		}
+
+		if (!verificationResult.success) {
+			Logger.error(
+				`VC Verification failed for wallet callback: ${verificationResult.message}`,
+			);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage:
+					verificationResult.message ??
+					this.i18n.translateError('VC_VERIFICATION_FAILED_UPDATED_DATA', locale),
+			});
+		}
+
+		return null; // No error
+	}
+
+	private async updateDocumentsData(userDocs: any[], updatedDocData: any) {
+		const updatedUserDocs = [];
+		for (const userDoc of userDocs) {
+			userDoc.doc_data = JSON.stringify(updatedDocData) as any;
+			userDoc.doc_verified = true; // Mark as verified since it's from wallet callback
+			userDoc.verified_at = new Date(); // Set verification timestamp
+
+			// Save the updated document
+			const updatedUserDoc = await this.userDocsRepository.save(userDoc);
+			updatedUserDocs.push(updatedUserDoc);
+		}
+		return updatedUserDocs;
+	}
+
+	private async writeDocumentsToFiles(
+		updatedUserDocs: any[],
+		updatedDocData: any,
+	) {
+		const baseFolder = path.join(__dirname, 'userData');
+
+		for (const updatedUserDoc of updatedUserDocs) {
+			const userFilePath = path.join(baseFolder, 'undefined.json');
+
+			try {
+				await this.writeToFile(
+					{
+						user_id: updatedUserDoc.user_id,
+						doc_type: updatedUserDoc.doc_type,
+						doc_subtype: updatedUserDoc.doc_subtype,
+						doc_name: updatedUserDoc.doc_name,
+						imported_from: updatedUserDoc.imported_from,
+						doc_path: updatedUserDoc.doc_path,
+						doc_data_link: updatedUserDoc.doc_data_link,
+						doc_data: updatedDocData,
+						doc_datatype: updatedUserDoc.doc_datatype,
+						watcher_registered: updatedUserDoc.watcher_registered,
+						watcher_email: updatedUserDoc.watcher_email,
+						watcher_callback_url: updatedUserDoc.watcher_callback_url,
+					},
+					userFilePath,
+					updatedUserDoc,
+				);
+				Logger.log(
+					`Successfully wrote updated data to file for user: ${updatedUserDoc.user_id}`,
+				);
+			} catch (fileError) {
+				Logger.error(`Error writing updated data to file: ${fileError}`);
+				// Don't fail the entire operation if file writing fails
+			}
+		}
+	}
+
+	private async updateUserProfiles(updatedUserDocs: any[]) {
+		// Get unique user IDs to avoid duplicate profile updates
+		const uniqueUserIds = [
+			...new Set(updatedUserDocs.map((doc) => doc.user_id)),
+		];
+
+		for (const userId of uniqueUserIds) {
+			try {
+				const userDetails = await this.userRepository.findOne({
+					where: { user_id: userId },
+				});
+
+				if (userDetails) {
+					await this.updateProfile(userDetails);
+					Logger.log(`Successfully updated profile for user: ${userId}`);
+				} else {
+					Logger.warn(`User not found for profile update: ${userId}`);
+				}
+			} catch (profileError) {
+				Logger.error(
+					`Error updating user profile for wallet callback: ${profileError}`,
+				);
+				// Don't fail the entire operation if profile update fails
+			}
+		}
+	}
+
+	async handleWalletCallback(callbackData: {
+		identifier: string;
+		message: string;
+		type: string;
+		recordPublicId: string;
+	}) {
+		try {
+			const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
+
+			if (!isWalletRegistrationEnabled) {
+				Logger.warn('Wallet registration is disabled but received wallet callback - processing anyway for existing documents');
+			}
+
+			Logger.log(
+				`Processing wallet callback for recordPublicId: ${callbackData.recordPublicId}`,
+			);
+
+			// Find all user documents that match the recordPublicId
+			const userDocs = await this.userDocsRepository.find({
+				where: {
+					doc_data_link: ILike(`%/${callbackData.recordPublicId}.json`),
+				},
+			});
+
+			// Validate user documents
+			const validationError = await this.validateUserDocuments(
+				userDocs,
+				callbackData.recordPublicId,
+			);
+			if (validationError) return validationError;
+
+			Logger.log(
+				`Found ${userDocs.length} documents to update for recordPublicId: ${callbackData.recordPublicId}`,
+			);
+
+			// Fetch and validate wallet data
+			const updatedDocData = await this.fetchAndValidateWalletData(
+				userDocs[0].doc_data_link,
+			);
+			if (updatedDocData instanceof ErrorResponse) return updatedDocData;
+
+			// Verify VC data
+			const verificationError = await this.verifyVcData(updatedDocData, undefined, 'en');
+			if (verificationError) return verificationError;
+
+			// Update all documents with the new data
+			const updatedUserDocs = await this.updateDocumentsData(
+				userDocs,
+				updatedDocData,
+			);
+
+			// Write updated data to files for all documents
+			await this.writeDocumentsToFiles(updatedUserDocs, updatedDocData);
+
+			// Update user profiles based on updated documents
+			await this.updateUserProfiles(updatedUserDocs);
+
+			Logger.log(
+				`Successfully updated ${updatedUserDocs.length} documents with wallet callback data`,
+			);
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: `${updatedUserDocs.length} documents updated successfully from wallet callback`,
+				data: {
+					updated_documents_count: updatedUserDocs.length,
+					documents: updatedUserDocs.map((doc) => ({
+						doc_id: doc.doc_id,
+						doc_name: doc.doc_name,
+						doc_type: doc.doc_type,
+						doc_subtype: doc.doc_subtype,
+						user_id: doc.user_id,
+					})),
+				},
+			});
+		} catch (error) {
+			Logger.error(`Error processing wallet callback: ${error}`);
+			const errorMessage = this.i18n.translateError('WALLET_CALLBACK_PROCESSING_FAILED', 'en');
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage,
+			});
+		}
+	}
+
+	/**
+	 * Helper function to calculate string similarity percentage using string-similarity library
+	 * @param a First string
+	 * @param b Second string
+	 * @returns Similarity percentage (0-100)
+	 */
+	private getMatchPercentage(a: string, b: string): number {
+		if (!a || !b) {
+			return 0;
+		}
+
+		const str1 = String(a).toLowerCase().trim();
+		const str2 = String(b).toLowerCase().trim();
+
+		// Use string-similarity library's compareTwoStrings method (Dice's coefficient)
+		const rating = stringSimilarity.compareTwoStrings(str1, str2);
+
+		return Number((rating * 100).toFixed(2));
+	}
+
+	/**
+	 * Validates and matches VC fields against user profile data
+	 * Performs field-level comparison using string similarity
+	 * 
+	 * @param userId User ID to fetch profile data
+	 * @param vcMapping VC mapping data containing extracted/mapped fields
+	 * @param uploadDocumentDto Document metadata including docType and docSubType
+	 * @param issuer Issuer name
+	 * @returns Validation results with field matches
+	 * @throws BadRequestException if any field match is below configured threshold
+	 */
+	private async validateAndMatchVcFields(
+		userId: string,
+		vcMapping: any,
+		uploadDocumentDto: UploadDocumentDto,
+		issuer: string,
+		issueVC: string,
+		req: any,
+	): Promise<{
+		fieldResults: Record<string, {
+			certificateValue: any;
+			userValue: any;
+			calculatedMatch: number;
+			threshold: number;
+			passed: boolean;
+		}>;
+		validationPassed: boolean;
+	}> {
+		Logger.log(`Starting VC field validation for user: ${userId}, docType: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`);
+
+		const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+
+		// Step 1: Fetch vcFields configuration
+		const vcFields = await this.vcFieldsService.getVcFields(
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
+
+		if (!vcFields) {
+			const errorMessage = this.i18n.translateError('VC_MISSING_CONFIG_WITH_TYPE', locale, {
+				docType: uploadDocumentDto.docType,
+				docSubType: uploadDocumentDto.docSubType,
+			});
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
+		}
+
+		// Step 2: Fetch user profile data (both entity fields and custom fields)
+		const userProfile = await this.fetchUserProfileForMatching(userId);
+
+		Logger.log(`User profile fetched with ${Object.keys(userProfile).length} fields`);
+
+		// Step 3: Determine VC data source based on issueVC
+		const vcData = this.getVcDataSource(vcMapping, issuer, issueVC);
+
+		Logger.log(`Using VC data source for issuer: ${issuer}`);
+
+		// Step 4: Process each field with matching configuration
+		const fieldResults: Record<string, any> = {};
+		const failedFields: string[] = [];
+
+		// Only process fields that have matching configuration
+		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
+			// Skip fields without matching configuration
+			if (!fieldConfig?.matching) {
+				continue;
+			}
+
+			try {
+				const { passed, result } = await this.processFieldMatching(
+					fieldName,
+					fieldConfig,
+					vcData,
+					userProfile,
+					req,
+				);
+
+				fieldResults[fieldName] = result;
+
+				if (!passed) {
+					failedFields.push(fieldName);
+				}
+			} catch (error) {
+				// Handle field-level errors
+				if (error instanceof BadRequestException) {
+					throw error;
+				}
+
+				Logger.error(
+					`Error processing field '${fieldName}': ${error.message}`,
+					error.stack,
+				);
+				const errorMessage = this.i18n.translateError('FIELD_PROCESSING_ERROR', locale, {
+					fieldName: fieldName,
+					error: error.message,
+				});
+				throw new BadRequestException(errorMessage);
+			}
+		}
+
+		// After checking all fields, throw error if any failed
+		if (failedFields.length > 0) {
+			Logger.error(
+				`VC field validation failed with ${failedFields.length} field(s) not matching`,
+			);
+
+			const errorMessage = this.formatFieldMatchingError(failedFields, vcFields, locale);
+			throw new BadRequestException(errorMessage);
+		}
+
+		Logger.log(
+			`VC field validation successful. All ${Object.keys(fieldResults).length} fields passed their thresholds.`,
+		);
+
+		return {
+			fieldResults,
+			validationPassed: true,
+		};
+	}
+
+	/**
+	 * Processes a single field matching against user profile
+	 * @param fieldName Field name from VC
+	 * @param fieldConfig Field configuration from vcFields
+	 * @param vcData VC data source
+	 * @param userProfile User profile data
+	 * @returns Field result with match information
+	 */
+	async processFieldMatching(
+		fieldName: string,
+		fieldConfig: any,
+		vcData: any,
+		userProfile: Record<string, any>,
+		req: any,
+	): Promise<{ passed: boolean; result: any; }> {
+		const matchingConfig = fieldConfig.matching;
+
+		// Extract certificate value from VC data
+		const certificateValue = vcData[fieldName];
+
+		// Validate certificate value exists
+		if (certificateValue === null || certificateValue === undefined) {
+			const errorMessage = await this.i18n.t('errors.MISSING_REQUIRED_FIELD_VC', {
+				args: { fieldName },
+				lang: req.headers['accept-language'] || 'en',
+			});
+
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
+
+		}
+
+		// Extract user profile value using compareWith field
+		const compareWithField = matchingConfig.compareWith;
+		if (!compareWithField) {
+			const errorMessage = this.i18n.t('validation.MISSING_COMPARE_WITH_CONFIG', {
+				args: { fieldName }
+			});
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
+		}
+
+		const userValue = userProfile[compareWithField];
+
+		// Validate user profile value exists
+		if (userValue === null || userValue === undefined || userValue === '') {
+			const errorMessage = this.i18n.t('validation.MISSING_REQUIRED_FIELD_PROFILE', {
+				args: { fieldName: compareWithField }
+			});
+			throw new BadRequestException({
+				message: errorMessage,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
+		}
+
+		// Convert to strings for comparison
+		const certValueStr = String(certificateValue);
+		const userValueStr = String(userValue);
+
+		// Calculate similarity percentage
+		const calculatedMatch = this.getMatchPercentage(certValueStr, userValueStr);
+
+		let passed = false;
+		let threshold = 0;
+
+		if (matchingConfig.matchPercentage === 0) {
+			passed = true;
+			threshold = 0;
+		}
+		else {
+			threshold = matchingConfig.matchPercentage || 80;
+			passed = calculatedMatch >= threshold
+		}
+
+
+
+		Logger.log(
+			`Field: ${fieldName} | Certificate: "${certValueStr}" | User: "${userValueStr}" | Calculated: ${calculatedMatch}% | Required: ${threshold}%`,
+		);
+
+		// Create field result
+		const result = {
+			certificateValue: certValueStr,
+			userValue: userValueStr,
+			calculatedMatch,
+			threshold,
+			passed,
+		};
+
+		return { passed: result.passed, result };
+	}
+
+	/**
+	 * Formats error message for failed field matching
+	 * @param failedFields Array of failed field names
+	 * @returns Formatted error message
+	 */
+	/**
+	 * Formats error message for failed field matching
+	 * @param failedFields Array of failed field names
+	 * @param locale Locale for translation
+	 * @returns Formatted error message
+	 */
+	private formatFieldMatchingError(failedFields: string[], vcFields: VcFields, locale: string = 'en'): string {
+		// Format field names using labels if available
+		const formattedFields = failedFields.map(field => {
+			const fieldConfig = vcFields[field];
+			const label = fieldConfig?.label;
+
+			if (label) {
+				return this.i18n.getLocalizedLabel(label, locale);
+			}
+
+			// Fallback to formatting the field name
+			return field
+				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
+				.replaceAll('_', ' ')  // Replace underscores with spaces
+				.split(' ')
+				.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+				.join(' ');
+		});
+
+		const failedIdsString = formattedFields.join(', ');
+		Logger.log(`Failed fields: ${failedFields}`);
+		return this.i18n.translateError('FIELDS_NOT_MATCHING', locale, {
+			failedFields: failedIdsString,
+		});
+	}
+
+	/**
+	 * Fetches user profile data for matching
+	 * Combines data from user entity and custom fields
+	 * @param userId User ID
+	 * @returns Combined user profile data
+	 */
+	private async fetchUserProfileForMatching(
+		userId: string,
+
+	): Promise<Record<string, any>> {
+		// Fetch user entity data
+		const user = await this.userRepository.findOne({
+			where: { user_id: userId },
+		});
+
+		if (!user) {
+			throw new NotFoundException(`User with ID '${userId}' not found`);
+		}
+
+		// Fetch custom fields
+		const customFields = await this.customFieldsService.getCustomFields(
+			userId,
+			FieldContext.USERS,
+		);
+
+		// Combine user entity fields and custom fields into a flat object
+		const userProfile: Record<string, any> = {
+			user_id: user.user_id,
+			firstName: user.firstName,
+			middleName: user.middleName,
+			lastName: user.lastName,
+			name: user.name,
+			email: user.email,
+			phoneNumber: user.phoneNumber,
+			dob: user.dob,
+			image: user.image,
+		};
+
+		// Add custom fields to profile
+		for (const customField of customFields) {
+			userProfile[customField.name] = customField.value;
+		}
+
+		Logger.debug(
+			`User profile fields: ${Object.keys(userProfile).join(', ')}`,
+		);
+
+		return userProfile;
+	}
+
+	/**
+	 * Gets the appropriate VC data source based on issueVC configuration
+	 * @param vcMapping VC mapping data
+	 * @param issuer Issuer name
+	 * @returns VC data to use for matching
+	 */
+	private getVcDataSource(vcMapping: any, issuer: string, issueVC: string): any {
+		if (!vcMapping?.mapped_data) {
+			throw new BadRequestException('USER_VC_MAPPING_DATA_MISSING');
+		}
+
+		// For issueVC = "no", use credentialSubject
+		if (issuer.toLowerCase() === 'dhiway' && issueVC === 'no') {
+
+			// Only use credentialSubject if it exists (issueVC = "no" case)
+			if (vcMapping.mapped_data.credentialSubject) {
+				Logger.log('Using vcMapping.mapped_data.credentialSubject for issueVC: no');
+				return vcMapping.mapped_data.credentialSubject;
+			}
+
+			// If credentialSubject doesn't exist, use mapped_data directly (issueVC = "yes" case)
+			Logger.log('Using vcMapping.mapped_data directly for issueVC: yes (no credentialSubject)');
+			return vcMapping.mapped_data;
+		}
+
+		// For non-Dhiway issuers, use mapped_data directly
+		Logger.log('Using vcMapping.mapped_data for non-Dhiway issuer');
+		return vcMapping.mapped_data;
+	}
+
+	/**
+	 * Upload a document file with metadata and store it in the database
+	 * If a document with the same type, subtype, and name exists for the user, it will be updated
+	 * @param req The request object containing authenticated user information
+	 * @param file The uploaded file (from multer)
+	 * @param uploadDocumentDto Metadata for the document
+	 * @param acceptLanguage Accept-Language header for i18n support
+	 * @returns Success response with document details
+	 */
+	async uploadDocument(
+		req: any,
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		acceptLanguage?: string,
+	) {
+		// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
+		const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
+
+		try {
+			Logger.log(`Processing document upload with locale: ${locale}`);
+
+			const flowStartTime = Date.now();
+			const userDetails = await this.getUserDetails(req);
+
+			const existingDoc = await this.findExistingDocument(
+				userDetails.user_id,
+				uploadDocumentDto,
+			);
+
+			// Validate and prepare document
+			await this.validateDocumentType(uploadDocumentDto);
+			const { requiresQRProcessing, documentConfig } =
+				await this.getDocumentConfig(uploadDocumentDto);
+
+			const issueVC =
+				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
+			const issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
+
+			// Process document
+			this.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
+			const ocrStartTime = Date.now();
+			const ocrResult = await this.performOcr(
+				file,
+				uploadDocumentDto,
+				requiresQRProcessing,
+				documentConfig,
+				locale,
+			);
+			Logger.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+
+			// Step 1: Keyword-based document validation (preValidation)
+			Logger.log(`Starting keyword-based document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+			const keywordValidationResult = await this.documentValidationService.validateDocument(
+				ocrResult.extractedText,
+				uploadDocumentDto.docType,
+				uploadDocumentDto.docSubType,
+			);
+
+			if (!keywordValidationResult.isValid) {
+				const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
+				Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
+				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, {
+					documentName,
+					reason: keywordValidationResult.reason
+				});
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage,
+				});
+			}
+
+			Logger.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
+
+			// Step 2: Validate document type from OCR text and VC fields (includes OCR mapping)
+			Logger.log(`Starting field validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+			const { vcMapping } = await this.validateDocumentAndFields(
+				documentConfig,
+				ocrResult,
+				uploadDocumentDto,
+				issueVC,
+				locale,
+			);
+
+			Logger.log(`Document validation passed, proceeding with document processing.`);
+
+			// Check for validation errors BEFORE proceeding with storage and VC creation
+			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
+				Logger.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
+				const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
+				const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
+				throw new BadRequestException(translatedError);
+			}
+
+			// Step: Perform VC field validation and matching against user profile
+			const matchingResult = await this.performFieldMatching(
+				userDetails.user_id,
+				vcMapping,
+				uploadDocumentDto,
+				issuer,
+				issueVC,
+				req,
+			);
+
+			// Handle VC creation or file upload
+			const storageStartTime = Date.now();
+			const { uploadResult, downloadUrl, vcCreationResult } =
+				await this.handleDocumentStorage(
+					file,
+					uploadDocumentDto,
+					documentConfig,
+					issueVC,
+					vcMapping,
+					userDetails,
+					locale,
+				);
+			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
+
+			// Add originalDocument URL to mapped_data for all cases
+			if (vcMapping?.mapped_data) {
+				if (downloadUrl) {
+					vcMapping.mapped_data.originalDocument = downloadUrl;
+					Logger.log(`Added originalDocument URL to mapped_data: ${downloadUrl}`);
+				} else if (file) {
+					// File was uploaded but downloadUrl is null - log warning
+					Logger.warn(
+						`File was uploaded but downloadUrl is null. ` +
+						`uploadResult.filePath: ${uploadResult?.filePath || 'null'}, ` +
+						`originalDocument will not be added to mapped_data.`
+					);
+				} else {
+					Logger.log(`No file provided - originalDocument not applicable`);
+				}
+			} else {
+				Logger.warn(`vcMapping.mapped_data is null/undefined - cannot add originalDocument`);
+			}
+
+			// Verify document BEFORE saving to database (for issueVC: "no" cases)
+			// This ensures document is not saved if verification fails
+			if (issueVC === 'no' && vcMapping?.mapped_data) {
+				const mappedData = vcMapping.mapped_data;
+				Logger.log(`Verifying document before saving to database for issueVC: no`);
+				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
+				Logger.log(`Document verification successful before saving`);
+			}
+
+			// Save document record (only after successful verification for issueVC: "no")
+			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
+			const dbSaveStartTime = Date.now();
+			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
+				existingDoc,
+				userDetails.user_id,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
+			);
+
+			// Update profile and mark document as verified (verification already done above for issueVC: "no")
+			await this.updateProfileAfterDocumentSave(issueVC, vcMapping, issuer, savedDoc, userDetails);
+			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');			// Build and return response
+			const responseData = this.buildResponseData(
+				savedDoc,
+				isUpdate,
+				issueVC,
+				downloadUrl,
+				vcCreationResult,
+				vcMapping,
+				matchingResult,
+			);
+
+			Logger.log(`⏱️ Total Document Upload Flow took: ${Date.now() - flowStartTime}ms`, 'UserService');
+
+			// Get translated success message
+			const successMessage = isUpdate
+				? this.i18n.translateSuccess('DOCUMENT_UPDATE_SUCCESS', locale)
+				: this.i18n.translateSuccess('DOCUMENT_UPLOAD_SUCCESS', locale);
+
+			return new SuccessResponse({
+				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
+				message: successMessage,
+				data: responseData,
+			});
+		} catch (error) {
+			return this.handleUploadError(error, locale);
+		}
+	}
+
+	/**
+	 * Upload a document with QR content directly (without extracting from file)
+	 * Follows the same flow as uploadDocument() but processes QR content directly
+	 * @param req The request object containing authenticated user information
+	 * @param file Optional uploaded file
+	 * @param uploadDocumentQrDto Metadata and QR content for the document
+	 * @param acceptLanguage Accept-Language header for i18n support
+	 * @returns Success response with document details
+	 */
+	async uploadDocumentWithQr(
+		req: any,
+		file: Express.Multer.File | undefined,
+		uploadDocumentQrDto: UploadDocumentQrDto,
+		acceptLanguage?: string,
+	) {
+		// Extract locale from Accept-Language header (en-US -> en, hi-IN -> hi)
+		const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
+
+		try {
+			Logger.log(`Processing document upload with QR content directly, locale: ${locale}`);
+
+			const flowStartTime = Date.now();
+			const userDetails = await this.getUserDetails(req);
+
+			// Convert UploadDocumentQrDto to UploadDocumentDto format for reuse
+			const uploadDocumentDto: UploadDocumentDto = {
+				docType: uploadDocumentQrDto.docType,
+				docSubType: uploadDocumentQrDto.docSubType,
+				docName: uploadDocumentQrDto.docName,
+				importedFrom: uploadDocumentQrDto.importedFrom,
+				issuer: uploadDocumentQrDto.issuer,
+				file: file as any, // File is optional for QR content endpoint
+			};
+
+			const existingDoc = await this.findExistingDocument(
+				userDetails.user_id,
+				uploadDocumentDto,
+			);
+
+			// Validate and prepare document - uses same vcConfiguration as uploadDocument
+			await this.validateDocumentType(uploadDocumentDto);
+			const { requiresQRProcessing, documentConfig } =
+				await this.getDocumentConfig(uploadDocumentDto);
+
+			const issueVC =
+				documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
+			const issuer = uploadDocumentQrDto.issuer || documentConfig?.issuer || 'dhiway';
+
+			// Process QR content directly (instead of extracting from file)
+			// This replaces performOcr() - rest of the flow is identical to uploadDocument
+			const ocrStartTime = Date.now();
+			const ocrResult = await this.processQrContentDirectly(
+				uploadDocumentQrDto.qrContent,
+				documentConfig,
+				issuer,
+				requiresQRProcessing,
+				locale,
+			);
+			Logger.log(`⏱️ QR Content Processing took: ${Date.now() - ocrStartTime}ms`, 'UserService');
+
+			// Step 1: Keyword-based document validation (preValidation)
+			Logger.log(`Starting keyword-based document validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
+			const keywordValidationResult = await this.documentValidationService.validateDocument(
+				ocrResult.extractedText,
+				uploadDocumentQrDto.docType,
+				uploadDocumentQrDto.docSubType,
+			);
+
+			if (!keywordValidationResult.isValid) {
+				const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
+				Logger.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
+				const errorMessage = this.i18n.translateError('DOCUMENT_TYPE_MISMATCH', locale, {
+					documentName,
+					reason: keywordValidationResult.reason
+				});
+				return new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage,
+				});
+			}
+
+			Logger.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
+
+			// Step 2: Validate document type from QR processing result and VC fields (includes OCR mapping)
+			Logger.log(`Starting field validation: docName=${uploadDocumentQrDto.docName}, docType=${uploadDocumentQrDto.docType}, docSubType=${uploadDocumentQrDto.docSubType}`);
+			const { vcMapping } = await this.validateDocumentAndFields(
+				documentConfig,
+				ocrResult,
+				uploadDocumentDto,
+				issueVC,
+				locale,
+			);
+			Logger.log(`Document validation passed, proceeding with document processing.`);
+
+			// Check for validation errors BEFORE proceeding with storage and VC creation
+			if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
+				Logger.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
+				const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
+				const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
+				throw new BadRequestException(translatedError);
+			}
+			// Step: Perform VC field validation and matching against user profile
+			const matchingResult = await this.performFieldMatching(
+				userDetails.user_id,
+				vcMapping,
+				uploadDocumentDto,
+				issuer,
+				issueVC,
+				req,
+			);
+
+			// Handle VC creation or file upload
+			const storageStartTime = Date.now();
+			const { uploadResult, downloadUrl, vcCreationResult } =
+				await this.handleDocumentStorage(
+					file,
+					uploadDocumentDto,
+					documentConfig,
+					issueVC,
+					vcMapping,
+					userDetails,
+					locale,
+				);
+			Logger.log(`⏱️ Document Storage & VC Creation took: ${Date.now() - storageStartTime}ms`, 'UserService');
+
+			// Add originalDocument URL to mapped_data for all cases
+			if (vcMapping?.mapped_data) {
+				if (downloadUrl) {
+					vcMapping.mapped_data.originalDocument = downloadUrl;
+					Logger.log(`Added originalDocument URL to mapped_data: ${downloadUrl}`);
+				} else if (file) {
+					// File was uploaded but downloadUrl is null - log warning
+					Logger.warn(
+						`File was uploaded but downloadUrl is null. ` +
+						`uploadResult.filePath: ${uploadResult?.filePath || 'null'}, ` +
+						`originalDocument will not be added to mapped_data.`
+					);
+				} else {
+					Logger.log(`No file provided - originalDocument not applicable`);
+				}
+			} else {
+				Logger.warn(`vcMapping.mapped_data is null/undefined - cannot add originalDocument`);
+			}
+
+			// Verify document BEFORE saving to database (for issueVC: "no" cases)
+			// This ensures document is not saved if verification fails
+			if (issueVC === 'no' && vcMapping?.mapped_data) {
+				const mappedData = vcMapping.mapped_data;
+				Logger.log(`Verifying document before saving to database for issueVC: no`);
+				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
+				Logger.log(`Document verification successful before saving`);
+			}
+
+			// Save document record (only after successful verification for issueVC: "no")
+			Logger.log(`Saving document record: issueVC=${issueVC}, hasDownloadUrl=${!!downloadUrl}, processingMethod=${vcMapping?.processing_method || 'unknown'}`);
+			const dbSaveStartTime = Date.now();
+			const { savedDoc, isUpdate } = await this.saveDocumentRecord(
+				existingDoc,
+				userDetails.user_id,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				{ docDataLink: vcCreationResult?.verificationUrl, issueVC, issuer },
+			);
+
+			// Update profile and mark document as verified (verification already done above for issueVC: "no")
+			await this.updateProfileAfterDocumentSave(issueVC, vcMapping, issuer, savedDoc, userDetails);
+			Logger.log(`⏱️ Database Save took: ${Date.now() - dbSaveStartTime}ms`, 'UserService');
+
+			// Build and return response
+			const responseData = this.buildResponseData(
+				savedDoc,
+				isUpdate,
+				issueVC,
+				downloadUrl,
+				vcCreationResult,
+				vcMapping,
+				matchingResult,
+			);
+
+			Logger.log(`⏱️ Total Document Upload Flow took: ${Date.now() - flowStartTime}ms`, 'UserService');
+
+			// Get translated success message
+			const successMessage = isUpdate
+				? this.i18n.translateSuccess('DOCUMENT_UPDATE_SUCCESS', locale)
+				: this.i18n.translateSuccess('DOCUMENT_UPLOAD_SUCCESS', locale);
+
+			return new SuccessResponse({
+				statusCode: isUpdate ? HttpStatus.OK : HttpStatus.CREATED,
+				message: successMessage,
+				data: responseData,
+			});
+		} catch (error) {
+			return this.handleUploadError(error, locale);
+		}
+	}
+
+	/**
+	 * Process QR content directly without extracting from file
+	 * @param qrContent Raw QR content string (can be URL, XML, JSON, encoded JSON, etc.)
+	 * @param documentConfig Document configuration from vcConfiguration
+	 * @param issuer Issuer type (optional)
+	 * @param requiresQRProcessing Whether QR processing is required
+	 * @param locale Language locale for error messages (defaults to 'en')
+	 * @returns OCR result structure compatible with existing flow
+	 */
+	private async processQrContentDirectly(
+		qrContent: string,
+		documentConfig: any,
+		issuer: string,
+		requiresQRProcessing: boolean,
+		locale: string = 'en',
+	) {
+		try {
+			if (!qrContent || qrContent.trim().length === 0) {
+				const translatedError = this.i18n.translateError('QR_CONTENT_REQUIRED', locale);
+				throw new BadRequestException({
+					message: translatedError,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
+			}
+
+			// Get docQRContains from document config - the processor will handle all logic
+			const docQRContains = documentConfig?.docQRContains || 'PLAIN_TEXT';
+
+			// Process QR content using QRContentProcessorService - it handles all logic including:
+			// - Selecting the right processor (Jharseva, eOdisha, Dhiway) based on issuer
+			// - URL detection and download for TEXT_AND_URL format
+			// - All QR content processing
+			const qrProcessingResult = await this.qrContentProcessor.processQRContent(
+				qrContent,
+				docQRContains,
+				issuer,
+				documentConfig,
+			);
+
+			// Check if QR processing failed
+			if (qrProcessingResult?.error && (qrProcessingResult?.isRequired || requiresQRProcessing)) {
+				// Log the technical error details for debugging
+				Logger.error(
+					`QR Processing Failed: ${qrProcessingResult.error}`,
+					JSON.stringify({
+						errorType: qrProcessingResult.errorType,
+						technicalError: qrProcessingResult.technicalError,
+						qrContent: qrProcessingResult.qrCodeContent?.substring(0, 100), // Log first 100 chars
+						contentType: qrProcessingResult.contentType,
+					}),
+					'UserService'
+				);
+
+				// Show user-friendly message
+				const errorMessage = this.i18n.translateError(qrProcessingResult.error, locale);
+				throw new BadRequestException({
+					message: errorMessage,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
+			}
+
+			// Build OCR result structure similar to extractTextFromBufferWithQR output
+			let extractedText = qrContent;
+			let confidence = 100;
+
+			// If processor downloaded a document, extract text from it using OCR
+			if (qrProcessingResult?.downloadedDocument) {
+				try {
+					const qrResult = await this.ocrService.extractTextFromBuffer(
+						qrProcessingResult.downloadedDocument.buffer,
+						qrProcessingResult.downloadedDocument.mimeType,
+					);
+					extractedText = qrResult.fullText;
+					confidence = qrResult.confidence;
+
+					// Validate OCR result - must have sufficient text
+					if (!extractedText || extractedText.trim().length === 0) {
+						const errorMessage = this.i18n.translateError('OCR_EXTRACTION_FAILED_DETAILED', locale);
+						throw new BadRequestException(errorMessage);
+					}
+
+					if (confidence < 10) {
+						const errorMessage = this.i18n.translateError('OCR_LOW_CONFIDENCE', locale, {
+							confidence: confidence,
+						});
+						throw new BadRequestException(errorMessage);
+					}
+
+					// For TEXT_AND_URL format, combine text part from QR with OCR'd text from document
+					// The processor already extracted the text part and stored it in processedData.text
+					if (qrProcessingResult?.processedData?.text) {
+						const textPart = qrProcessingResult.processedData.text.trim();
+						if (textPart && textPart.length > 0) {
+							extractedText = `${textPart}\n\n${extractedText}`;
+						}
+					}
+				} catch (ocrError) {
+					if (ocrError instanceof BadRequestException) {
+						const errorMessage = ocrError.message || '';
+						// Handle file type errors
+						if (errorMessage.includes("is not supported by") || errorMessage.includes("File type")) {
+							// Log the technical error details for debugging
+							Logger.error(
+								`QR Document Processing Failed: File type validation error`,
+								JSON.stringify({
+									originalError: errorMessage,
+									errorType: 'INVALID_FILE_TYPE'
+								}),
+								'UserService'
+							);
+
+							const translatedError = this.i18n.translateError('QR_TEXT_AND_URL_NO_URL', locale);
+							throw new BadRequestException({
+								message: translatedError,
+								statusCode: HttpStatus.BAD_REQUEST,
+							});
+						}
+						throw ocrError;
+					}
+					const errorMessage = this.i18n.translateError('OCR_TEXT_EXTRACTION_FAILED_REASON', locale, {
+						error: ocrError.message,
+					});
+					throw new BadRequestException(errorMessage);
+				}
+			} else if (qrProcessingResult?.qrCodeDetected && qrProcessingResult?.qrCodeContent) {
+				// Use processed QR content if available (for formats that don't require document download)
+				extractedText = qrProcessingResult.qrCodeContent;
+			}
+
+			return {
+				extractedText,
+				confidence,
+				metadata: {
+					provider: 'qr-content-direct',
+					processingTime: 0,
+					qrContentType: qrProcessingResult?.contentType || docQRContains,
+				},
+				qrProcessing: qrProcessingResult,
+			};
+		} catch (error) {
+			Logger.error(`QR content processing failed: ${error.message}`, error.stack);
+			if (error instanceof BadRequestException) {
+				// If BadRequestException already has a translated message, keep it
+				// Otherwise, try to translate the error key if it's a string
+				if (typeof error.message === 'string' && error.message.includes('_')) {
+					const translatedError = this.i18n.translateError(error.message, locale);
+					throw new BadRequestException({
+						message: translatedError,
+						statusCode: HttpStatus.BAD_REQUEST,
+					});
+				}
+				throw error;
+			}
+			const translatedError = this.i18n.translateError('QR_CONTENT_PROCESSING_FAILED', locale);
+			throw new InternalServerErrorException({
+				message: translatedError,
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			});
+		}
+	}
+
+	/**
+	 * Validates document type from OCR text and required VC fields
+	 * Returns the vcMapping to avoid duplicate OCR mapping calls
+	 */
+	public async validateDocumentAndFields(
+		documentConfig: any,
+		ocrResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+		issueVC: string,
+		locale: string = 'en',
+	): Promise<{ vcMapping: any; isDhiwayVcUrl: boolean }> {
+		// Required field validation
+		const validationStartTime = Date.now();
+		Logger.log(`Validating document type and required fields`);
+		const vcFields = await this.vcFieldsService.getVcFields(
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
+
+		const isDhiwayVcUrl = this.isDhiwayVcUrlDocument(ocrResult, uploadDocumentDto, documentConfig);
+		const vcMapping = isDhiwayVcUrl
+			? await this.prepareDhiwayVcMapping(ocrResult, uploadDocumentDto)
+			: await this.prepareVcMapping(ocrResult, uploadDocumentDto, locale);
+
+		// Check for validation errors BEFORE proceeding
+		if ('validationErrors' in vcMapping && vcMapping.validationErrors && vcMapping.validationErrors.length > 0) {
+			Logger.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
+			const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
+			const translatedError = this.i18n.translateError('DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
+			throw new BadRequestException(translatedError);
+		}
+
+		//Field-mapping based document validation (postValidation)
+		Logger.log(
+			`Starting post-validation: docName=${documentConfig.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`,
+		);
+
+		const postValidationResult =
+			await this.documentValidationService.validatePostValidation(
+				vcMapping,
+				uploadDocumentDto.docType,
+				uploadDocumentDto.docSubType,
+			);
+
+		if (!postValidationResult.isValid) {
+			// If we have specific missing fields, use the detailed error message
+			if (postValidationResult.missingFields && postValidationResult.missingFields.length > 0) {
+				this.throwMissingFieldsError(
+					postValidationResult.missingFields,
+					uploadDocumentDto,
+					vcFields || {}, // Pass empty object if null to be safe, though it should be caught earlier
+					locale,
+					'POST_VALIDATION_ERROR'
+				);
+			}
+
+			const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
+			Logger.warn(`Post-validation FAILED: ${postValidationResult.reason}`);
+
+			const errorMessage = this.i18n.translateError(
+				'DOCUMENT_TYPE_MISMATCH',
+				locale,
+				{
+					documentName,
+					reason: postValidationResult.reason,
+				},
+			);
+
+			throw new BadRequestException(errorMessage);
+		}
+		// Proceed to field validation
+		Logger.log(`Proceeding to field validation`);
+
+		if (vcFields && Object.keys(vcFields).length > 0) {
+			await this.validateRequiredFieldsFromOcrMapping(
+				vcFields,
+				vcMapping,
+				uploadDocumentDto,
+				issueVC,
+				locale,
+			);
+		} else {
+			Logger.warn(
+				`No vcFields configuration found for ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType} - skipping required field validation`,
+			);
+		}
+
+		Logger.log(`⏱️ Required Field Validation took: ${Date.now() - validationStartTime}ms`, 'UserService');
+
+		return { vcMapping, isDhiwayVcUrl };
+	}
+
+	/**
+	 * Updates user profile after document save (verification already done earlier for issueVC: "no")
+	 * For issueVC: "yes", verification happens after VC callback when published
+	 */
+	private async updateProfileAfterDocumentSave(
+		issueVC: string,
+		vcMapping: any,
+		issuer: string,
+		savedDoc: UserDoc,
+		userDetails: any,
+	): Promise<void> {
+		// Mark document as verified for issueVC: "no" cases (verification already done before saving)
+		if (issueVC === 'no') {
+			savedDoc.doc_verified = true;
+			savedDoc.verified_at = new Date();
+			await this.userDocsRepository.save(savedDoc);
+			Logger.log(`Document marked as verified: doc_id=${savedDoc.doc_id}`);
+		}
+
+		// Update profile based on documents
+		try {
+			await this.updateProfile(userDetails);
+			Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
+		} catch (error) {
+			Logger.error('Profile update failed after document upload:', error);
+			// Don't fail the entire operation if profile update fails
+		}
+	}
+
+	/**
+	 * Verifies document and updates user profile
+	 * @deprecated Verification should happen before saving document. Use updateProfileAfterDocumentSave instead.
+	 */
+	private async verifyAndUpdateProfile(
+		issueVC: string,
+		vcMapping: any,
+		issuer: string,
+		savedDoc: UserDoc,
+		userDetails: any,
+		acceptLanguage?: string,
+	): Promise<void> {
+		// Verify document before profile update for issueVC: "no" cases
+		// (Verification for issueVC: "yes" happens after VC callback when published)
+		if (issueVC === 'no' && vcMapping?.mapped_data) {
+			try {
+				const mappedData = vcMapping.mapped_data;
+
+				Logger.log(`Verifying document before profile update for issueVC: no`);
+				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
+				Logger.log(`Document verification successful before profile update`);
+
+				// Update doc_verified and verified_at after successful verification
+				savedDoc.doc_verified = true;
+				savedDoc.verified_at = new Date();
+				await this.userDocsRepository.save(savedDoc);
+				Logger.log(`Document marked as verified: doc_id=${savedDoc.doc_id}`);
+			} catch (verifyError) {
+				Logger.error(`Document verification failed before profile update: ${verifyError.message}`);
+				throw new ErrorResponse({
+					statusCode: HttpStatus.BAD_REQUEST,
+					errorMessage: verifyError.message || 'Document verification failed',
+				});
+			}
+		}
+
+		// Update profile based on documents
+		try {
+			await this.updateProfile(userDetails);
+			Logger.log(`Successfully updated profile for user: ${userDetails.user_id} after document upload`);
+		} catch (error) {
+			Logger.error('Profile update failed after document upload:', error);
+			// Don't fail the entire operation if profile update fails
+		}
+	}
+
+	/**
+	 * Performs field matching validation against user profile
+	 * @param userId User ID
+	 * @param vcMapping VC mapping data
+	 * @param uploadDocumentDto Document metadata
+	 * @param issuer Issuer name
+	 * @returns Matching result or null if validation is not configured
+	 */
+	private async performFieldMatching(
+		userId: string,
+		vcMapping: any,
+		uploadDocumentDto: UploadDocumentDto,
+		issuer: string,
+		issueVC: string,
+		req: any,
+	): Promise<any> {
+		try {
+			const matchingResult = await this.validateAndMatchVcFields(
+				userId,
+				vcMapping,
+				uploadDocumentDto,
+				issuer,
+				issueVC,
+				req,
+			);
+
+			const passedFieldsCount = Object.values(matchingResult.fieldResults).filter(
+				(field: any) => field.passed
+			).length;
+
+			Logger.log(
+				`VC field matching successful. ${passedFieldsCount} field(s) validated and passed.`,
+			);
+
+			return matchingResult;
+		} catch (matchingError) {
+			// If matching validation fails, throw the error to stop document upload
+			if (matchingError instanceof BadRequestException) {
+				Logger.error(`VC field matching failed: ${matchingError.message}`);
+				throw matchingError;
+			}
+
+			// For other errors, log and continue (matching is optional if not configured)
+			Logger.warn(
+				`VC field matching error (non-critical): ${matchingError.message}`,
+			);
+
+			return null;
+		}
+	}
+
+	/**
+	 * Performs document verification for issueVC: "no" cases
+	 * @param issueVC Issue VC flag
+	 * @param requiresQRProcessing Whether document requires QR processing
+	 * @param vcMapping VC mapping data
+	 * @param issuer Issuer name
+	 * @param acceptLanguage Accept-Language header for i18n support
+	 */
+	private async performDocumentVerification(
+		issueVC: string,
+		requiresQRProcessing: boolean,
+		vcMapping: any,
+		issuer: string,
+		acceptLanguage?: string,
+	): Promise<void> {
+		const verifyStartTime = Date.now();
+
+		// Always verify for issueVC: "no" cases if mapped_data exists and is not empty
+		if (issueVC === 'no' && vcMapping?.mapped_data) {
+			const mappedData = vcMapping.mapped_data;
+			const dataKeys = Object.keys(mappedData || {});
+
+			// Skip if mapped_data is empty (verification will happen later in verifyAndUpdateProfile after originalDocument is added)
+			if (dataKeys.length === 0) {
+				Logger.log(`Skipping early verification: mapped_data is empty. Verification will happen after file upload and originalDocument is added.`);
+			} else {
+				await this.verifyDocumentData(mappedData, issuer, acceptLanguage);
+			}
+		} else if (issueVC === 'yes') {
+			Logger.log(`Skipping external verification for document with issueVC: yes`);
+		}
+
+		Logger.log(`⏱️ External Verification took: ${Date.now() - verifyStartTime}ms`, 'UserService');
+	}
+
+	private async findExistingDocument(
+		userId: string,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		return await this.userDocsRepository.findOne({
+			where: {
+				user_id: userId,
+				doc_type: uploadDocumentDto.docType,
+				doc_subtype: uploadDocumentDto.docSubType,
+				doc_name: uploadDocumentDto.docName,
+			},
+		});
+	}
+
+	/**
+	 * Check if this is a Dhiway VC_URL document that should skip OCR mapping
+	 */
+	private isDhiwayVcUrlDocument(
+		ocrResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+		documentConfig: any
+	): boolean {
+		// Check if QR processing detected VC data
+		const qrProcessing = ocrResult?.qrProcessing;
+
+		if (!qrProcessing?.qrCodeDetected) {
+			return false;
+		}
+
+		// Check if this is a Dhiway issuer with VC_URL content type
+		const issuer = uploadDocumentDto.issuer || documentConfig?.issuer;
+		const contentType = documentConfig?.docQRContains;
+
+		const isDhiway = issuer?.toLowerCase() === 'dhiway';
+		const isVcUrl = contentType?.toLowerCase() === 'vc_url';
+
+		// Check if QR processing result has VC data (from Dhiway processor)
+		const hasVcData = qrProcessing?.processedData?.vcData;
+
+		Logger.log(`Dhiway VC_URL check: issuer=${issuer}, contentType=${contentType}, hasVcData=${!!hasVcData}, isDhiway=${isDhiway}, isVcUrl=${isVcUrl}`);
+
+		return isDhiway && isVcUrl && hasVcData;
+	}
+
+	/**
+	 * Prepare VC mapping directly from Dhiway VC data (skip OCR mapping)
+	 */
+	private async prepareDhiwayVcMapping(
+		ocrResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		Logger.log(`Preparing Dhiway VC mapping - skipping OCR text mapping, using VC data directly`);
+
+		const qrProcessing = ocrResult?.qrProcessing;
+		const vcData = qrProcessing?.processedData?.vcData;
+
+		if (!vcData) {
+			throw new Error('USER_NO_VC_DATA_FROM_QR');
+		}
+
+		// Use the VC data directly as the mapped data
+		return {
+			mapped_data: vcData,
+			missing_fields: [],
+			confidence: 100, // High confidence since we got direct VC data
+			processing_method: 'dhiway_vc_direct' as const,
+			warnings: [],
+			source: 'dhiway_vc_url',
+			vcUrl: qrProcessing?.processedData?.vcDataUrl || qrProcessing?.processedData?.originalUrl,
+			dhiwayMetadata: qrProcessing?.processedData?.dhiwayMetadata,
+		};
+	}
+
+	private async prepareVcMapping(
+		ocrResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+		locale: string = 'en',
+	) {
+		const vcFields = await this.vcFieldsService.getVcFields(
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
+
+		if (!vcFields) {
+			Logger.warn(
+				`No vcFields configuration found for docType: ${uploadDocumentDto.docType}, docSubType: ${uploadDocumentDto.docSubType}`,
+			);
+			return {
+				mapped_data: {},
+				missing_fields: [],
+				confidence: 0,
+				processing_method: 'keyword' as const,
+				warnings: ['No vcFields configuration found'],
+			};
+		}
+
+		return await this.ocrMappingService.mapAfterOcr(
+			{
+				text: ocrResult.extractedText,
+				docType: uploadDocumentDto.docType,
+				docSubType: uploadDocumentDto.docSubType,
+			},
+			vcFields,
+			locale,
+		);
+	}
+
+	/**
+	 * Verify document data with API for issueVC: "no" cases
+	 */
+	private async verifyDocumentData(mappedData: any, issuer: string, acceptLanguage?: string): Promise<void> {
+		Logger.log(`Calling verification API for document with issueVC: no`);
+
+		// Validate mappedData exists
+		if (!mappedData) {
+			Logger.error(`Cannot verify: mappedData is null or undefined`);
+			const locale = this.i18n.getLocaleFromHeader(acceptLanguage);
+			const errorMessage = this.i18n.translateError('DOCUMENT_MAPPED_DATA_MISSING', locale);
+			throw new BadRequestException(errorMessage);
+		}
+
+		// Log the data structure for debugging
+		const dataKeys = Object.keys(mappedData || {});
+		Logger.log(
+			`Verifying document data with ${dataKeys.length} fields. ` +
+			`Keys: ${dataKeys.slice(0, 20).join(', ')}${dataKeys.length > 20 ? '...' : ''}. ` +
+			`Data type: ${typeof mappedData}, ` +
+			`Is array: ${Array.isArray(mappedData)}. ` +
+			`Sample data: ${JSON.stringify(mappedData).substring(0, 200)}${JSON.stringify(mappedData).length > 200 ? '...' : ''}`
+		);
+
+		// Send mappedData directly to verification API (including originalDocument)
+		// Let the verification API handle empty data validation
+		const verificationResult = await this.verifyVcWithApi(mappedData, issuer, acceptLanguage);
+
+		if (!verificationResult.success) {
+			const baseMessage = verificationResult.message ?? 'Credential verification failed';
+			Logger.error(`VC Verification failed: ${baseMessage}. Errors: ${JSON.stringify(verificationResult.errors || [])}`);
+
+			// Format error message with details from verification API
+			let errorMessage = baseMessage;
+			if (verificationResult.errors && Array.isArray(verificationResult.errors) && verificationResult.errors.length > 0) {
+				// Extract error details from verification API response
+				const errorDetails = verificationResult.errors
+					.map((err: any) => {
+						if (typeof err === 'string') {
+							return err;
+						} else if (err?.error) {
+							return err.error;
+						} else if (err?.message) {
+							return err.message;
+						} else {
+							return JSON.stringify(err);
+						}
+					})
+					.filter((detail: string) => detail && detail.trim().length > 0)
+					.join('; ');
+
+				if (errorDetails) {
+					errorMessage = `${baseMessage}. ${errorDetails}`;
+				}
+			}
+
+			// Throw BadRequestException with string message for proper error handling
+			throw new BadRequestException(errorMessage);
+		}
+
+		Logger.log(`Document verification successful`);
+	}
+
+	/**
+	 * Prepare document metadata (docData, docDatatype, docDataLink)
+	 * Eliminates duplication between updateExistingDoc and createNewDoc
+	 */
+	private prepareDocumentMetadata(
+		vcMapping: any,
+		issueVC: string,
+		issuer: string,
+		uploadResult: any,
+		docDataLink?: string,
+	) {
+		const isDhiwayVcUrl =
+			issuer?.toLowerCase() === 'dhiway' &&
+			vcMapping?.source === 'dhiway_vc_url' &&
+			issueVC === 'no';
+
+		let docData = null;
+		if (issueVC === 'yes') {
+			docData = JSON.stringify({});
+		} else if (vcMapping?.mapped_data) {
+			docData = JSON.stringify(vcMapping.mapped_data);
+		}
+
+		return {
+			docData,
+			docDatatype: isDhiwayVcUrl ? 'Application/JSON' : uploadResult.docDatatype,
+			docDataLink: isDhiwayVcUrl ? vcMapping?.vcUrl : (docDataLink || null),
+			isDhiwayVcUrl,
+		};
+	}
+
+	private async handleDocumentStorage(
+		file: Express.Multer.File | undefined,
+		uploadDocumentDto: UploadDocumentDto,
+		documentConfig: any,
+		issueVC: string,
+		vcMapping: any,
+		userDetails: any,
+		locale: string = 'en',
+	) {
+		let uploadResult = null;
+		let downloadUrl = null;
+
+		// Upload file to S3 if provided
+		if (file) {
+			Logger.log(`Uploading file to S3 storage (issueVC: ${issueVC})`);
+
+			// Upload all files as public to enable permanent URL access (can be reused multiple times)
+			uploadResult = await this.uploadFileToStorage(
+				file,
+				uploadDocumentDto,
+				userDetails.user_id,
+				true, // Upload as public for permanent URL access
+			);
+
+			// Generate permanent public URL for the uploaded file
+			// All files are now uploaded as public to enable permanent URLs
+			downloadUrl = uploadResult?.filePath
+				? await this.documentUploadService.generatePublicUrl(uploadResult.filePath)
+				: null;
+		} else {
+			Logger.log(`No file provided - skipping file upload`);
+			// Return minimal upload result structure
+			uploadResult = {
+				filePath: null,
+				fileExtension: null,
+				docDatatype: null,
+				uploadedAt: new Date(),
+			};
+		}
+
+		// Create VC record if issueVC is 'yes' (works based on vcConfiguration.issueVC, same as existing endpoint)
+		let vcCreationResult = null;
+		if (issueVC === 'yes') {
+			Logger.log(`Document configured for VC creation (issueVC: yes) - creating VC record`);
+			const issuer = uploadDocumentDto.issuer || documentConfig?.issuer || 'dhiway';
+			vcCreationResult = await this.createVcRecord(
+				file,
+				uploadDocumentDto,
+				documentConfig,
+				issuer,
+				vcMapping,
+				userDetails,
+				locale,
+			);
+		} else {
+			Logger.log(`Document configured for data extraction only (issueVC: no) - ${file ? 'file uploaded to S3' : 'no file provided'}, no VC creation`);
+		}
+
+		return { uploadResult, downloadUrl, vcCreationResult };
+	}
+
+
+	private async createVcRecord(
+		file: Express.Multer.File | undefined,
+		uploadDocumentDto: UploadDocumentDto,
+		documentConfig: any,
+		issuer: string,
+		vcMapping: any,
+		userDetails: any,
+		locale: string = 'en',
+	) {
+		Logger.log(
+			`Creating VC for document: ${uploadDocumentDto.docType}/${uploadDocumentDto.docSubType}`,
+		);
+
+		const spaceId = documentConfig?.spaceId;
+		if (!spaceId) {
+			throw new BadRequestException('VC_SPACE_ID_REQUIRED');
+		}
+
+		// Note: Required field validation is now done before storage in uploadDocument()
+		// to prevent S3 upload and DB storage for documents with missing required fields
+		const vcFields = await this.vcFieldsService.getVcFields(
+			uploadDocumentDto.docType,
+			uploadDocumentDto.docSubType,
+		);
+
+		const vcCreationResult = await this.vcAdapterFactory.createRecord(
+			issuer,
+			spaceId,
+			vcMapping.mapped_data,
+			file || undefined, // Pass undefined if file is not provided
+			userDetails.user_id,
+			vcFields,
+		);
+
+		if (!vcCreationResult.success) {
+			let errorMessage: string;
+			if (vcCreationResult.message && /^[A-Z_]+$/.test(vcCreationResult.message)) {
+				errorMessage = this.i18n.translateError(vcCreationResult.message, locale);
+				// Log detailed error reason for debugging
+				if (vcCreationResult.errorReason) {
+					Logger.error(`VC creation failed. Reason: ${vcCreationResult.errorReason}`);
+				}
+			} else {
+				errorMessage = vcCreationResult.message || 'Failed to create VC record';
+			}
+			throw new InternalServerErrorException(errorMessage);
+		}
+
+		Logger.log(
+			`VC created successfully - Record ID: ${vcCreationResult.recordId}`,
+		);
+		return vcCreationResult;
+	}
+
+
+	private async uploadFileToStorage(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		userId: string,
+		isPublic: boolean = false,
+	) {
+		return await this.documentUploadService.uploadFile(
+			file,
+			{
+				docType: uploadDocumentDto.docType,
+				docSubType: uploadDocumentDto.docSubType,
+				docName: uploadDocumentDto.docName,
+				importedFrom: uploadDocumentDto.importedFrom,
+			},
+			userId,
+			undefined,
+			isPublic,
+		);
+	}
+
+	private async saveDocumentRecord(
+		existingDoc: UserDoc | null,
+		userId: string,
+		uploadResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+		vcMapping: any,
+		options: { docDataLink?: string; issueVC: string; issuer: string },
+	) {
+		return existingDoc
+			? await this.updateExistingDoc(
+				existingDoc,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				options.docDataLink,
+				options.issueVC,
+				options.issuer,
+			)
+			: await this.createNewDoc(
+				userId,
+				uploadResult,
+				uploadDocumentDto,
+				vcMapping,
+				options.docDataLink,
+				options.issueVC,
+				options.issuer,
+			);
+	}
+
+	private buildResponseData(
+		savedDoc: UserDoc,
+		isUpdate: boolean,
+		issueVC: string,
+		downloadUrl: string | null,
+		vcCreationResult: any,
+		vcMapping: any,
+		matchingResult?: any,
+	) {
+		const responseData: any = {
+			doc_id: savedDoc.doc_id,
+			user_id: savedDoc.user_id,
+			doc_type: savedDoc.doc_type,
+			doc_subtype: savedDoc.doc_subtype,
+			doc_name: savedDoc.doc_name,
+			imported_from: savedDoc.imported_from,
+			doc_datatype: savedDoc.doc_datatype,
+			uploaded_at: savedDoc.uploaded_at,
+			is_update: isUpdate,
+			issue_vc: issueVC,
+		};
+
+		if (downloadUrl) {
+			responseData.download_url = downloadUrl;
+		}
+
+		if (vcCreationResult?.success) {
+			responseData.vc_creation = {
+				success: true,
+				record_id: vcCreationResult.recordId,
+				verification_url: vcCreationResult.verificationUrl,
+			};
+			responseData.doc_data_link = vcCreationResult.verificationUrl;
+		}
+
+		if (vcMapping?.mapped_data) {
+			responseData.mapped_data = vcMapping.mapped_data;
+		}
+		// Include matching results if available
+		if (matchingResult) {
+			responseData.field_matching = {
+				field_results: matchingResult.fieldResults,
+				validation_passed: matchingResult.validationPassed,
+			};
+		}
+
+		return responseData;
+	}
+
+	private handleUploadError(error: any, locale: string = 'en') {
+		Logger.error(
+			'users.service:uploadDocument',
+			error?.message ?? error,
+			error?.stack,
+		);
+
+		if (error?.code === '23505') {
+			const errorMessage = this.i18n.translateError('DOCUMENT_DUPLICATE_ENTRY', locale);
+			return new ErrorResponse({
+				statusCode: HttpStatus.BAD_REQUEST,
+				errorMessage,
+			});
+		}
+
+		if (
+			error instanceof BadRequestException ||
+			error instanceof InternalServerErrorException
+		) {
+			return new ErrorResponse({
+				statusCode: error.getStatus(),
+				errorMessage: error.message,
+			});
+		}
+
+		if (error?.response?.statusCode && error?.response?.message) {
+			return new ErrorResponse({
+				statusCode: error.response.statusCode,
+				errorMessage: error.response.message,
+			});
+		}
+
+		const errorMessage = this.i18n.translateError('DOCUMENT_UPLOAD_FAILED', locale);
+		return new ErrorResponse({
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+			errorMessage,
+		});
+	}
+
+	// Wrapper method to get vcFields for a document type
+	public async getVcFieldsForDocument(docType: string, docSubType: string) {
+		return await this.vcFieldsService.getVcFields(docType, docSubType);
+	}
+
+	// Expose ocrMapping service for external use
+	public get ocrMapping() {
+		return this.ocrMappingService;
+	}
+
+	// Helper to get document configuration and QR processing requirement
+	public async getDocumentConfig(
+		uploadDocumentDto: UploadDocumentDto,
+	): Promise<{ requiresQRProcessing: boolean; documentConfig?: any }> {
+		let requiresQRProcessing = false;
+		let documentConfig = null;
+
+		if (!uploadDocumentDto.docSubType) {
+			return { requiresQRProcessing, documentConfig };
+		}
+
+		try {
+			const vcConfig =
+				await this.adminService.getConfigByKey('vcConfiguration');
+			if (vcConfig?.value && Array.isArray(vcConfig.value)) {
+				documentConfig = vcConfig.value.find(
+					(doc: any) => doc.documentSubType === uploadDocumentDto.docSubType,
+				);
+
+				if (documentConfig) {
+					// QR processing should happen only when:
+					// 1. issueVC is "no" 
+					// 2. docHasQRCode is "yes"
+					const issueVC = documentConfig.issueVC?.toLowerCase();
+					// Support both docHasQRCode and docHasORCode (typo in some configs)
+					const docHasQRCode = (documentConfig.docHasQRCode || documentConfig.docHasORCode)?.toLowerCase();
+
+					requiresQRProcessing = issueVC === 'no' && docHasQRCode === 'yes';
+
+					Logger.log(
+						`Document config for ${uploadDocumentDto.docSubType}: issueVC=${documentConfig.issueVC}, ` +
+						`docHasQRCode=${documentConfig.docHasQRCode || documentConfig.docHasORCode}, docQRContains=${documentConfig.docQRContains}, ` +
+						`issuer=${documentConfig.issuer}, requiresQRProcessing=${requiresQRProcessing}`,
+					);
+
+					// Debug: log all config keys to identify the correct field name
+					if (!documentConfig.docHasQRCode && !documentConfig.docHasORCode) {
+						Logger.warn(`docHasQRCode is undefined. Available config keys: ${Object.keys(documentConfig).join(', ')}`);
+					}
+				}
+			}
+		} catch (configError) {
+			Logger.warn(
+				`Failed to fetch document configuration: ${configError.message}`,
+			);
+		}
+
+		return { requiresQRProcessing, documentConfig };
+	}
+
+	// Helper to validate document type and subtype
+	public async validateDocumentType(uploadDocumentDto: UploadDocumentDto) {
+		if (!uploadDocumentDto.docType || uploadDocumentDto.docType.trim() === '') {
+			throw new BadRequestException('VC_DOCUMENT_TYPE_REQUIRED');
+		}
+
+		if (
+			!uploadDocumentDto.docSubType ||
+			uploadDocumentDto.docSubType.trim() === ''
+		) {
+			throw new BadRequestException('VC_DOCUMENT_SUBTYPE_REQUIRED');
+		}
+	}
+
+	// Helper to validate required fields using OCR mapping results
+	public async validateRequiredFieldsFromOcrMapping(
+		vcFields: VcFields,
+		vcMapping: any,
+		uploadDocumentDto: UploadDocumentDto,
+		issueVC?: string,
+		locale: string = 'en',
+	) {
+		try {
+			Logger.log(
+				`Validating required fields - vcFields: ${Object.keys(vcFields || {}).length} fields, vcMapping present: ${!!vcMapping}`,
+			);
+
+			if (!vcFields || !vcMapping) {
+				throw new ErrorResponse(
+					{
+						statusCode: HttpStatus.BAD_REQUEST,
+						errorMessage: 'VC_MISSING_VC_FIELDS_CONFIG',
+					},
+				);
+			}
+
+			const missingRequiredFields = await this.collectMissingRequiredFields(
+				vcFields,
+				vcMapping,
+				uploadDocumentDto,
+				issueVC,
+			);
+			this.logValidationResults(vcFields, vcMapping, missingRequiredFields);
+
+			if (missingRequiredFields.length > 0) {
+				this.throwMissingFieldsError(missingRequiredFields, uploadDocumentDto, vcFields, locale, 'MISSING_REQUIRED_FIELDS_IN_DOCUMENT');
+			}
+
+			// Check for validation constraint failures
+			if (vcMapping.validation_errors && vcMapping.validation_errors.length > 0) {
+				this.throwValidationConstraintsError(vcMapping.validation_errors, uploadDocumentDto, locale);
+			}
+
+			const requiredFieldsCount = Object.values(vcFields).filter(
+				(config) => config?.required === true,
+			).length;
+			Logger.log(
+				`All ${requiredFieldsCount} required fields are present for document`,
+			);
+		} catch (error) {
+			Logger.error(
+				`Error in validateRequiredFieldsFromOcrMapping: ${error.message}`,
+				error.stack,
+			);
+			throw error;
+		}
+	}
+
+	private async collectMissingRequiredFields(
+		vcFields: VcFields,
+		vcMapping: any,
+		uploadDocumentDto?: UploadDocumentDto,
+		issueVC?: string,
+	): Promise<string[]> {
+		const missingFields = vcMapping.missing_fields || [];
+		Logger.log(
+			`OCR Mapping - Total missing fields: [${missingFields.join(', ')}]`,
+		);
+
+		const missingRequiredFields = this.filterRequiredFields(
+			vcFields,
+			missingFields,
+		);
+
+		const additionalMissing = await this.checkMappedDataForEmptyRequiredFields(
+			vcFields,
+			vcMapping,
+			missingRequiredFields, // Pass known missing to avoid dups
+			uploadDocumentDto,
+			issueVC,
+		);
+
+		return [...missingRequiredFields, ...additionalMissing];
+	}
+
+	private filterRequiredFields(
+		vcFields: VcFields,
+		missingFields: string[],
+	): string[] {
+		const missingRequiredFields: string[] = [];
+
+		for (const fieldName of missingFields) {
+			const fieldConfig = vcFields[fieldName];
+			// Only check required document fields (exclude fields with document_field: false)
+			if (fieldConfig?.document_field !== false && fieldConfig?.required === true) {
+				missingRequiredFields.push(fieldName);
+			}
+		}
+		return missingRequiredFields;
+	}
+
+	private async checkMappedDataForEmptyRequiredFields(
+		vcFields: VcFields,
+		vcMapping: any,
+		knownMissingFields: string[],
+		uploadDocumentDto?: UploadDocumentDto,
+		issueVC?: string,
+	): Promise<string[]> {
+		const additionalMissingRequired: string[] = [];
+		const issuer = uploadDocumentDto?.issuer?.toLowerCase();
+
+		for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
+			// Check if field is required and is a document field
+			if (fieldConfig?.required === true && fieldConfig?.document_field !== false) {
+				// Get field value from mapped_data
+				let fieldValue = vcMapping.mapped_data?.[fieldName];
+
+				// Only check credentialSubject for Dhiway when issueVC is 'no' (existing VC verification case)
+				if (issuer === 'dhiway' && issueVC === 'no' && this.isFieldValueEmpty(fieldValue)) {
+					// Try to get value from credentialSubject (only for issueVC='no' case)
+					fieldValue = vcMapping.mapped_data?.credentialSubject?.[fieldName];
+					Logger.debug(
+						`Dhiway issuer (issueVC='no'): Checking field '${fieldName}' in credentialSubject - found: ${!this.isFieldValueEmpty(fieldValue)}`,
+					);
+				}
+
+
+				if (
+					this.isFieldValueEmpty(fieldValue) &&
+					!knownMissingFields.includes(fieldName)
+				) {
+					additionalMissingRequired.push(fieldName);
+				}
+			}
+		}
+		return additionalMissingRequired;
+	}
+
+	private isFieldValueEmpty(fieldValue: any): boolean {
+		return (
+			fieldValue === null ||
+			fieldValue === undefined ||
+			(typeof fieldValue === 'string' && fieldValue.trim() === '')
+		);
+	}
+
+	private logValidationResults(
+		vcFields: VcFields,
+		vcMapping: any,
+		allMissingRequired: string[],
+	): void {
+		Logger.log(
+			`Required field validation - Missing required fields: [${allMissingRequired.join(', ')}]`,
+		);
+		Logger.debug(
+			`Mapped data keys: [${Object.keys(vcMapping.mapped_data || {}).join(', ')}]`,
+		);
+
+		if (!vcMapping.mapped_data?.studentuniqueid && vcFields.studentuniqueid) {
+			Logger.warn(
+				`CRITICAL: studentuniqueid is missing from mapped data but present in vcFields config. Required: ${vcFields.studentuniqueid?.required}`,
+			);
+		}
+	}
+
+	private throwMissingFieldsError(
+		allMissingRequired: string[],
+		uploadDocumentDto: UploadDocumentDto,
+		vcFields: VcFields,
+		locale: string = 'en',
+		errorKey: string = 'MISSING_REQUIRED_FIELDS_IN_DOCUMENT',
+	): void {
+		// Format field names using labels if available
+		const formattedFields = allMissingRequired.map(field => {
+			const fieldConfig = vcFields[field];
+			const label = fieldConfig?.label;
+
+			if (label) {
+				return this.i18n.getLocalizedLabel(label, locale);
+			}
+
+			// Fallback to formatting the field name
+			return field
+				.replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
+				.replaceAll('_', ' ')  // Replace underscores with spaces
+				.split(' ')
+				.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+				.join(' ');
+		});
+
+		// Format field list with commas
+		const fieldList = `(${formattedFields.join(', ')})`;
+		const errorMessage = this.i18n.translateError(errorKey, locale, {
+			fields: fieldList
+		});
+
+		Logger.error(`Document validation failed: ${errorMessage}`);
+		throw new BadRequestException({
+			message: errorMessage,
+			statusCode: HttpStatus.BAD_REQUEST,
+		});
+	}
+
+	private throwValidationConstraintsError(
+		validationErrors: Array<{ field: string; error: string; constraint: string }>,
+		uploadDocumentDto: UploadDocumentDto,
+		locale: string = 'en',
+	): void {
+		// Format validation errors for user-friendly display
+		const errorDetails = validationErrors.map(ve => `${ve.field}: ${ve.error}`).join('; ');
+
+		const errorMessage = this.i18n.translateError('VC_VALIDATION_CONSTRAINTS_FAILED', locale, {
+			errors: errorDetails
+		});
+
+		Logger.error(`Document validation constraints failed: ${errorMessage}`);
+		Logger.debug(`Validation errors: ${JSON.stringify(validationErrors, null, 2)}`);
+
+		throw new BadRequestException({
+			message: errorMessage,
+			statusCode: HttpStatus.BAD_REQUEST,
+			validationErrors: validationErrors, // Include detailed errors for API consumers
+		});
+	}
+
+	// Helper to validate file type when QR processing is required
+	public async validateFileTypeForQr(
+		requiresQRProcessing: boolean,
+		mimetype: string,
+	) {
+		if (requiresQRProcessing && mimetype === 'application/pdf') {
+			// Log the technical error details for debugging
+			Logger.error(
+				`QR Processing Failed: PDF file type not supported for QR processing`,
+				JSON.stringify({
+					errorType: 'UNSUPPORTED_FILE_TYPE',
+					mimetype: mimetype,
+					requiresQRProcessing: requiresQRProcessing
+				}),
+				'UserService'
+			);
+
+			throw new BadRequestException(
+				'QR_PDF_NOT_SUPPORTED'
+			);
+		}
+	}
+
+	// Helper to perform OCR extraction and validations
+	public async performOcr(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		requiresQRProcessing: boolean,
+		documentConfig?: any,
+		locale: string = 'en',
+
+	) {
+		try {
+			const isVcUrlCase = this.isVcUrlCase(requiresQRProcessing, documentConfig);
+			this.performOcrLogging(isVcUrlCase, requiresQRProcessing);
+
+			const extractedData = await this.extractOcrData(file, uploadDocumentDto, requiresQRProcessing);
+			const ocrResult = this.buildOcrResult(extractedData, requiresQRProcessing);
+
+			this.logOcrSuccess(extractedData, requiresQRProcessing);
+
+			const hasVcDataFromQR = this.hasVcDataFromQR(extractedData, requiresQRProcessing);
+			this.logVcDataDetection(hasVcDataFromQR, isVcUrlCase);
+
+			this.validateOcrText(extractedData, hasVcDataFromQR, isVcUrlCase, locale);
+
+			return ocrResult;
+		} catch (ocrError) {
+			return this.handleOcrError(ocrError, locale);
+		}
+	}
+
+	private isVcUrlCase(requiresQRProcessing: boolean, documentConfig?: any): boolean {
+		return requiresQRProcessing && documentConfig?.docQRContains?.toLowerCase() === 'vc_url';
+	}
+
+	private performOcrLogging(isVcUrlCase: boolean, requiresQRProcessing: boolean): void {
+		const loggers = {
+			vcUrl: () => this.logVcUrlDetected(),
+			withQr: () => this.logOcrWithQrStart(),
+			onlyOcr: () => this.logOcrOnlyStart()
+		};
+
+		if (isVcUrlCase) {
+			loggers.vcUrl();
+		} else if (requiresQRProcessing) {
+			loggers.withQr();
+		} else {
+			loggers.onlyOcr();
+		}
+	}
+
+	private logVcUrlDetected(): void {
+		Logger.log(`VC_URL detected - performing QR processing only, skipping OCR text extraction`);
+	}
+
+	private logOcrWithQrStart(): void {
+		Logger.log('Starting OCR extraction with QR processing for document validation');
+	}
+
+	private logOcrOnlyStart(): void {
+		Logger.log('Starting OCR extraction without QR processing for document validation');
+	}
+
+	private async extractOcrData(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+		requiresQRProcessing: boolean,
+	) {
+		const extractors = {
+			withQr: () => this.extractOcrDataWithQR(file, uploadDocumentDto),
+			onlyOcr: () => this.extractOcrDataOnly(file)
+		};
+
+		return requiresQRProcessing
+			? await extractors.withQr()
+			: await extractors.onlyOcr();
+	}
+
+	private async extractOcrDataWithQR(
+		file: Express.Multer.File,
+		uploadDocumentDto: UploadDocumentDto,
+	) {
+		return await this.ocrService.extractTextFromBufferWithQR(
+			file.buffer,
+			file.mimetype,
+			uploadDocumentDto.docSubType,
+		);
+	}
+
+	private async extractOcrDataOnly(file: Express.Multer.File) {
+		return await this.ocrService.extractTextFromBuffer(file.buffer, file.mimetype);
+	}
+
+	private buildOcrResult(extractedData: any, requiresQRProcessing: boolean) {
+		return {
+			extractedText: extractedData.fullText,
+			confidence: extractedData.confidence,
+			metadata: extractedData.metadata,
+			qrProcessing:
+				requiresQRProcessing && 'qrProcessing' in extractedData
+					? extractedData.qrProcessing
+					: undefined,
+		};
+	}
+
+	private logOcrSuccess(extractedData: any, requiresQRProcessing: boolean): void {
+		const qrProcessed = this.isQrProcessed(extractedData, requiresQRProcessing);
+		Logger.log(
+			`OCR processing successful. Extracted ${extractedData.fullText.length} characters with ${extractedData.confidence}% confidence` +
+			(qrProcessed ? ` (QR code processed)` : ''),
+		);
+	}
+
+	private isQrProcessed(extractedData: any, requiresQRProcessing: boolean): boolean {
+		return requiresQRProcessing &&
+			extractedData.qrProcessing?.qrCodeDetected;
+	}
+
+	private hasVcDataFromQR(extractedData: any, requiresQRProcessing: boolean): boolean {
+		return requiresQRProcessing &&
+			extractedData.qrProcessing?.processedData?.vcData;
+	}
+
+	private logVcDataDetection(hasVcDataFromQR: boolean, isVcUrlCase: boolean): void {
+		if (hasVcDataFromQR && isVcUrlCase) {
+			Logger.log(`VC_URL case: VC data fetched from QR code - OCR text extraction not required`);
+		}
+	}
+
+	private validateOcrText(extractedData: any, hasVcDataFromQR: boolean, isVcUrlCase: boolean, locale: string = 'en'): void {
+		const shouldSkipValidation = hasVcDataFromQR && isVcUrlCase;
+		if (shouldSkipValidation) {
+			return;
+		}
+
+		if (extractedData.fullText.length === 0) {
+			Logger.error(`OCR validation failed: No text extracted from document`);
+			const translatedError = this.i18n.translateError('OCR_TEXT_EXTRACTION_FAILED', locale);
+			throw new BadRequestException({
+				message: translatedError,
+				statusCode: HttpStatus.BAD_REQUEST,
+			});
+		}
+
+		if (extractedData.confidence < 10) {
+			Logger.error(
+				`OCR validation failed: Very low confidence (${extractedData.confidence}%)`,
+			);
+
+		}
+	}
+
+	private handleOcrError(ocrError: any, locale: string = 'en'): never {
+		Logger.error(`OCR processing failed: ${ocrError.message}`);
+
+		if (ocrError instanceof BadRequestException) {
+			// If BadRequestException already has a translated message, keep it
+			// Otherwise, try to translate the error key if it's a string
+			if (typeof ocrError.message === 'string' && ocrError.message.includes('_')) {
+				const translatedError = this.i18n.translateError(ocrError.message, locale);
+				throw new BadRequestException({
+					message: translatedError,
+					statusCode: HttpStatus.BAD_REQUEST,
+				});
+			}
+			throw ocrError;
+		}
+
+		const translatedError = this.i18n.translateError('OCR_PROCESSING_FAILED', locale);
+		throw new InternalServerErrorException({
+			message: translatedError,
+			statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+		});
+	}
+
+	// Helper methods for document management
+
+	private async updateExistingDoc(
+		existingDoc: UserDoc,
+		uploadResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+		vcMapping: any,
+		docDataLink?: string,
+		issueVC?: string,
+		issuer?: string,
+	): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+		const metadata = this.prepareDocumentMetadata(
+			vcMapping,
+			issueVC,
+			issuer,
+			uploadResult,
+			docDataLink,
+		);
+
+		const previousPath = existingDoc.doc_path;
+
+		// Update document fields
+		existingDoc.doc_path = uploadResult.filePath;
+		existingDoc.imported_from = uploadDocumentDto.importedFrom;
+		existingDoc.doc_datatype = metadata.docDatatype;
+		existingDoc.uploaded_at = uploadResult.uploadedAt;
+		existingDoc.doc_data = metadata.docData;
+		existingDoc.doc_verified = false;
+		existingDoc.verified_at = null; // Reset verification timestamp on document update
+		existingDoc.doc_data_link = metadata.docDataLink;
+		existingDoc.issuance_callback_registered = issueVC === 'yes'; // true for VC creation, false for direct upload
+		existingDoc.vc_status = issueVC === 'yes' ? 'pending' : null; // Reset to 'pending' for VC, null for non-VC
+		existingDoc.vc_status_updated_at = issueVC === 'yes' ? new Date() : null;
+
+		// Extract and store vc_public_id from verification URL using adapter
+		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
+			const adapter = this.vcAdapterFactory.getAdapter(issuer);
+			if (adapter) {
+				const publicId = adapter.extractPublicId(metadata.docDataLink);
+				if (publicId) {
+					existingDoc.vc_public_id = publicId;
+					Logger.log(`Extracted and stored vc_public_id: ${publicId} using ${issuer} adapter`);
+				} else {
+					Logger.warn(`Could not extract public ID from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				}
+			}
+		}
+
+		if (issuer) {
+			existingDoc.issuer = issuer;
+		}
+
+		const savedDoc = await this.userDocsRepository.save(existingDoc);
+
+		// Delete previous file if different
+		if (previousPath && previousPath !== uploadResult.filePath) {
+			await this.documentUploadService.deleteFile(previousPath);
+		}
+
+		Logger.log(`Document updated successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
+		return { savedDoc, isUpdate: true };
+	}
+
+	public async createNewDoc(
+		userId: string,
+		uploadResult: any,
+		uploadDocumentDto: UploadDocumentDto,
+		vcMapping: any,
+		docDataLink?: string,
+		issueVC?: string,
+		issuer?: string,
+	): Promise<{ savedDoc: UserDoc; isUpdate: boolean }> {
+		const metadata = this.prepareDocumentMetadata(
+			vcMapping,
+			issueVC,
+			issuer,
+			uploadResult,
+			docDataLink,
+		);
+
+		// Extract vc_public_id from verification URL if VC creation using adapter
+		let vcPublicId: string | null = null;
+		if (issueVC === 'yes' && metadata.docDataLink && issuer) {
+			const adapter = this.vcAdapterFactory.getAdapter(issuer);
+			if (adapter) {
+				vcPublicId = adapter.extractPublicId(metadata.docDataLink);
+				if (vcPublicId) {
+					Logger.log(`Extracted vc_public_id: ${vcPublicId} from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				} else {
+					Logger.warn(`Could not extract public ID from URL: ${metadata.docDataLink} using ${issuer} adapter`);
+				}
+			}
+		}
+
+		const newUserDoc = this.userDocsRepository.create({
+			user_id: userId,
+			doc_type: uploadDocumentDto.docType,
+			doc_subtype: uploadDocumentDto.docSubType,
+			doc_name: uploadDocumentDto.docName,
+			imported_from: uploadDocumentDto.importedFrom,
+			doc_path: uploadResult.filePath,
+			doc_data: metadata.docData,
+			doc_datatype: metadata.docDatatype,
+			doc_verified: false,
+			verified_at: null,
+			watcher_registered: false,
+			watcher_email: null,
+			watcher_callback_url: null,
+			doc_data_link: metadata.docDataLink,
+			vc_public_id: vcPublicId,
+			issuer: issuer || null,
+			issuance_callback_registered: issueVC === 'yes', // true for VC creation, false for direct upload
+			vc_status: issueVC === 'yes' ? 'pending' : null, // Set to 'pending' for VC documents, null for non-VC
+			vc_status_updated_at: issueVC === 'yes' ? new Date() : null,
+		});
+
+		const savedDoc = await this.userDocsRepository.save(newUserDoc);
+		Logger.log(`Document uploaded successfully: ${savedDoc.doc_id} with file path: ${savedDoc.doc_path}`);
+		return { savedDoc, isUpdate: false };
+	}
+
+	/**
+	 * Process VC event - API endpoint wrapper
+	 * Uses shared VcProcessingService to avoid code duplication
+	 * @param publicId - The public ID (UUID) from the event payload
+	 * @param status - The status from event (issued, revoked, deleted)
+	 * @param timestamp - Optional timestamp from event
+	 * @returns HTTP response (SuccessResponse or ErrorResponse)
+	 */
+	async processVcEvent(
+		publicId: string,
+		status: 'issued' | 'revoked' | 'deleted',
+		timestamp?: string,
+	): Promise<SuccessResponse | ErrorResponse> {
+		try {
+			Logger.log(`Processing VC event via API for public ID: ${publicId}, status: ${status}`);
+
+			// Use shared service to process VC event
+			const result = await this.vcProcessingService.processVcEventInternal(
+				publicId,
+				status,
+				timestamp,
+			);
+
+			if (!result.success) {
+				// Determine appropriate HTTP status code based on error
+				const statusCode =
+					result.error?.includes('No VC found') ||
+						result.error?.includes('not found')
+						? HttpStatus.NOT_FOUND
+						: HttpStatus.INTERNAL_SERVER_ERROR;
+
+				const errorMessage = result.error || this.i18n.translateError('VC_EVENT_PROCESSING_FAILED', 'en');
+				return new ErrorResponse({
+					statusCode,
+					errorMessage,
+				});
+			}
+
+			// Convert internal result to HTTP response
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: `VC ${result.data.status} successfully`,
+				data: {
+					doc_id: result.data.doc_id,
+					user_id: result.data.user_id,
+					public_id: result.data.public_id,
+					status: result.data.status,
+					issuer: result.data.issuer,
+					verified: result.data.verified,
+					verified_at: result.data.verified_at,
+				},
+			});
+		} catch (error) {
+			Logger.error(`Error processing VC event: ${error.message}`, error.stack);
+			const errorMessage = error.message || this.i18n.translateError('VC_EVENT_PROCESSING_FAILED', 'en');
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage,
+			});
+		}
+	}
+	public async getConfig(key: string, acceptLanguage?: string): Promise<any> {
+		const configResponse = await this.adminService.getConfig(key);
+
+		if (configResponse instanceof SuccessResponse && configResponse.data) {
+			const config = configResponse.data as any;
+
+			// Transform label if value is an array
+			if (Array.isArray(config.value)) {
+				config.value = config.value.map((item) => {
+					if (
+						item &&
+						typeof item === 'object' &&
+						item.label &&
+						typeof item.label === 'object' &&
+						!Array.isArray(item.label)
+					) {
+						// Create shallow copy to avoid mutating original immutable fields if any
+						const newItem = { ...item };
+						newItem.label = this.i18n.getLocalizedLabel(item.label, acceptLanguage);
+						return newItem;
+					}
+					return item;
+				});
+			}
+		}
+
+		return configResponse;
+	}
 }
+

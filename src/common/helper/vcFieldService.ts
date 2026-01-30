@@ -1,10 +1,38 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AdminService } from '@modules/admin/admin.service';
 
-export type VcFields = Record<string, { 
-  type?: 'string' | 'number' | 'boolean' | 'integer' | 'object';
+export type VcFields = Record<string, {
+  type?: 'string' | 'number' | 'boolean' | 'integer' | 'object' | 'file' | 'date';
   required?: boolean;
+  label?: string | Record<string, string>;
   description?: string;
+  role?: 'original_document' | 'beneficiary_user_id';
+  document_field?: boolean;
+  matching?: {
+    compareWith: string;
+    matchPercentage: number;
+  };
+  maxLength?: number;
+  minLength?: number;
+  pattern?: string;
+  format?: string;
+  enum?: string[];
+  validationMessages?: {
+    en?: {
+      required?: string;
+      pattern?: string;
+      maxLength?: string;
+      minLength?: string;
+      enum?: string;
+    };
+    hi?: {
+      required?: string;
+      pattern?: string;
+      maxLength?: string;
+      minLength?: string;
+      enum?: string;
+    };
+  };
 }>;
 
 /**
@@ -15,7 +43,7 @@ export type VcFields = Record<string, {
 export class VcFieldsService {
   private readonly logger = new Logger(VcFieldsService.name);
 
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   /**
    * Get vcFields configuration for a document type
@@ -26,9 +54,9 @@ export class VcFieldsService {
   async getVcFields(docType: string, docSubType: string): Promise<VcFields | null> {
     try {
       this.logger.debug(`Fetching vcFields for docType: ${docType}, docSubType: ${docSubType}`);
-      
+
       const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
-      
+
       if (!vcConfig?.value) {
         this.logger.warn('vcConfiguration not found in settings');
         return null;
@@ -45,7 +73,7 @@ export class VcFieldsService {
       }
 
       // Find matching configuration
-      const matchingConfig = configValue.find((config: any) => 
+      const matchingConfig = configValue.find((config: any) =>
         config.docType === docType && config.documentSubType === docSubType
       );
 
@@ -80,7 +108,7 @@ export class VcFieldsService {
    */
   vcFieldsToSchema(vcFields: VcFields): Record<string, any> {
     const properties: Record<string, any> = {};
-    
+
     for (const [fieldName, fieldConfig] of Object.entries(vcFields)) {
       properties[fieldName] = {
         type: fieldConfig.type || 'string',
@@ -122,5 +150,53 @@ export class VcFieldsService {
    */
   getFieldType(vcFields: VcFields, fieldName: string): string {
     return vcFields[fieldName]?.type || 'string';
+  }
+
+  /**
+   * Get ocrMappingPrompt configuration for a document type
+   * @param docType - Document type (e.g., 'certificate')
+   * @param docSubType - Document subtype (e.g., 'marksheet')
+   * @returns OCR mapping prompt string or null if not found
+   */
+  async getOcrMappingPrompt(docType: string, docSubType: string): Promise<string | null> {
+    try {
+      const vcConfig = await this.adminService.getConfigByKey('vcConfiguration');
+
+      if (!vcConfig?.value) {
+        return null;
+      }
+
+      // Handle both array and JSON string formats
+      const configValue = Array.isArray(vcConfig.value)
+        ? vcConfig.value
+        : JSON.parse(vcConfig.value);
+
+      if (!Array.isArray(configValue)) {
+        return null;
+      }
+
+      // Find matching configuration
+      const matchingConfig = configValue.find((config: any) =>
+        config.docType === docType && config.documentSubType === docSubType
+      );
+
+      if (!matchingConfig) {
+        return null;
+      }
+
+      // Get ocrMappingPrompt if it exists
+      const ocrMappingPrompt = matchingConfig.ocrMappingPrompt;
+
+      // Return null if prompt is null, undefined, or empty string
+      if (!ocrMappingPrompt || (typeof ocrMappingPrompt === 'string' && ocrMappingPrompt.trim() === '')) {
+        return null;
+      }
+
+      return typeof ocrMappingPrompt === 'string' ? ocrMappingPrompt : String(ocrMappingPrompt);
+
+    } catch (error: any) {
+      this.logger.error(`Failed to resolve ocrMappingPrompt: ${error?.message || error}`);
+      return null;
+    }
   }
 }

@@ -4,6 +4,9 @@ import { Repository } from 'typeorm';
 import { Setting } from './entities/setting.entity';
 import { SuccessResponse } from 'src/common/responses/success-response';
 import { ErrorResponse } from 'src/common/responses/error-response';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { firstValueFrom } from 'rxjs';
 
 interface ConfigMapping {
 	key: string;
@@ -12,10 +15,18 @@ interface ConfigMapping {
 
 @Injectable()
 export class AdminService {
+	private readonly issuerSdkUrl: string;
+
 	constructor(
 		@InjectRepository(Setting)
 		private settingRepository: Repository<Setting>,
-	) {}
+		private readonly httpService: HttpService,
+		private readonly configService: ConfigService,
+	) {
+		this.issuerSdkUrl = this.configService.get<string>(
+			'VC_VERIFICATION_SERVICE_URL',
+		);
+	}
 
 	async createOrUpdateConfig(
 		mapping: ConfigMapping,
@@ -89,5 +100,59 @@ export class AdminService {
 			where: { key },
 			order: { created: 'DESC' },
 		});
+	}
+
+	/**
+	 * Get available issuers from the SDK
+	 * @param type Optional filter by issuer type (online/offline)
+	 * @returns List of available issuers
+	 */
+	async getIssuers(type?: string): Promise<any> {
+		try {
+			// Build URL with optional type filter
+			let url = `${this.issuerSdkUrl}/issuers`;
+			if (type) {
+				url += `?type=${type}`;
+			}
+
+			Logger.log(`Fetching issuers from: ${url}`, 'AdminService');
+
+			// Make HTTP request to the issuer SDK
+			const response = await firstValueFrom(
+				this.httpService.get(url, {
+					timeout: 10000, // 10 seconds timeout
+				}),
+			);
+
+			return new SuccessResponse({
+				statusCode: HttpStatus.OK,
+				message: 'Issuers retrieved successfully',
+				data: response.data,
+			});
+		} catch (error) {
+			Logger.error('Error fetching issuers:', error.message, 'AdminService');
+
+			// Handle different error types
+			if (error.code === 'ECONNREFUSED') {
+				return new ErrorResponse({
+					statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+					errorMessage:
+						'Issuer SDK service is unavailable. Please check if the service is running.',
+				});
+			}
+
+			if (error.response) {
+				return new ErrorResponse({
+					statusCode: error.response.status || HttpStatus.BAD_REQUEST,
+					errorMessage:
+						error.response.data?.message || 'Failed to fetch issuers from SDK',
+				});
+			}
+
+			return new ErrorResponse({
+				statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+				errorMessage: 'An unexpected error occurred while fetching issuers',
+			});
+		}
 	}
 }

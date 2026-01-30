@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Field, FieldType } from '../entities/field.entity';
+import { I18nService } from 'src/common/services/i18n.service';
 
 export interface ValidationResult {
 	isValid: boolean;
@@ -16,6 +17,7 @@ export interface ValidationOptions {
  */
 @Injectable()
 export class FieldValidationHelper {
+	constructor(private readonly i18n: I18nService) {}
 	/**
 	 * Validate a field value against all constraints
 	 * @param value The value to validate
@@ -46,7 +48,10 @@ export class FieldValidationHelper {
 		if (this.isEmptyValue(value) && !field.isRequired) {
 			const result = { isValid: errors.length === 0, errors };
 			if (throwOnError && !result.isValid) {
-				throw new BadRequestException(errors.join('; '));
+				const errorMessage = this.i18n.translateError('FIELD_VALIDATION_ERRORS', 'en', {
+					errors: errors.join('; ')
+				});
+				throw new BadRequestException(errorMessage);
 			}
 			return result;
 		}
@@ -70,7 +75,10 @@ export class FieldValidationHelper {
 		const result = { isValid: errors.length === 0, errors };
 
 		if (throwOnError && !result.isValid) {
-			throw new BadRequestException(errors.join('; '));
+			const errorMessage = this.i18n.translateError('FIELD_VALIDATION_ERRORS', 'en', {
+				errors: errors.join('; ')
+			});
+			throw new BadRequestException(errorMessage);
 		}
 
 		return result;

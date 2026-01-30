@@ -77,8 +77,14 @@ export class QRProcessingService {
 
       this.logger.log(`QR code detected with content: ${qrContent.substring(0, 100)}...`);
 
-      // Process QR content using the content processor
-      return await this.qrContentProcessor.processQRContent(qrContent, documentConfig.docQRContains);
+      // Process QR content using the content processor with issuer information
+      const issuer = documentConfig.issuer || 'dhiway'; // Default to dhiway if no issuer specified
+      return await this.qrContentProcessor.processQRContent(
+        qrContent, 
+        documentConfig.docQRContains || 'PLAIN_TEXT', 
+        issuer, 
+        documentConfig
+      );
     } catch (error) {
       this.logger.error(`QR processing failed: ${error.message}`, error.stack);
       

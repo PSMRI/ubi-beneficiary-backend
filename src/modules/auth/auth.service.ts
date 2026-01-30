@@ -1,5 +1,5 @@
 import { UserService } from '@modules/users/users.service';
-import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, InternalServerErrorException, Logger, UnauthorizedException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ErrorResponse } from 'src/common/responses/error-response';
 import { SuccessResponse } from 'src/common/responses/success-response';
@@ -11,6 +11,8 @@ import { LoginDTO } from './dto/login.dto';
 import { UpdatePasswordDTO } from './dto/update-password.dto';
 import { UploadDocumentDto } from '@modules/users/dto/upload-document.dto';
 import { DocumentUploadService } from '@modules/document-upload/document-upload.service';
+import { I18nService } from 'src/common/services/i18n.service';
+import { DocumentValidationService } from '@services/document-validation/document-validation.service';
 
 const crypto = require('crypto');
 const axios = require('axios');
@@ -31,6 +33,8 @@ export class AuthService {
     private readonly loggerService: LoggerService,
     private readonly walletService: WalletService,
     private readonly documentUploadService: DocumentUploadService,
+    private readonly i18n: I18nService,
+    private readonly documentValidationService: DocumentValidationService,
   ) { }
 
   public async login(body: LoginDTO) {
@@ -38,10 +42,7 @@ export class AuthService {
       const token = await this.keycloakService.getUserKeycloakToken(body);
 
       if (!token) {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'INVALID_USERNAME_PASSWORD_MESSAGE',
-        });
+        throw new UnauthorizedException('INVALID_USERNAME_PASSWORD_MESSAGE');
       }
 
       // 🔹 Fetch user details
@@ -51,17 +52,14 @@ export class AuthService {
         const requiredActions = keycloakUser.user.requiredActions || [];
 
         if (requiredActions.includes('UPDATE_PASSWORD')) {
-          return new ErrorResponse({
-            statusCode: HttpStatus.FORBIDDEN,
-            errorMessage: 'PASSWORD_UPDATE_REQUIRED',
-          });
+          throw new ForbiddenException('PASSWORD_UPDATE_REQUIRED');
         }
 
         const user = await this.userService.findBySsoId(keycloakUser.user.id);
         this.loggerService.log(`User found by Keycloak ID: ${JSON.stringify(user)}`);
 
         if (user) {
-          return new SuccessResponse({
+          return {
             statusCode: HttpStatus.OK,
             message: 'LOGGEDIN_SUCCESSFULLY',
             data: {
@@ -69,19 +67,13 @@ export class AuthService {
               username: body.username.toLowerCase(),
               walletToken: user.walletToken || null,
             },
-          });
+          };
         }
 
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'User account not found in system',
-        });
+        throw new NotFoundException('USER_NOT_FOUND');
       }
 
-      return new ErrorResponse({
-        statusCode: HttpStatus.UNAUTHORIZED,
-        errorMessage: 'INVALID_USERNAME_PASSWORD_MESSAGE',
-      });
+      throw new UnauthorizedException('INVALID_USERNAME_PASSWORD_MESSAGE');
 
     } catch (error) {
       if (error.message === 'ACCOUNT_NOT_FULLY_SETUP') {
@@ -89,27 +81,23 @@ export class AuthService {
         const requiredActions = keycloakUser?.user?.requiredActions || [];
 
         if (requiredActions.includes('UPDATE_PASSWORD')) {
-          return new ErrorResponse({
-            statusCode: HttpStatus.FORBIDDEN,
-            errorMessage: 'PASSWORD_UPDATE_REQUIRED',
-          });
+          throw new ForbiddenException('PASSWORD_UPDATE_REQUIRED');
         }
 
-        return new ErrorResponse({
-          statusCode: HttpStatus.FORBIDDEN,
-          errorMessage: 'ACCOUNT_NOT_FULLY_SETUP',
-        });
+        throw new ForbiddenException('ACCOUNT_NOT_FULLY_SETUP');
       }
 
       if (error.message === 'INVALID_CREDENTIALS') {
-        return new ErrorResponse({
-          statusCode: HttpStatus.UNAUTHORIZED,
-          errorMessage: 'INVALID_USERNAME_PASSWORD_MESSAGE',
-        });
+        throw new UnauthorizedException('INVALID_USERNAME_PASSWORD_MESSAGE');
       }
 
-      // Catch-all
-      throw error;
+      // Re-throw other exceptions (they might already be HTTP exceptions)
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      // Catch-all for unexpected errors
+      throw new InternalServerErrorException('AUTH_LOGIN_FAILED');
     }
   }
 
@@ -119,14 +107,14 @@ export class AuthService {
       try {
         // let wallet_api_url = process.env.WALLET_API_URL;
         // Step 1: Check if mobile number exists in the database
-        await this.checkMobileExistence(body?.phoneNumber);
+        await this.checkMobileExistence(body?.phoneNumber, locale);
   
         // Step 2: Prepare user data for Keycloak registration
         const dataToCreateUser = this.prepareUserData(body);
   
         // Step 3: Get Keycloak admin token
         const token = await this.keycloakService.getAdminKeycloakToken();
-        this.validateToken(token);
+        this.validateToken(token, locale);
   
         // Step 4: Register user in Keycloak
         const keycloakId = await this.registerUserInKeycloak(
@@ -167,7 +155,7 @@ export class AuthService {
 }
 } */
 
-  public async registerWithUsernamePassword(body) {
+  public async registerWithUsernamePassword(body, locale: string = 'en') {
     try {
       // Step 1: Prepare user data for Keycloak registration
       const dataToCreateUser = this.prepareUserDataV2(body);
@@ -180,6 +168,7 @@ export class AuthService {
       const keycloakId = await this.registerUserInKeycloak(
         rest,
         token.access_token,
+        locale,
       );
 
       // Step 4: Register user in PostgreSQL
@@ -189,54 +178,10 @@ export class AuthService {
       };
       const user = await this.userService.createKeycloakData(userData);
 
-      // Step 5: Wallet onboarding integration
-      let walletToken = null;
-      try {
-        if (user?.user_id) {
-          const walletData = {
-            firstName: body.firstName.trim(),
-            lastName: body.lastName.trim(),
-            phone: body.phoneNumber.trim(),
-            password: password,
-            username: body.username.trim(),
-          };
+      // Step 5: Handle wallet onboarding
+      const walletToken = await this.handleWalletOnboarding(body, password, user, keycloakId, locale);
 
-          this.loggerService.log('Starting wallet onboarding for user', 'AuthService');
-          const walletResponse = await this.walletService.onboardUser(walletData);
-          walletToken = walletResponse?.data?.token;
-
-          // Step 6: Update user with wallet token
-          if (walletToken) {
-            await this.userService.update(user.user_id, {
-              walletToken: walletToken,
-            });
-            this.loggerService.log('User updated with wallet token successfully', 'AuthService');
-          }
-        }
-      } catch (walletError) {
-        // Rollback user creation in DB and Keycloak if wallet onboarding fails
-        this.loggerService.error(
-          'Wallet onboarding failed during user registration',
-          walletError.stack,
-          'AuthService'
-        );
-        // Delete user from DB if it exists
-        if (user?.user_id) {
-          await this.userService.deleteUser(user.user_id);
-          this.loggerService.error(`Rolled back user in DB: ${user.user_id}`, 'AuthService');
-        }
-        // Delete user from Keycloak if it exists
-        if (keycloakId) {
-          await this.keycloakService.deleteUser(keycloakId);
-          this.loggerService.error(`Rolled back user in Keycloak: ${keycloakId}`, 'AuthService');
-        }
-        throw new ErrorResponse({
-          statusCode: HttpStatus.BAD_GATEWAY,
-          errorMessage: 'Registration could not be completed. Please try again later.',
-        });
-      }
-
-      // Step 7: Return success response
+      // Step 6: Return success response
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
         message: 'User created successfully',
@@ -252,18 +197,81 @@ export class AuthService {
     }
   }
 
-  private async checkMobileExistence(phoneNumber: string) {
+  private async handleWalletOnboarding(body: any, password: string, user: any, keycloakId: string, locale: string = 'en'): Promise<string | null> {
+    const isWalletRegistrationEnabled = this.configService.get<string>('WALLET_REGISTRATION_ENABLED') !== 'false';
+
+    if (!isWalletRegistrationEnabled) {
+      this.loggerService.log('Wallet registration is disabled, skipping wallet onboarding', 'AuthService');
+      return null;
+    }
+
+    try {
+      if (!user?.user_id) {
+        return null;
+      }
+
+      const walletData = {
+        firstName: body.firstName.trim(),
+        lastName: body.lastName.trim(),
+        phone: body.phoneNumber.trim(),
+        password: password,
+        username: body.username.trim(),
+      };
+
+      this.loggerService.log('Starting wallet onboarding for user', 'AuthService');
+      const walletResponse = await this.walletService.onboardUser(walletData);
+      const walletToken = walletResponse?.data?.token;
+
+      if (walletToken) {
+        await this.userService.update(user.user_id, {
+          walletToken: walletToken,
+        });
+        this.loggerService.log('User updated with wallet token successfully', 'AuthService');
+      }
+
+      return walletToken;
+    } catch (walletError) {
+      await this.rollbackUserRegistration(user, keycloakId, walletError);
+      const errorMessage = this.i18n.translateError('AUTH_REGISTRATION_INCOMPLETE', locale);
+      throw new ErrorResponse({
+        statusCode: HttpStatus.BAD_GATEWAY,
+        errorMessage,
+      });
+    }
+  }
+
+  private async rollbackUserRegistration(user: any, keycloakId: string, walletError: any): Promise<void> {
+    this.loggerService.error(
+      'Wallet onboarding failed during user registration',
+      walletError.stack,
+      'AuthService'
+    );
+
+    if (user?.user_id) {
+      await this.userService.deleteUser(user.user_id);
+      this.loggerService.error(`Rolled back user in DB: ${user.user_id}`, 'AuthService');
+    }
+
+    if (keycloakId) {
+      await this.keycloakService.deleteUser(keycloakId);
+      this.loggerService.error(`Rolled back user in Keycloak: ${keycloakId}`, 'AuthService');
+    }
+  }
+
+  private async checkMobileExistence(phoneNumber: string, locale: string = 'en') {
     if (!phoneNumber || !/^\d{10}$/.test(phoneNumber)) {
+      const errorMessage = this.i18n.translateError('AUTH_INVALID_PHONE_FORMAT', locale);
       throw new ErrorResponse({
         statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: 'Invalid phone number format',
+        errorMessage,
       });
     }
     const isMobileExist = await this.userService.findByMobile(phoneNumber);
     if (isMobileExist) {
+      const errorMessage = this.i18n.translateError('AUTH_MOBILE_ALREADY_EXISTS', locale);
       throw new ErrorResponse({
         statusCode: HttpStatus.CONFLICT,
-        errorMessage: 'Mobile Number Already Exists',
+        errorMessage,
       });
     }
   }
@@ -292,8 +300,7 @@ export class AuthService {
   }
 
   private prepareUserDataV2(body) {
-    const trimmedFirstName = body?.firstName?.trim();
-    const trimmedLastName = body?.lastName?.trim();
+    const trimmedName = body?.name?.trim();
     const trimmedPhoneNumber = body?.phoneNumber?.trim();
     const trimmedUsername = body?.username?.trim();
     const password =
@@ -301,8 +308,7 @@ export class AuthService {
 
     return {
       enabled: 'true',
-      firstName: trimmedFirstName,
-      lastName: trimmedLastName,
+      firstName: trimmedName,
       username: trimmedUsername,
       credentials: [
         {
@@ -314,19 +320,19 @@ export class AuthService {
       password, // Return the password directly
       attributes: {
         // Custom user attributes
-        phoneNumber: '+91' + trimmedPhoneNumber,
-        firstName: trimmedFirstName,
-        lastName: trimmedLastName,
+        phoneNumber: trimmedPhoneNumber ? '+91' + trimmedPhoneNumber : '',
+        firstName: trimmedName,
       },
       groups: this.defaultGroupPath ? [this.defaultGroupPath] : [],
     };
   }
 
-  private validateToken(token) {
+  private validateToken(token, locale: string = 'en') {
     if (!token?.access_token) {
+      const errorMessage = this.i18n.translateError('AUTH_KEYCLOAK_TOKEN_FAILED', locale);
       throw new ErrorResponse({
         statusCode: HttpStatus.UNAUTHORIZED,
-        errorMessage: 'Unable to get Keycloak token',
+        errorMessage,
       });
     }
   }
@@ -363,7 +369,7 @@ export class AuthService {
     return userInfo;
   }
 
-  private async registerUserInKeycloak(userData, accessToken) {
+  private async registerUserInKeycloak(userData, accessToken, locale: string = 'en') {
     const registerUserRes = await this.keycloakService.registerUser(
       userData,
       accessToken,
@@ -375,9 +381,10 @@ export class AuthService {
           'User already exists!',
           registerUserRes?.error,
         );
+        const errorMessage = this.i18n.translateError('USER_ALREADY_EXISTS', locale);
         throw new ErrorResponse({
           statusCode: HttpStatus.CONFLICT,
-          errorMessage: 'User already exists!',
+          errorMessage,
         });
       }
       throw new ErrorResponse({
@@ -389,24 +396,27 @@ export class AuthService {
     if (registerUserRes.headers.location) {
       const locationParts = registerUserRes.headers.location.split('/');
       if (locationParts?.length === 0) {
+        const errorMessage = this.i18n.translateError('AUTH_INVALID_LOCATION_HEADER', locale);
         throw new ErrorResponse({
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          errorMessage: 'Invalid location header format',
+          errorMessage,
         });
       }
       const keycloakId = registerUserRes?.headers?.location.split('/').pop();
       if (!keycloakId) {
+        const errorMessage = this.i18n.translateError('AUTH_KEYCLOAK_ID_EXTRACTION_FAILED', locale);
         throw new ErrorResponse({
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          errorMessage: 'Unable to extract Keycloak ID',
+          errorMessage,
         });
       }
       return keycloakId;
     }
 
+    const errorMessage = this.i18n.translateError('AUTH_KEYCLOAK_USER_CREATION_FAILED', locale);
     throw new ErrorResponse({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      errorMessage: 'Unable to create user in Keycloak',
+      errorMessage,
     });
   }
 
@@ -432,32 +442,48 @@ export class AuthService {
     });
   }
 
-  public async logout(req) {
+  public async logout(req, locale: string = 'en') {
     const accessToken = req.body.access_token;
-    const refreshToken = req.body.refresh_token; // Optional: if provided
+    const refreshToken = req.body.refresh_token;
 
-    try {
-      // Revoke the access token
-      await this.keycloakService.revokeToken(accessToken);
-
-      // Optionally, revoke the refresh token if provided
-      if (refreshToken) {
-        await this.keycloakService.revokeToken(refreshToken, 'refresh_token');
-      }
-
-      // Return successful logout response
+    // If no tokens at all, still consider user logged out
+    if (!accessToken && !refreshToken) {
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
-        message: 'LOGGED OUT SUCCESSFULLY',
-      });
-    } catch (error) {
-      console.error('Error during logout:', error.message);
-      return new ErrorResponse({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: 'LOGOUT_FAILED',
+        message: this.i18n.translateSuccess('AUTH_LOGOUT_SUCCESS', locale),
       });
     }
+
+    // 1️⃣ Revoke access token (best effort)
+    if (accessToken) {
+      try {
+        await this.keycloakService.revokeToken(accessToken);
+      } catch (err) {
+        // Ignore known logout-safe errors
+        console.warn('Access token revoke failed:', err?.message);
+      }
+    }
+
+    // 2️⃣ Revoke refresh token (optional cleanup)
+    if (refreshToken) {
+      try {
+        await this.keycloakService.revokeToken(
+          refreshToken,
+          'refresh_token',
+        );
+      } catch (err) {
+        // Never fail logout because of refresh token
+        console.warn('Refresh token revoke failed:', err?.message);
+      }
+    }
+
+    // 3️⃣ Always succeed
+    return new SuccessResponse({
+      statusCode: HttpStatus.OK,
+      message: this.i18n.translateSuccess('AUTH_LOGOUT_SUCCESS', locale),
+    });
   }
+
 
   /**
  * Sets Keycloak required actions for a given user (e.g., UPDATE_PASSWORD)
@@ -466,50 +492,69 @@ export class AuthService {
   private async processOtrCertificate(
     file: Express.Multer.File,
     uploadDocumentDto: UploadDocumentDto,
+    locale: string = 'en',
   ) {
     try {
       if (uploadDocumentDto.docSubType !== 'otrCertificate') {
-        throw new BadRequestException('Only OTR Certificate is allowed for this flow');
+        throw new BadRequestException('AUTH_ONLY_OTR_CERTIFICATE_ALLOWED');
       }
 
       // Step 2: Document config (QR requirement)
-      const { requiresQRProcessing } = await this.userService.getDocumentConfig(uploadDocumentDto);
-
+      const { requiresQRProcessing, documentConfig } = await this.userService.getDocumentConfig(uploadDocumentDto);
+      const issueVC =
+        documentConfig?.issueVC?.toLowerCase() === 'yes' ? 'yes' : 'no';
       // Step 3: File type validation
       this.userService.validateFileTypeForQr(requiresQRProcessing, file.mimetype);
 
       // Step 4: OCR extraction
+      const ocrStartTime = Date.now();
       const ocrResult = await this.userService.performOcr(
         file,
         uploadDocumentDto,
         requiresQRProcessing,
-      );
+        undefined,
+        locale,
 
-      // Step 5: Fetch vcFields
+      );
+      this.loggerService.log(`⏱️ OCR Extraction took: ${Date.now() - ocrStartTime}ms`, 'AuthService');
+
+      // Step 5: Keyword-based document validation (preValidation)
+      this.loggerService.log(`Starting keyword-based document validation: docName=${uploadDocumentDto.docName}, docType=${uploadDocumentDto.docType}, docSubType=${uploadDocumentDto.docSubType}`);
+      const keywordValidationResult = await this.documentValidationService.validateDocument(
+        ocrResult.extractedText,
+        uploadDocumentDto.docType,
+        uploadDocumentDto.docSubType,
+      );
+      if (!keywordValidationResult.isValid) {
+        const documentName = documentConfig?.label[locale] || uploadDocumentDto.docName;
+        this.loggerService.warn(`Keyword validation FAILED: ${keywordValidationResult.reason}`);
+        const translatedError = this.i18n.translateError('AUTH_DOCUMENT_TYPE_MISMATCH', locale, { documentName });
+        throw new BadRequestException(translatedError);
+      }
+
+      this.loggerService.log(`Keyword validation PASSED. Matched keywords: ${keywordValidationResult.matchedKeywords?.join(', ') || 'N/A'}`);
+
+      // Step 6: Fetch vcFields
       const vcFields = await this.userService.getVcFieldsForDocument(
         uploadDocumentDto.docType,
         uploadDocumentDto.docSubType,
       );
 
-      // Step 6: OCR → structured mapping
-      let vcMapping = null;
-      if (vcFields) {
-        vcMapping = await this.userService.ocrMapping.mapAfterOcr(
-          {
-            text: ocrResult.extractedText,
-            docType: uploadDocumentDto.docType,
-            docSubType: uploadDocumentDto.docSubType,
-          },
-          vcFields,
-        );
-      } else {
-        vcMapping = {
-          mapped_data: {},
-          missing_fields: [],
-          confidence: 0,
-          processing_method: 'keyword' as const,
-          warnings: ['No vcFields configuration found'],
-        };
+      const { vcMapping } = await this.userService.validateDocumentAndFields(
+        documentConfig,
+        ocrResult,
+        uploadDocumentDto,
+        issueVC,
+        locale,
+      );
+      this.loggerService.log(`⏱️ OCR Mapping took`, 'AuthService');
+
+      // Check for validation errors BEFORE proceeding
+      if (vcMapping?.validationErrors && vcMapping.validationErrors.length > 0) {
+        this.loggerService.error(`Document validation failed with ${vcMapping.validationErrors.length} error(s)`);
+        const errorMessages = vcMapping.validationErrors.map(err => err.error).join('; ');
+        const translatedError = this.i18n.translateError('AUTH_DOCUMENT_VALIDATION_FAILED', locale, { errorMessages });
+        throw new BadRequestException(translatedError);
       }
 
       this.loggerService.log('OTR Certificate processed successfully (OCR + mapping done)');
@@ -517,9 +562,10 @@ export class AuthService {
       return { ocrResult, vcMapping };
     } catch (error) {
       this.loggerService.error('processOtrCertificate', error.message, error.stack);
+      const errorMessage = error.message ?? this.i18n.translateError('AUTH_OTR_PROCESSING_FAILED', locale);
       throw new ErrorResponse({
         statusCode: error.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: error.message ?? 'Failed to process OTR Certificate',
+        errorMessage,
       });
     }
   }
@@ -539,8 +585,10 @@ export class AuthService {
     let vcMapping = null;
     let isUserRegistered = false;
     let generatedUsername = null;
+    const defaultPassword = process.env.SIGNUP_DEFAULT_PASSWORD;
 
     try {
+      const flowStartTime = Date.now();
       // 🟩 Step 1: Pre-process OTR Certificate
       const uploadDocumentDto: UploadDocumentDto = {
         docType: body.docType,
@@ -549,27 +597,36 @@ export class AuthService {
         importedFrom: body.importedFrom ?? 'registration',
         file,
       };
-      const otrResult = await this.processOtrCertificate(file, uploadDocumentDto);
+      const processingStartTime = Date.now();
+      const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+      const otrResult = await this.processOtrCertificate(file, uploadDocumentDto, locale);
+      this.loggerService.log(`⏱️ Total OTR Processing (OCR+Mapping) took: ${Date.now() - processingStartTime}ms`, 'AuthService');
 
       ocrResult = otrResult.ocrResult;
       vcMapping = otrResult.vcMapping;
 
       // 🟩 Step 2: Enrich registration payload with OTR extracted data
-      const payload = {
-        firstName: vcMapping?.mapped_data?.firstname || '',
-        lastName: vcMapping?.mapped_data?.lastname || '',
-        username: `${vcMapping?.mapped_data?.otr_number.toString()}` || '',
-        phoneNumber: vcMapping?.mapped_data?.phoneNumber.toString() || '',
-        password: process.env.SIGNUP_DEFAULT_PASSWORD,
+      const payload: any = {
+        name: vcMapping?.mapped_data?.name || '',
+        username: vcMapping?.mapped_data?.otr_number
+          ? vcMapping.mapped_data.otr_number.toString()
+          : '',
+        password: defaultPassword,
+        phoneNumber: vcMapping?.mapped_data?.phoneNumber
+          ? vcMapping.mapped_data.phoneNumber.toString()
+          : '',
       };
 
       // 🟩 Step 3.1: Validate required fields
-      this.validateRegistrationPayload(payload);
+      this.validateRegistrationPayload(payload, locale);
 
       // 🟩 Step 4: Register user
+      const regStartTime = Date.now();
       const registrationResponse = await this.registerWithUsernamePassword(
         payload,
+        locale,
       );
+      this.loggerService.log(`⏱️ User Registration took: ${Date.now() - regStartTime}ms`, 'AuthService');
       // Check if registration was successful
       if (registrationResponse instanceof ErrorResponse) {
         return registrationResponse;
@@ -581,6 +638,7 @@ export class AuthService {
 
       // 🟩 Step 5: Upload OTR Certificate file
       // Upload file to storage
+      const uploadStartTime = Date.now();
       const uploadResult = await this.documentUploadService.uploadFile(
         file,
         {
@@ -590,16 +648,50 @@ export class AuthService {
           importedFrom: uploadDocumentDto.importedFrom,
         },
         registeredUser.user_id,
+        undefined, // maxFileSize is optional
+        true, // Upload as public for permanent URL access
       );
+
+      // Generate permanent public URL for the uploaded file
+      const downloadUrl = uploadResult?.filePath
+        ? await this.documentUploadService.generatePublicUrl(uploadResult.filePath)
+        : null;
+
+      // Add originalDocument URL to mapped_data for OTR registration flow
+      if (vcMapping?.mapped_data) {
+        if (downloadUrl) {
+          vcMapping.mapped_data.originalDocument = downloadUrl;
+          this.loggerService.log(`Added originalDocument URL to mapped_data in registration flow: ${downloadUrl}`);
+        } else if (file) {
+          // File was uploaded but downloadUrl is null - log warning
+          this.loggerService.warn(
+            `File was uploaded but downloadUrl is null in registration flow. ` +
+            `uploadResult.filePath: ${uploadResult?.filePath || 'null'}, ` +
+            `originalDocument will not be added to mapped_data.`
+          );
+        }
+      } else {
+        this.loggerService.warn(`vcMapping.mapped_data is null/undefined in registration flow - cannot add originalDocument`);
+      }
 
       // Save or update the document record
       const savedDoc = await this.userService.createNewDoc(registeredUser.user_id, uploadResult, uploadDocumentDto, vcMapping);
+      this.loggerService.log(`⏱️ Document Upload & Save took: ${Date.now() - uploadStartTime}ms`, 'AuthService');
 
+      // 🟩 Step 5.1: Update user profile based on OTR certificate data (including dob)
+      try {
+        await this.userService.updateProfile(registeredUser);
+        this.loggerService.log(`Profile updated successfully for user: ${registeredUser.user_id} after OTR document upload`);
+      } catch (profileError) {
+        this.loggerService.error('Profile update failed after OTR document upload:', profileError);
+        // Don't fail the entire registration if profile update fails
+      }
 
+      this.loggerService.log(`⏱️ Total OTR Registration Flow took: ${Date.now() - flowStartTime}ms`, 'AuthService');
       // 🟩 Step 6: Return success response
       return new SuccessResponse({
         statusCode: HttpStatus.OK,
-        message: 'OTR processed, user registered, and document uploaded successfully',
+        message: 'AUTH_REGISTRATION_SUCCESS',
         data: {
           user,
           document: {
@@ -611,6 +703,7 @@ export class AuthService {
             imported_from: savedDoc.savedDoc.imported_from,
           },
           username: body.username,
+          password: defaultPassword,
         },
       });
     } catch (error) {
@@ -623,11 +716,12 @@ export class AuthService {
 
         return new SuccessResponse({
           statusCode: HttpStatus.CREATED,
-          message: 'Registration successful, but document upload failed. Please upload the OTR Certificate after login.',
+          message: 'AUTH_REGISTRATION_PARTIAL_SUCCESS',
           data: {
             user,
             document: null,
             username: body.username,
+            password: defaultPassword,
           },
         });
       }
@@ -639,9 +733,11 @@ export class AuthService {
       }
 
       // Otherwise, wrap the error in an ErrorResponse
+      const locale = this.i18n.getLocaleFromHeader(req?.headers?.['accept-language']);
+      const fallbackErrorMessage = this.i18n.translateError('AUTH_OTR_REGISTRATION_FLOW_FAILED', locale);
       return new ErrorResponse({
         statusCode: error.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR,
-        errorMessage: errorMessage ?? 'Failed OTR registration flow',
+        errorMessage: errorMessage ?? fallbackErrorMessage,
       });
     }
   }
@@ -649,35 +745,35 @@ export class AuthService {
   /**
    * Validates registration payload for required fields
    */
-  private validateRegistrationPayload(payload: any) {
+  private validateRegistrationPayload(payload: any, locale: string = 'en') {
 
     const missingFields: string[] = [];
 
-    if (!payload.firstName || payload.firstName.trim() === '') {
-      missingFields.push('firstName');
-    }
-    if (!payload.lastName || payload.lastName.trim() === '') {
-      missingFields.push('lastName');
+    if (!payload.name || payload.name.trim() === '') {
+      missingFields.push('name');
     }
     if (!payload.username || payload.username.trim() === '') {
       missingFields.push('username');
     }
-    if (!payload.phoneNumber || payload.phoneNumber.trim() === '') {
-      missingFields.push('phoneNumber');
-    }
 
     if (missingFields.length > 0) {
-      throw new ErrorResponse({
-        statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: `Missing required fields: ${missingFields.join(', ')}. Please reupload document again.`,
+      // Format field names: convert camelCase/snake_case to Title Case
+      const formattedFields = missingFields.map(field =>
+        field
+          .replace(/([a-z])([A-Z])/g, '$1 $2')  // Add space before uppercase in camelCase
+          .replaceAll('_', ' ')  // Replace underscores with spaces
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ')
+      );
+      const fieldList = formattedFields.join(', ');
+      const errorMessage = this.i18n.translateError('FIELDS_REQUIRED', locale, {
+        fields: fieldList
       });
-    }
 
-    // Additional validation for phoneNumber format
-    if (!/^\d{10}$/.test(payload.phoneNumber.trim())) {
       throw new ErrorResponse({
         statusCode: HttpStatus.BAD_REQUEST,
-        errorMessage: 'Invalid phone number format. Phone number must be 10 digits.',
+        errorMessage: errorMessage,
       });
     }
   }
@@ -697,7 +793,7 @@ export class AuthService {
       // If we reach here → old password is valid (either normal or temporary)
     } catch (error) {
       if (error.message === 'INVALID_CREDENTIALS') {
-        throw new HttpException('INVALID_OLD_PASSWORD', HttpStatus.UNAUTHORIZED);
+        throw new HttpException('AUTH_INVALID_OLD_PASSWORD', HttpStatus.UNAUTHORIZED);
       }
 
       // Handle "ACCOUNT_NOT_FULLY_SETUP" (temporary password)
@@ -706,7 +802,7 @@ export class AuthService {
         // So we continue the flow normally.
       } else {
         console.error('Error verifying old password:', error);
-        throw new HttpException('PASSWORD_VALIDATION_FAILED', HttpStatus.BAD_REQUEST);
+        throw new HttpException('AUTH_PASSWORD_VALIDATION_FAILED', HttpStatus.BAD_REQUEST);
       }
     }
 
@@ -728,13 +824,17 @@ export class AuthService {
     );
 
     if (!success) {
-      throw new HttpException('PASSWORD_UPDATE_FAILED', HttpStatus.BAD_REQUEST);
+      throw new HttpException('AUTH_PASSWORD_UPDATE_FAILED', HttpStatus.BAD_REQUEST);
     }
 
     // 5️⃣ Optional — clear any pending required actions like UPDATE_PASSWORD
     // await this.keycloakService.clearRequiredAction(user.user.id, adminToken);
 
-    return { message: 'PASSWORD_UPDATED_SUCCESSFULLY' };
+
+    return new SuccessResponse({
+      statusCode: HttpStatus.OK,
+      message: 'AUTH_PASSWORD_UPDATED_SUCCESSFULLY',
+    })
   }
 
 

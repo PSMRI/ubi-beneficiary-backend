@@ -126,4 +126,13 @@ export class CreateUserDocDTO {
   @IsString()
   @MaxLength(1500)
   watcher_callback_url?: string;
+
+  @ApiProperty({
+    description: 'Whether issuance callback is registered for this document',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  issuance_callback_registered?: boolean;
 }

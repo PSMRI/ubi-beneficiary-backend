@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { fileTypeFromBuffer } from 'file-type';
-import { ALLOWED_FILE_TYPES, FILE_UPLOAD_ERRORS } from '../constants/upload.constants';
+import { ALLOWED_FILE_TYPES, FILE_UPLOAD_ERRORS } from '../../config/upload.config';
 
 /**
  * Validates file content using magic number detection

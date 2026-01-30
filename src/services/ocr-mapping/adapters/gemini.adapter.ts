@@ -34,14 +34,24 @@ export class GeminiAdapter implements IAiMappingAdapter {
   /**
    * Map extracted text to structured data using Gemini AI
    */
-  async mapTextToSchema(extractedText: string, schema: Record<string, any>, docType?: string): Promise<Record<string, any> | null> {
+  async mapTextToSchema(
+    extractedText: string, 
+    schema: Record<string, any>, 
+    docType?: string,
+    customPromptTemplate?: string | null
+  ): Promise<Record<string, any> | null> {
     if (!this.isConfigured()) {
       this.logger.warn('Gemini adapter not configured - missing API key');
       return null;
     }
 
     try {
-      const prompt = buildOcrMappingPrompt(extractedText, schema);
+      const prompt = buildOcrMappingPrompt(extractedText, schema, customPromptTemplate);
+      if (customPromptTemplate) {
+        this.logger.debug(`Using custom prompt from vcConfiguration for Gemini mapping`);
+      }
+      this.logger.debug(`Sending request to Gemini (${Object.keys(schema.properties || {}).length} fields)`);
+      
       const response = await this.invokeModel(prompt);
       const parsedResult = JsonParserUtil.parseAiResponse(response, 'gemini');
       
@@ -50,9 +60,10 @@ export class GeminiAdapter implements IAiMappingAdapter {
         return null;
       }
       
+      this.logger.debug(`Gemini extracted ${Object.keys(parsedResult).length} fields`);
       return parsedResult;
     } catch (error: any) {
-      this.logger.error(`Gemini mapping failed: ${error?.message || error}`, error?.stack);
+      this.logger.error(`Gemini mapping failed: ${error?.message || error}`);
       handleMappingError(error, 'gemini');
     }
   }

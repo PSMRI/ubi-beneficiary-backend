@@ -13,6 +13,7 @@ import { HttpService } from '@nestjs/axios';
 import { UserService } from '../modules/users/users.service';
 import { AuthService } from '../modules/auth/auth.service';
 import { AdminService } from '../modules/admin/admin.service';
+import { I18nService } from '../common/services/i18n.service';
 const crypto = require('crypto');
 
 interface Job {
@@ -122,6 +123,7 @@ export class ContentService {
 		private readonly userService: UserService,
 		private readonly authService: AuthService,
 		private readonly adminService: AdminService,
+		private readonly i18n: I18nService,
 	) { }
 
 	async getJobs(body, req) {
@@ -1155,9 +1157,10 @@ export class ContentService {
 		const filteredData = await this.hasuraService.findJobsCache(body);
 
 		if (filteredData instanceof ErrorResponse) {
-			throw new BadRequestException(
-				`Failed to fetch benefit details: ${filteredData.errorMessage}`,
-			);
+			const errorMessage = this.i18n.t('validation.CONTENT_BENEFIT_DETAILS_FETCH_FAILED', {
+				args: { error: filteredData.errorMessage }
+			});
+			throw new BadRequestException(errorMessage);
 		}
 
 		let filteredJobs: Job[] = [];
@@ -1170,7 +1173,7 @@ export class ContentService {
 		}
 
 		if (filteredJobs.length === 0) {
-			throw new NotFoundException('No benefit found with the provided ID');
+			throw new NotFoundException('CONTENT_BENEFIT_NOT_FOUND');
 		}
 
 		return filteredJobs;
@@ -1185,7 +1188,7 @@ export class ContentService {
 		}
 
 		if (!response?.data) {
-			throw new NotFoundException('User not found');
+			throw new NotFoundException('USER_NOT_FOUND');
 		}
 
 		return response.data; // Return raw user data object
@@ -1214,12 +1217,12 @@ export class ContentService {
 	async getUserBenefitEligibility(benefitId: string, req: any): Promise<any> {
 		try {
 			if (!benefitId) {
-				throw new BadRequestException('Benefit ID is required');
+				throw new BadRequestException('CONTENT_BENEFIT_ID_REQUIRED');
 			}
 
 			const userId = req?.mw_userid;
 			if (!userId) {
-				throw new UnauthorizedException('User ID is required');
+				throw new UnauthorizedException('CONTENT_USER_ID_REQUIRED');
 			}
 
 			const filteredJobs = await this.fetchBenefitDetails(benefitId);
