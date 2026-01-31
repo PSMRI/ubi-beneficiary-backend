@@ -42,8 +42,9 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'User registered successfully.' })
   @ApiResponse({ status: 409, description: 'Mobile number already exists.' })
   @ApiResponse({ status: 400, description: 'Bad Request.' })
-  public async registerWithUsernamePassword(@Body() body: RegisterDTO) {
-    return await this.authService.registerWithUsernamePassword(body);
+  public async registerWithUsernamePassword(@Body() body: RegisterDTO, @Req() req: Request) {
+    const locale = req.headers['accept-language']?.split(',')[0]?.split('-')[0]?.toLowerCase() || 'en';
+    return await this.authService.registerWithUsernamePassword(body, locale);
   }
 
   @Post('/register_with_document')

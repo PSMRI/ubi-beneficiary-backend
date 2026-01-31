@@ -163,7 +163,7 @@ export class AuthService {
 
       // Step 2: Get Keycloak admin token
       const token = await this.keycloakService.getAdminKeycloakToken();
-      this.validateToken(token);
+      this.validateToken(token, locale);
       // Step 3: Register user in Keycloak
       const keycloakId = await this.registerUserInKeycloak(
         rest,
@@ -193,7 +193,7 @@ export class AuthService {
         },
       });
     } catch (error) {
-      return this.handleRegistrationError(error, body?.keycloak_id);
+      return this.handleRegistrationError(error, body?.keycloak_id, locale);
     }
   }
 
@@ -420,25 +420,49 @@ export class AuthService {
     });
   }
 
-  private async handleRegistrationError(error, keycloakId) {
-    this.loggerService.error('Error during user registration:', error);
+  private async handleRegistrationError(error, keycloakId, locale: string = 'en') {
+    // Log detailed technical error for debugging
+    this.loggerService.error(
+      'Error during user registration',
+      error.stack || error.message,
+      'AuthService',
+    );
 
+    // Log additional context if available
     if (keycloakId) {
-      await this.keycloakService.deleteUser(keycloakId);
       this.loggerService.error(
-        'Keycloak user deleted due to failure in PostgreSQL creation',
-        error,
+        `Attempting to rollback Keycloak user: ${keycloakId}`,
+        'AuthService',
       );
     }
 
+    // Attempt to rollback Keycloak user if registration failed after user creation
+    if (keycloakId) {
+      try {
+        await this.keycloakService.deleteUser(keycloakId);
+        this.loggerService.log(
+          `Successfully rolled back Keycloak user: ${keycloakId}`,
+          'AuthService',
+        );
+      } catch (rollbackError) {
+        this.loggerService.error(
+          `Failed to rollback Keycloak user: ${keycloakId}`,
+          rollbackError.stack || rollbackError.message,
+          'AuthService',
+        );
+      }
+    }
+
+    // If error is already an ErrorResponse, return it (it already has user-friendly message)
     if (error instanceof ErrorResponse) {
       return error;
     }
 
+    // Return user-friendly error message (without technical details like "Keycloak rollback")
+    const errorMessage = this.i18n.translateError('AUTH_REGISTRATION_FAILED', locale);
     return new ErrorResponse({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      errorMessage:
-        'Error during user registration. Keycloak user has been rolled back.',
+      errorMessage,
     });
   }
 

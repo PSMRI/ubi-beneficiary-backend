@@ -24,6 +24,7 @@
     "AUTH_DOCUMENT_TYPE_MISMATCH": "Invalid document type, Required: {{documentName}}.",
     "AUTH_DOCUMENT_VALIDATION_FAILED": "Document validation failed: {{errorMessages}}",
     "AUTH_OTR_REGISTRATION_FLOW_FAILED": "Failed OTR registration flow",
+    "AUTH_REGISTRATION_FAILED": "Registration failed. Please try again later.",
     "ACCOUNT_NOT_FULLY_SETUP": "Account setup is not complete",
     "INVALID_CREDENTIALS": "Invalid username or password",
     "INVALID_USERNAME_PASSWORD_MESSAGE": "Invalid username or password",

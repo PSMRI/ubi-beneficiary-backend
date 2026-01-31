@@ -24,6 +24,7 @@
     "AUTH_DOCUMENT_TYPE_MISMATCH": "अमान्य दस्तावेज़ प्रकार, आवश्यक: {{documentName}}.",
     "AUTH_DOCUMENT_VALIDATION_FAILED": "दस्तावेज़ सत्यापन विफल: {{errorMessages}}",
     "AUTH_OTR_REGISTRATION_FLOW_FAILED": "OTR पंजीकरण प्रवाह विफल",
+    "AUTH_REGISTRATION_FAILED": "रजिस्ट्रेशन विफल। कृपया बाद में पुनः प्रयास करें।",
     "ACCOUNT_NOT_FULLY_SETUP": "खाता सेटअप पूर्ण नहीं है",
     "INVALID_CREDENTIALS": "अमान्य उपयोगकर्ता नाम या पासवर्ड",
     "INVALID_USERNAME_PASSWORD_MESSAGE": "अमान्य उपयोगकर्ता नाम या पासवर्ड",
